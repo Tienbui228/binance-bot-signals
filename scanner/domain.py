@@ -1,9 +1,30 @@
+"""
+scanner/domain.py
+-----------------
+SHIM — do not add new contracts here.
+
+This file is kept for backward compatibility with existing imports in
+oi_scanner.py, scanner/lifecycle.py, and scanner/review_service.py.
+
+New code must import from contracts/ instead:
+    from contracts.regime_result import RegimeResult
+    from contracts.thesis_result import ThesisResult
+    from contracts.delivery_result import DeliveryResult
+    from contracts.veto_result import VetoResult
+    from contracts.dispatch_result import DispatchResult
+
+This file will be deprecated once all import sites are migrated
+(Phase B complete; full deprecation after Phase E).
+"""
 from dataclasses import dataclass
 from typing import Optional
 
 
+# ── Legacy contracts — still used by oi_scanner.py internals ──────────────
+
 @dataclass
 class RegimeVerdict:
+    """Legacy. Prefer contracts.regime_result.RegimeResult for new code."""
     regime_label: str = "unknown"
     regime_confidence: str = "not_evaluated"
     regime_fit_long_breakout: str = "not_evaluated"
@@ -13,6 +34,7 @@ class RegimeVerdict:
 
 @dataclass
 class DeliveryMetadata:
+    """Legacy. Prefer contracts.delivery_result.DeliveryResult for new code."""
     entry_state: str = "not_evaluated"
     delivery_band: str = "not_evaluated"
     entry_distance_pct: float = 0.0
@@ -26,6 +48,7 @@ class DeliveryMetadata:
 
 @dataclass
 class VetoVerdict:
+    """Legacy. Prefer contracts.veto_result.VetoResult for new code."""
     veto_flag: bool = False
     veto_reason_code: str = "not_evaluated"
     veto_layer: str = "not_evaluated"
@@ -34,6 +57,7 @@ class VetoVerdict:
 
 @dataclass
 class DispatchDecision:
+    """Legacy. Prefer contracts.dispatch_result.DispatchResult for new code."""
     dispatch_action: str = "not_evaluated"
     dispatch_confidence_band: str = "not_evaluated"
     dispatch_reason: str = "not_evaluated"
@@ -106,6 +130,8 @@ class Signal:
     stop_was_forced_min_risk: str = "no"
     manual_tradable: str = "yes"
     manual_trade_note: str = "good_for_manual"
+    regime_label: str = "unclear_mixed"
+    regime_fit_for_strategy: str = "MEDIUM"
     dispatch_action: str = "not_evaluated"
     dispatch_confidence_band: str = "not_evaluated"
     dispatch_reason: str = "not_evaluated"
@@ -145,6 +171,10 @@ class PendingSetup:
     score_breakout: float = 0.0
     score_retest: float = 0.0
     reason_tags: str = ""
+    status: str = "PENDING"
+    close_reason: str = ""
+    bars_waited: int = 0
+    closed_ts_ms: int = 0
     regime_label: str = "unknown"
     regime_fit_for_strategy: str = "not_evaluated"
     setup_quality_band: str = "not_evaluated"
@@ -153,10 +183,6 @@ class PendingSetup:
     dispatch_action: str = "not_evaluated"
     dispatch_confidence_band: str = "not_evaluated"
     dispatch_reason: str = "not_evaluated"
-    status: str = "PENDING"
-    close_reason: str = ""
-    bars_waited: int = 0
-    closed_ts_ms: int = 0
 
 
 @dataclass

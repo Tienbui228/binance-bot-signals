@@ -15,9 +15,10 @@ import subprocess
 
 from scanner.strategies.long_breakout_retest import build_pending_long_setup as strategy_build_pending_long_setup
 from scanner.strategies.short_exhaustion_retest import build_pending_short_exhaustion_setup as strategy_build_pending_short_exhaustion_setup
-from scanner.dispatch.router import route_dispatch_v1
+from dispatch.dispatch_router import route_dispatch_v1
 from scanner.regime.classifier import classify_regime
 from scanner import lifecycle as lifecycle_mod
+from regime.regime_normalizer import enrich_row_with_regime
 
 try:
     from review_capture_runtime import CaseReviewRuntime
@@ -1315,17 +1316,16 @@ class BinanceScanner:
             s.setup_id = s.signal_id
         if not getattr(s, "market_regime", ""):
             s.market_regime = getattr(s, "btc_regime", "unknown")
-        s.regime_label = self._normalize_regime_label_value(
-            getattr(s, "regime_label", ""),
-            getattr(s, "market_regime", ""),
-            getattr(s, "btc_regime", ""),
-        )
-        if not getattr(s, "regime_fit_for_strategy", ""):
-            s.regime_fit_for_strategy = self._derive_regime_fit_for_strategy(
-                getattr(s, "strategy", ""),
-                getattr(s, "side", ""),
-                s.regime_label,
-            )
+        _sd = enrich_row_with_regime({
+            "regime_label": getattr(s, "regime_label", ""),
+            "market_regime": getattr(s, "market_regime", ""),
+            "btc_regime": getattr(s, "btc_regime", ""),
+            "regime_fit_for_strategy": getattr(s, "regime_fit_for_strategy", ""),
+            "strategy": getattr(s, "strategy", ""),
+            "side": getattr(s, "side", ""),
+        })
+        s.regime_label = _sd["regime_label"]
+        s.regime_fit_for_strategy = _sd["regime_fit_for_strategy"]
         if not getattr(s, "dispatch_action", ""):
             s.dispatch_action = "not_evaluated"
         if not getattr(s, "dispatch_confidence_band", ""):
@@ -1389,7 +1389,7 @@ class BinanceScanner:
         pending_row.setdefault("close_trigger_detail", "")
         pending_row.setdefault("confirm_fail_detail", "")
         pending_row.setdefault("invalidation_detail", "")
-        pending_row = self._apply_regime_trace_defaults(pending_row, strategy_hint=p.strategy, side_hint=p.side)
+        pending_row = enrich_row_with_regime(pending_row, strategy_family=p.strategy, side=p.side)
         # Sprint 3A.2 audit log — remove or downgrade after patch is confirmed.
         print(
             f"[RegimeAttach] {p.symbol} {p.side} | strategy={p.strategy} "
@@ -1441,7 +1441,7 @@ class BinanceScanner:
                     )
                 row["send_decision"] = send_decision
                 row["skip_reason"] = skip_reason
-                row = self._apply_regime_trace_defaults(row)
+                row = enrich_row_with_regime(row)
                 row["dispatch_action"] = row.get("dispatch_action") or "not_evaluated"
                 row["dispatch_confidence_band"] = row.get("dispatch_confidence_band") or "not_evaluated"
                 row["dispatch_reason"] = row.get("dispatch_reason") or "not_evaluated"
@@ -1489,7 +1489,7 @@ class BinanceScanner:
                 row["bars_waited"] = bars_waited
                 row["closed_ts_ms"] = int(time.time() * 1000)
                 row["close_trigger_detail"] = close_reason
-                row = self._apply_regime_trace_defaults(row)
+                row = enrich_row_with_regime(row)
                 # Sprint 3A.2 audit log — remove or downgrade after patch is confirmed.
                 print(
                     f"[RegimeClose] {row.get('symbol')} {row.get('side')} | status={status} "
