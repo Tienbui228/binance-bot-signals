@@ -19,6 +19,8 @@ from dispatch.dispatch_router import route_dispatch_v1
 from scanner.regime.classifier import classify_regime
 from scanner import lifecycle as lifecycle_mod
 from regime.regime_normalizer import enrich_row_with_regime
+from delivery.delivery_state_evaluator import evaluate_manual_tradable as delivery_evaluate_manual_tradable
+from veto.veto_engine import check_cooldown as veto_check_cooldown
 
 try:
     from review_capture_runtime import CaseReviewRuntime
@@ -1410,10 +1412,10 @@ class BinanceScanner:
             stage="pending",
             ts_ms=p.signal_open_time,
             breakout_level=p.breakout_level,
-            entry_ref=p.entry_ref,
-            stop=p.stop,
-            tp1=p.tp1,
-            tp2=p.tp2,
+            entry_ref=getattr(p, "entry_ref", None),
+            stop=getattr(p, "stop", None),
+            tp1=getattr(p, "tp1", None),
+            tp2=getattr(p, "tp2", None),
             pending_id=p.pending_id,
             note=p.reason,
         )
@@ -2299,7 +2301,7 @@ class BinanceScanner:
                 tp2_distance_pct = abs(tp2 - entry_ref) / max(entry_ref, 1e-12) * 100.0
                 break_distance_pct = abs(entry_ref - breakout_level) / max(breakout_level, 1e-12) * 100.0
                 risk_pct_real = sl_distance_pct
-                manual_eval = self.evaluate_manual_tradable(side, entry_ref, stop, tp1)
+                manual_eval = delivery_evaluate_manual_tradable(side, entry_ref, stop, tp1, self.cfg)
 
                 signal = Signal(
                     signal_id=signal_id,
@@ -3228,7 +3230,7 @@ class BinanceScanner:
                     )
                     msg = self.format_signal(s)
                     print("\n" + msg + "\n")
-                    if self.should_send(s):
+                    if veto_check_cooldown(s.symbol, s.side, self.sent_cache):
                         try:
                             self.telegram_send(msg)
                             sent_count += 1
@@ -3249,7 +3251,7 @@ class BinanceScanner:
                     )
                     msg = self.format_watchlist_signal(s)
                     print("\n" + msg + "\n")
-                    if send_watchlist and self.should_send(s):
+                    if send_watchlist and veto_check_cooldown(s.symbol, s.side, self.sent_cache):
                         try:
                             self.telegram_send(msg)
                         except Exception as e:
