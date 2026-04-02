@@ -1,0 +1,20 @@
+# Data files
+data/
+*.csv
+review_snapshots/
+review_workspace/
+review_exports/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Config nhạy cảm
+config.yaml
+
+# Logs
+*.log
+RUNNING_CODE_VERSION.txt
