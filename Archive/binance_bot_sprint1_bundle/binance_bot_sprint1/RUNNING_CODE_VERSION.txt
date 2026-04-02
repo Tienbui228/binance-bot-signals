@@ -1,0 +1,5 @@
+code_build_id=livefix-2026-03-19-06
+code_build_source=version-marker-fix-on-live-file
+code_build_note=Adds trustworthy runtime build marker and startup build logs so live code version is explicit.
+config_version=phase3-short-exhaustion-v5-scoreparts-manualdiag
+written_at_utc=2026-03-28T10:51:39.278048+00:00

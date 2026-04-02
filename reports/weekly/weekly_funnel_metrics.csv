@@ -1,0 +1,4 @@
+period_start,period_end,strategy,side,detected_count,pending_count,confirmed_count,invalidated_count,expired_wait_count,rejected_score_count,sent_count,closed_count,detect_to_pending_rate,pending_to_confirm_rate,confirm_to_sent_rate,sent_to_closed_rate
+2026-03-17T00:00:00+00:00,2026-03-24T00:00:00+00:00,legacy_5m_retest,LONG,44,0,0,34,10,0,0,0,0.0,0.0,0.0,0.0
+2026-03-17T00:00:00+00:00,2026-03-24T00:00:00+00:00,long_breakout_retest,LONG,148,1,2,106,39,0,1,1,0.0068,0.0135,0.5,1.0
+2026-03-17T00:00:00+00:00,2026-03-24T00:00:00+00:00,short_exhaustion_retest,SHORT,207,0,72,69,66,0,53,58,0.0,0.3478,0.7361,1.0943

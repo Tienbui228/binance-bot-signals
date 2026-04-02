@@ -1,0 +1,38 @@
+--- /mnt/data/oi_scanner.py	2026-03-28 09:50:54.469811697 +0000
++++ /mnt/data/binance_bot_sprint1/oi_scanner_sprint1_hotfix.py	2026-03-28 10:20:29.031361329 +0000
+@@ -1193,7 +1193,7 @@
+                 return True
+         return False
+ 
+-        def save_signal(self, s: Signal):
++    def save_signal(self, s: Signal):
+             if not s.setup_id:
+                 s.setup_id = s.signal_id
+             if not getattr(s, "market_regime", ""):
+@@ -1236,7 +1236,7 @@
+                     if not already_captured:
+                         self._capture_and_register_case_stage(pending_row, "entry_or_confirm", int(s.timestamp_ms), note=s.reason, signal_row=row)
+ 
+-        def save_pending(self, p: PendingSetup):
++    def save_pending(self, p: PendingSetup):
+             if not p.setup_id:
+                 p.setup_id = p.pending_id
+             if not getattr(p, "market_regime", ""):
+@@ -1269,7 +1269,7 @@
+             if self.review_runtime:
+                 self._review_register_pending_case(asdict(p))
+ 
+-        def sync_pending_send_decision(self, setup_id: str, send_decision: str, skip_reason: str = "", sent_ts_ms: Optional[int] = None):
++    def sync_pending_send_decision(self, setup_id: str, send_decision: str, skip_reason: str = "", sent_ts_ms: Optional[int] = None):
+             rows = self.read_csv(self.pending_file)
+             changed = False
+             for idx, row in enumerate(rows):
+@@ -1308,7 +1308,7 @@
+             f"Strategy: {signal_row.get('strategy', '')}"
+         )
+ 
+-        def close_pending(self, pending_id: str, status: str, close_reason: str, bars_waited: int = 0):
++    def close_pending(self, pending_id: str, status: str, close_reason: str, bars_waited: int = 0):
+             rows = self.read_csv(self.pending_file)
+             changed = False
+             closed_row = None

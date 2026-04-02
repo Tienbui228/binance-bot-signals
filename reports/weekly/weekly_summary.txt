@@ -1,0 +1,39 @@
+=== WEEKLY SUMMARY ===
+period_start=2026-03-17T00:00:00+00:00
+period_end=2026-03-24T00:00:00+00:00
+
+Executive summary:
+- Closed trades: 59; wins=16 (27.12%), stops=8, expired=35, avg_r=0.1562
+- Signals sent in window: 54.
+- Missed-opportunity rows in window: 28 (HIGH priority: 0).
+- Best active bucket this week: long_breakout_retest LONG (closed=1, winrate=100.00%, avg_r=2.0000).
+- Most urgent issue: short_exhaustion_retest SHORT labeled UNDERFIRE (signals=53, closed=58, avg_r=0.1244).
+
+Top-level performance:
+- total_signals=54
+- total_closed=59
+- winrate=27.12%
+- avg_r=0.1562
+- stop_rate=13.56%
+- expired_rate=59.32%
+- LONG: signals=1, closed=1, winrate=100.00%, avg_r=2.0000
+- SHORT: signals=53, closed=58, winrate=25.86%, avg_r=0.1244
+
+Strategy breakdown:
+- long_breakout_retest LONG: signals=1, closed=1, winrate=100.00%, avg_r=2.0000, manual_yes_rate=100.00%, label=SMALL_SAMPLE
+- short_exhaustion_retest SHORT: signals=53, closed=58, winrate=25.86%, avg_r=0.1244, manual_yes_rate=100.00%, label=UNDERFIRE
+
+Funnel diagnosis:
+- legacy_5m_retest LONG: detected=44, pending=0, confirmed=0, invalidated=34, expired_wait=10, rejected_score=0, sent=0, closed=0
+- long_breakout_retest LONG: detected=148, pending=1, confirmed=2, invalidated=106, expired_wait=39, rejected_score=0, sent=1, closed=1
+- short_exhaustion_retest SHORT: detected=207, pending=0, confirmed=72, invalidated=69, expired_wait=66, rejected_score=0, sent=53, closed=58
+
+Missed opportunities:
+- GUAUSDT: pattern=, bot_status=NOT_DETECTED, priority=, reason=
+- ATHUSDT: pattern=, bot_status=NOT_DETECTED, priority=, reason=
+- BRUSDT: pattern=, bot_status=NOT_DETECTED, priority=, reason=
+- HUMAUSDT: pattern=, bot_status=NOT_DETECTED, priority=, reason=
+- CYSUSDT: pattern=, bot_status=NOT_DETECTED, priority=, reason=
+
+Actions next week:
+- Review underfire behavior in long_breakout_retest LONG and compare against missed-opportunity rows.

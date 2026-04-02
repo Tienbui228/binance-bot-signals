@@ -1,0 +1,54 @@
+{
+  "case_id": "LTCUSDT-SHORT-EXH-1774547100000",
+  "symbol": "LTCUSDT",
+  "side": "SHORT",
+  "strategy": "short_exhaustion_retest",
+  "case_day": "2026-03-27",
+  "signal_time_local": "2026-03-27 00:45:00",
+  "created_time_local": "2026-03-27 01:01:19",
+  "confirmed_time_local": "",
+  "sent_time_local": "",
+  "close_time_local": "",
+  "fallback_close_due_time_local": "2026-03-27 05:01:19",
+  "status_final": "CONFIRMED",
+  "close_reason": "signal confirmed",
+  "is_confirmed": "N",
+  "is_sent_signal": "N",
+  "case_close_type": "true_close",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "full",
+  "lifecycle_complete": "Y",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "Y",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260329/LTCUSDT_SHORT_short_exhaustion_retest_LTCUSDT-SHORT-EXH-1774547100000_pre_pending_1774546200000.png",
+      "note": "pre_pending context"
+    },
+    "pending_open": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260329/LTCUSDT_SHORT_short_exhaustion_retest_LTCUSDT-SHORT-EXH-1774547100000_pending_1774548079817.png",
+      "note": "pending_open | created_ts_ms=1774548079817"
+    },
+    "entry_or_confirm": {
+      "stage_status": "not_reached_yet",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "case_close": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260329/LTCUSDT_SHORT_short_exhaustion_retest_LTCUSDT-SHORT-EXH-1774547100000_closed_1774548988831.png",
+      "note": "signal confirmed | closed_ts_ms=1774548988831",
+      "case_close_type": "true_close"
+    }
+  }
+}

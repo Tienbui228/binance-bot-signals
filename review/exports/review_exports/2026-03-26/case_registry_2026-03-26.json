@@ -1,0 +1,326 @@
+[
+  {
+    "case_id": "BEATUSDT-LONG-1774529700000",
+    "symbol": "BEATUSDT",
+    "side": "LONG",
+    "strategy": "long_breakout_retest",
+    "case_day": "2026-03-26",
+    "signal_time_local": "2026-03-26 19:55:00",
+    "created_time_local": "2026-03-26 20:00:07",
+    "confirmed_time_local": "",
+    "sent_time_local": "",
+    "close_time_local": "",
+    "fallback_close_due_time_local": "2026-03-27 00:00:07",
+    "status_final": "EXPIRED_WAIT",
+    "close_reason": "retest wait expired",
+    "is_confirmed": "N",
+    "is_sent_signal": "N",
+    "case_close_type": "true_close",
+    "slot_bundle_complete": "Y",
+    "evidence_ready_for_review": "partial",
+    "lifecycle_complete": "Y",
+    "human_review_status": "PENDING",
+    "verdict_code": "",
+    "root_cause_code": "",
+    "action_candidate_code": "",
+    "review_notes_short": "",
+    "has_case_close_image": "Y",
+    "stages": {
+      "pre_pending": {
+        "stage_status": "missing_unexpected",
+        "stage_content_type": "none",
+        "image_path": "",
+        "note": ""
+      },
+      "pending_open": {
+        "stage_status": "missing_unexpected",
+        "stage_content_type": "none",
+        "image_path": "",
+        "note": ""
+      },
+      "entry_or_confirm": {
+        "stage_status": "not_applicable",
+        "stage_content_type": "none",
+        "image_path": "",
+        "note": ""
+      },
+      "case_close": {
+        "stage_status": "captured",
+        "stage_content_type": "chart_snapshot",
+        "image_path": "/root/binance_bot_signals/review_snapshots/20260326/BEATUSDT_LONG_long_breakout_retest_closed_1774532100000.png",
+        "note": "retest wait expired",
+        "case_close_type": "true_close"
+      }
+    }
+  },
+  {
+    "case_id": "TAOUSDT-LONG-1774530300000",
+    "symbol": "TAOUSDT",
+    "side": "LONG",
+    "strategy": "long_breakout_retest",
+    "case_day": "2026-03-26",
+    "signal_time_local": "2026-03-26 20:05:00",
+    "created_time_local": "2026-03-26 20:12:39",
+    "confirmed_time_local": "",
+    "sent_time_local": "",
+    "close_time_local": "",
+    "fallback_close_due_time_local": "2026-03-27 00:12:39",
+    "status_final": "INVALIDATED",
+    "close_reason": "acceptance_floor_lost 340.780000<343.310000",
+    "is_confirmed": "N",
+    "is_sent_signal": "N",
+    "case_close_type": "true_close",
+    "slot_bundle_complete": "Y",
+    "evidence_ready_for_review": "partial",
+    "lifecycle_complete": "Y",
+    "human_review_status": "PENDING",
+    "verdict_code": "",
+    "root_cause_code": "",
+    "action_candidate_code": "",
+    "review_notes_short": "",
+    "has_case_close_image": "Y",
+    "stages": {
+      "pre_pending": {
+        "stage_status": "missing_unexpected",
+        "stage_content_type": "none",
+        "image_path": "",
+        "note": ""
+      },
+      "pending_open": {
+        "stage_status": "missing_unexpected",
+        "stage_content_type": "none",
+        "image_path": "",
+        "note": ""
+      },
+      "entry_or_confirm": {
+        "stage_status": "not_applicable",
+        "stage_content_type": "none",
+        "image_path": "",
+        "note": ""
+      },
+      "case_close": {
+        "stage_status": "captured",
+        "stage_content_type": "chart_snapshot",
+        "image_path": "/root/binance_bot_signals/review_snapshots/20260326/TAOUSDT_LONG_long_breakout_retest_closed_1774531800000.png",
+        "note": "acceptance_floor_lost 340.780000<343.310000",
+        "case_close_type": "true_close"
+      }
+    }
+  },
+  {
+    "case_id": "ROBOUSDT-LONG-1774531800000",
+    "symbol": "ROBOUSDT",
+    "side": "LONG",
+    "strategy": "long_breakout_retest",
+    "case_day": "2026-03-26",
+    "signal_time_local": "2026-03-26 20:30:00",
+    "created_time_local": "2026-03-26 20:38:24",
+    "confirmed_time_local": "",
+    "sent_time_local": "",
+    "close_time_local": "2026-03-26 20:40:53",
+    "fallback_close_due_time_local": "2026-03-27 00:38:24",
+    "status_final": "INVALIDATED",
+    "close_reason": "retest invalidated",
+    "is_confirmed": "N",
+    "is_sent_signal": "N",
+    "case_close_type": "true_close",
+    "slot_bundle_complete": "Y",
+    "evidence_ready_for_review": "full",
+    "lifecycle_complete": "Y",
+    "human_review_status": "PENDING",
+    "verdict_code": "",
+    "root_cause_code": "",
+    "action_candidate_code": "",
+    "review_notes_short": "",
+    "has_case_close_image": "Y",
+    "stages": {
+      "pre_pending": {
+        "stage_status": "captured",
+        "stage_content_type": "chart_snapshot",
+        "image_path": "/root/binance_bot_signals/review_snapshots/20260326/ROBOUSDT_LONG_long_breakout_retest_pre_pending_1774531500000.png",
+        "note": "pre_pending context"
+      },
+      "pending_open": {
+        "stage_status": "captured",
+        "stage_content_type": "chart_snapshot",
+        "image_path": "/root/binance_bot_signals/review_snapshots/20260326/ROBOUSDT_LONG_long_breakout_retest_pending_1774531800000.png",
+        "note": "OI jump 3.30% + breakout pending + 15m up + 1h up"
+      },
+      "entry_or_confirm": {
+        "stage_status": "not_applicable",
+        "stage_content_type": "none",
+        "image_path": "",
+        "note": ""
+      },
+      "case_close": {
+        "stage_status": "captured",
+        "stage_content_type": "chart_snapshot",
+        "image_path": "/root/binance_bot_signals/review_snapshots/20260326/ROBOUSDT_LONG_long_breakout_retest_closed_1774532100000.png",
+        "note": "retest invalidated",
+        "case_close_type": "true_close"
+      }
+    }
+  },
+  {
+    "case_id": "DUSKUSDT-SHORT-EXH-1774531800000",
+    "symbol": "DUSKUSDT",
+    "side": "SHORT",
+    "strategy": "short_exhaustion_retest",
+    "case_day": "2026-03-26",
+    "signal_time_local": "2026-03-26 20:30:00",
+    "created_time_local": "2026-03-26 20:45:43",
+    "confirmed_time_local": "",
+    "sent_time_local": "",
+    "close_time_local": "",
+    "fallback_close_due_time_local": "2026-03-27 00:45:43",
+    "status_final": "CONFIRMED",
+    "close_reason": "signal confirmed",
+    "is_confirmed": "N",
+    "is_sent_signal": "N",
+    "case_close_type": "not_due_yet",
+    "slot_bundle_complete": "Y",
+    "evidence_ready_for_review": "none",
+    "lifecycle_complete": "N",
+    "human_review_status": "PENDING",
+    "verdict_code": "",
+    "root_cause_code": "",
+    "action_candidate_code": "",
+    "review_notes_short": "",
+    "has_case_close_image": "N",
+    "stages": {
+      "pre_pending": {
+        "stage_status": "missing_unexpected",
+        "stage_content_type": "none",
+        "image_path": "",
+        "note": ""
+      },
+      "pending_open": {
+        "stage_status": "missing_unexpected",
+        "stage_content_type": "none",
+        "image_path": "",
+        "note": ""
+      },
+      "entry_or_confirm": {
+        "stage_status": "captured",
+        "stage_content_type": "chart_snapshot",
+        "image_path": "/root/binance_bot_signals/review_snapshots/20260326/DUSKUSDT_SHORT_short_exhaustion_retest_confirmed_1774534627977.png",
+        "note": "signal confirmed"
+      },
+      "case_close": {
+        "stage_status": "not_reached_yet",
+        "stage_content_type": "none",
+        "image_path": "",
+        "note": "",
+        "case_close_type": "not_due_yet"
+      }
+    }
+  },
+  {
+    "case_id": "TAOUSDT-LONG-1774533600000",
+    "symbol": "TAOUSDT",
+    "side": "LONG",
+    "strategy": "long_breakout_retest",
+    "case_day": "2026-03-26",
+    "signal_time_local": "2026-03-26 21:00:00",
+    "created_time_local": "2026-03-26 21:06:05",
+    "confirmed_time_local": "",
+    "sent_time_local": "",
+    "close_time_local": "2026-03-26 21:17:09",
+    "fallback_close_due_time_local": "2026-03-27 01:06:05",
+    "status_final": "INVALIDATED",
+    "close_reason": "retest invalidated",
+    "is_confirmed": "N",
+    "is_sent_signal": "N",
+    "case_close_type": "true_close",
+    "slot_bundle_complete": "Y",
+    "evidence_ready_for_review": "full",
+    "lifecycle_complete": "Y",
+    "human_review_status": "PENDING",
+    "verdict_code": "",
+    "root_cause_code": "",
+    "action_candidate_code": "",
+    "review_notes_short": "",
+    "has_case_close_image": "Y",
+    "stages": {
+      "pre_pending": {
+        "stage_status": "captured",
+        "stage_content_type": "chart_snapshot",
+        "image_path": "/root/binance_bot_signals/review_snapshots/20260326/TAOUSDT_LONG_long_breakout_retest_pre_pending_1774533300000.png",
+        "note": "pre_pending context"
+      },
+      "pending_open": {
+        "stage_status": "captured",
+        "stage_content_type": "chart_snapshot",
+        "image_path": "/root/binance_bot_signals/review_snapshots/20260326/TAOUSDT_LONG_long_breakout_retest_pending_1774533600000.png",
+        "note": "OI jump 3.33% + breakout pending + 15m flat + 1h flat"
+      },
+      "entry_or_confirm": {
+        "stage_status": "not_applicable",
+        "stage_content_type": "none",
+        "image_path": "",
+        "note": ""
+      },
+      "case_close": {
+        "stage_status": "captured",
+        "stage_content_type": "chart_snapshot",
+        "image_path": "/root/binance_bot_signals/review_snapshots/20260326/TAOUSDT_LONG_long_breakout_retest_closed_1774534200000.png",
+        "note": "retest invalidated",
+        "case_close_type": "true_close"
+      }
+    }
+  },
+  {
+    "case_id": "ARIAUSDT-SHORT-EXH-1774533600000",
+    "symbol": "ARIAUSDT",
+    "side": "SHORT",
+    "strategy": "short_exhaustion_retest",
+    "case_day": "2026-03-26",
+    "signal_time_local": "2026-03-26 21:00:00",
+    "created_time_local": "2026-03-26 21:20:35",
+    "confirmed_time_local": "",
+    "sent_time_local": "",
+    "close_time_local": "",
+    "fallback_close_due_time_local": "2026-03-27 01:20:35",
+    "status_final": "PENDING",
+    "close_reason": "",
+    "is_confirmed": "N",
+    "is_sent_signal": "N",
+    "case_close_type": "not_due_yet",
+    "slot_bundle_complete": "Y",
+    "evidence_ready_for_review": "full",
+    "lifecycle_complete": "N",
+    "human_review_status": "PENDING",
+    "verdict_code": "",
+    "root_cause_code": "",
+    "action_candidate_code": "",
+    "review_notes_short": "",
+    "has_case_close_image": "N",
+    "stages": {
+      "pre_pending": {
+        "stage_status": "captured",
+        "stage_content_type": "chart_snapshot",
+        "image_path": "/root/binance_bot_signals/review_snapshots/20260326/ARIAUSDT_SHORT_short_exhaustion_retest_pre_pending_1774532700000.png",
+        "note": "pre_pending context"
+      },
+      "pending_open": {
+        "stage_status": "captured",
+        "stage_content_type": "chart_snapshot",
+        "image_path": "/root/binance_bot_signals/review_snapshots/20260326/ARIAUSDT_SHORT_short_exhaustion_retest_pending_1774533600000.png",
+        "note": "1h exhaustion 33/35 + 15m breakdown 27/30 -> retest fail pending"
+      },
+      "entry_or_confirm": {
+        "stage_status": "not_reached_yet",
+        "stage_content_type": "none",
+        "image_path": "",
+        "note": ""
+      },
+      "case_close": {
+        "stage_status": "not_reached_yet",
+        "stage_content_type": "none",
+        "image_path": "",
+        "note": "",
+        "case_close_type": "not_due_yet"
+      }
+    }
+  }
+]

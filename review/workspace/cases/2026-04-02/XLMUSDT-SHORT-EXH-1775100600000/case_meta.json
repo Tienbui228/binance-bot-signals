@@ -1,0 +1,54 @@
+{
+  "case_id": "XLMUSDT-SHORT-EXH-1775100600000",
+  "symbol": "XLMUSDT",
+  "side": "SHORT",
+  "strategy": "short_exhaustion_retest",
+  "case_day": "2026-04-02",
+  "signal_time_local": "2026-04-02 10:30:00",
+  "created_time_local": "2026-04-02 10:45:25",
+  "confirmed_time_local": "",
+  "sent_time_local": "",
+  "close_time_local": "",
+  "fallback_close_due_time_local": "2026-04-02 14:45:25",
+  "status_final": "CONFIRMED",
+  "close_reason": "signal confirmed",
+  "is_confirmed": "N",
+  "is_sent_signal": "N",
+  "case_close_type": "not_due_yet",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "none",
+  "lifecycle_complete": "N",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "N",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "missing_unexpected",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "pending_open": {
+      "stage_status": "missing_unexpected",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "entry_or_confirm": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260402/XLMUSDT_SHORT_short_exhaustion_retest_confirmed_1775103431243.png",
+      "note": "signal confirmed"
+    },
+    "case_close": {
+      "stage_status": "not_reached_yet",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": "",
+      "case_close_type": "not_due_yet"
+    }
+  }
+}

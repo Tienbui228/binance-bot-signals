@@ -1,0 +1,48 @@
+{
+  "total_cases": 40,
+  "total_cases_slot_bundle_complete": 40,
+  "total_cases_lifecycle_complete": 37,
+  "total_cases_evidence_full": 34,
+  "total_cases_evidence_partial": 5,
+  "total_cases_evidence_none": 1,
+  "stage_status_counts": {
+    "pre_pending": {
+      "captured": 34,
+      "not_applicable": 0,
+      "not_reached_yet": 0,
+      "capture_failed": 0,
+      "missing_unexpected": 6
+    },
+    "pending_open": {
+      "captured": 34,
+      "not_applicable": 0,
+      "not_reached_yet": 0,
+      "capture_failed": 0,
+      "missing_unexpected": 6
+    },
+    "entry_or_confirm": {
+      "captured": 3,
+      "not_applicable": 37,
+      "not_reached_yet": 0,
+      "capture_failed": 0,
+      "missing_unexpected": 0
+    },
+    "case_close": {
+      "captured": 37,
+      "not_applicable": 0,
+      "not_reached_yet": 3,
+      "capture_failed": 0,
+      "missing_unexpected": 0
+    }
+  },
+  "close_type_counts": {
+    "true_close": 37,
+    "fallback_4h_snapshot": 0,
+    "not_due_yet": 3
+  },
+  "signal_semantics": {
+    "confirmed_Y": 2,
+    "sent_Y": 0,
+    "confirmed_not_sent": 2
+  }
+}

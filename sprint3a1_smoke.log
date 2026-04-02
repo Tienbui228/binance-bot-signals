@@ -1,0 +1,97 @@
+========================================================================
+BINANCE OI RETEST BOT STARTING
+[startup] config_path=config.yaml
+[startup] config_version=phase3-short-exhaustion-v5-scoreparts-manualdiag
+[startup] code_build_id=livefix-2026-03-19-06
+[startup] code_build_source=version-marker-fix-on-live-file
+[startup] code_build_note=Adds trustworthy runtime build marker and startup build logs so live code version is explicit.
+[startup] telegram.chat_id=@MakeM0neyWithCrypt0
+[startup] scanner.loop_seconds=120
+[startup] scanner.top_n=2
+[startup] retest.retest_max_bars=20
+[startup] retest.stop_buffer_pct=0.3
+[startup] retest.max_deep_retest_pct=0.2
+[startup] risk.min_risk_pct=3.0
+[startup] risk.tp1_r_multiple=1.0
+[startup] risk.tp2_r_multiple=2.0
+[startup] tracking.max_bars_after_entry=36
+[startup] strategy.long_breakout_retest.enabled=True
+[startup] strategy.short_exhaustion_retest.enabled=True
+[startup] short_exhaustion_retest.retest_15m_max_bars=3
+[startup] short_exhaustion_retest.score_min_send=70
+[startup] btc_sentiment.bullish_threshold_pct=1.0
+[startup] btc_sentiment.bearish_threshold_pct=-1.0
+[startup] review_snapshots.enabled=True
+[startup] review_snapshots.output_dir=review_snapshots
+[startup] review_case_system.enabled=True
+[startup] review_case_system.workspace_dir=/root/binance_bot_signals/review_workspace
+[startup] review_case_system.builder_script=/root/binance_bot_signals/build_daily_review_pack.py
+[startup] observability.enabled=True
+[startup] storage.data_dir=/root/binance_bot_signals/data
+[startup] storage.pending_dir=/root/binance_bot_signals/data/pending
+[startup] storage.signals_dir=/root/binance_bot_signals/data/signals
+[startup] storage.results_dir=/root/binance_bot_signals/data/results
+[startup] observability.review_candidates_file=review_candidates_latest.csv
+[startup] observability.score_component_summary=True
+[startup] observability.market_review_top_n=20
+========================================================================
+[round start] idx=1 time_ms=1775097369451
+Regime | label=broad_weakness_sell_pressure | conf=MEDIUM | long_fit=LOW | short_fit=HIGH | note=btc_bearish+breadth_weak
+[eval warn] SIMCASE-SIG-SIMLONGUSDT-LONG-1774776958295: 400 Client Error: Bad Request for url: https://fapi.binance.com/fapi/v1/klines?symbol=SIMLONGUSDT&interval=5m&limit=76
+[snapshot warn] SIMLONGUSDT LONG closed: 400 Client Error: Bad Request for url: https://fapi.binance.com/fapi/v1/klines?symbol=SIMLONGUSDT&interval=1h&limit=26
+[snapshot warn] SIMLONGUSDT LONG closed: 400 Client Error: Bad Request for url: https://fapi.binance.com/fapi/v1/klines?symbol=SIMLONGUSDT&interval=1h&limit=26
+[snapshot warn] SIMLONGUSDT LONG closed: 400 Client Error: Bad Request for url: https://fapi.binance.com/fapi/v1/klines?symbol=SIMLONGUSDT&interval=1h&limit=26
+[snapshot warn] SIMLONGUSDT LONG closed: 400 Client Error: Bad Request for url: https://fapi.binance.com/fapi/v1/klines?symbol=SIMLONGUSDT&interval=1h&limit=26
+[snapshot warn] SIMLONGUSDT LONG closed: 400 Client Error: Bad Request for url: https://fapi.binance.com/fapi/v1/klines?symbol=SIMLONGUSDT&interval=1h&limit=26
+[snapshot warn] SIMLONGUSDT LONG closed: 400 Client Error: Bad Request for url: https://fapi.binance.com/fapi/v1/klines?symbol=SIMLONGUSDT&interval=1h&limit=26
+Stats | total=19 | pending=2 | TP1=6 (31.6%) | TP2=1 (5.3%) | STOP=5 (26.3%) | EXPIRED=7 (36.8%) | avgR=0.059
+Breakdown[side=LONG] | total=1 | TP1=0 | TP2=1 | STOP=0 | EXPIRED=0 | avgR=2.000 | manual_yes=1/1
+Breakdown[side=SHORT] | total=18 | TP1=6 | TP2=0 | STOP=5 | EXPIRED=7 | avgR=-0.049 | manual_yes=18/18
+Breakdown[strategy=long_breakout_retest] | total=1 | TP1=0 | TP2=1 | STOP=0 | EXPIRED=0 | avgR=2.000 | manual_yes=1/1
+Breakdown[strategy=short_exhaustion_retest] | total=18 | TP1=6 | TP2=0 | STOP=5 | EXPIRED=7 | avgR=-0.049 | manual_yes=18/18
+Breakdown[btc_regime=bearish] | total=8 | TP1=1 | TP2=0 | STOP=2 | EXPIRED=5 | avgR=-0.286 | manual_yes=8/8
+Breakdown[btc_regime=bullish] | total=4 | TP1=0 | TP2=0 | STOP=3 | EXPIRED=1 | avgR=-0.746 | manual_yes=4/4
+Breakdown[btc_regime=neutral] | total=7 | TP1=5 | TP2=1 | STOP=0 | EXPIRED=1 | avgR=0.914 | manual_yes=7/7
+Pipeline[legacy_5m_retest][LONG] | detected=44 | pending=0 | confirmed=0 | invalidated=34 | expired=10 | signals=0 | open=0 | closed=0
+Pipeline[long_breakout_retest][LONG] | detected=573 | pending=1 | confirmed=12 | invalidated=384 | expired=176 | signals=11 | open=1 | closed=1
+Pipeline[short_exhaustion_retest][SHORT] | detected=755 | pending=1 | confirmed=270 | invalidated=252 | expired=232 | signals=204 | open=5 | closed=18
+PendingAge | active=2 | avg_bars_waited=0.00 | oldest=ZECUSDT SHORT short_exhaustion_retest | oldest_bars_waited=0
+Snapshot[legacy_5m_retest] | stage=closed | total=320
+Snapshot[legacy_5m_retest] | stage=pending | total=3
+Snapshot[long_breakout_retest] | stage=case_close | total=254
+Snapshot[long_breakout_retest] | stage=closed | total=47471
+Snapshot[long_breakout_retest] | stage=confirmed | total=3
+Snapshot[long_breakout_retest] | stage=entry_or_confirm | total=5
+Snapshot[long_breakout_retest] | stage=pending | total=378
+Snapshot[long_breakout_retest] | stage=pending_open | total=210
+Snapshot[long_breakout_retest] | stage=pre_pending | total=372
+Snapshot[short_exhaustion_retest] | stage=case_close | total=441
+Snapshot[short_exhaustion_retest] | stage=closed | total=41621
+Snapshot[short_exhaustion_retest] | stage=confirmed | total=192
+Snapshot[short_exhaustion_retest] | stage=entry_or_confirm | total=2
+Snapshot[short_exhaustion_retest] | stage=pending | total=683
+Snapshot[short_exhaustion_retest] | stage=pending_open | total=372
+Snapshot[short_exhaustion_retest] | stage=pre_pending | total=648
+ScoreParts[long_breakout_retest][WIN_TP2] | total=1 | scored_rows=1/1 | missing_score_parts=0 | avgTotal=88.0 | oi=1.5 | exhaustion=0.0 | breakout=2.4 | retest=4.5
+ScoreParts[short_exhaustion_retest][EXPIRED] | total=7 | scored_rows=7/7 | missing_score_parts=0 | avgTotal=91.4 | oi=0.0 | exhaustion=29.3 | breakout=27.2 | retest=35.0
+ScoreParts[short_exhaustion_retest][LOSS_STOP] | total=5 | scored_rows=5/5 | missing_score_parts=0 | avgTotal=91.0 | oi=0.0 | exhaustion=29.4 | breakout=26.2 | retest=35.0
+ScoreParts[short_exhaustion_retest][WIN_TP1] | total=6 | scored_rows=6/6 | missing_score_parts=0 | avgTotal=89.6 | oi=0.5 | exhaustion=19.7 | breakout=19.2 | retest=24.8
+ScoreBucket[<70] | total=9 | TP1=2 | TP2=0 | STOP=2 | EXPIRED=5 | avgR=-0.143
+ScoreBucket[80-89] | total=4 | TP1=2 | TP2=1 | STOP=1 | EXPIRED=0 | avgR=0.750
+ScoreBucket[90+] | total=6 | TP1=2 | TP2=0 | STOP=2 | EXPIRED=2 | avgR=-0.097
+Outcome[long_breakout_retest][LONG] | total=1 | avgR=2.000 | avgMFE=6.40% | avgMAE=0.70%
+Outcome[short_exhaustion_retest][SHORT] | total=18 | avgR=-0.049 | avgMFE=2.33% | avgMAE=2.07%
+ManualDiag | total=19 | forced_stop=15 (78.9%) | avgSL=3.08% | avgTP1=3.08% | avgTP2=6.16% | avgMFE=2.54% | avgMAE=1.99%
+ManualDiag[thresholds] | minSL=2.00% | minTP1=2.50% | minRR=1.00 | sl_too_small=0 (0.0%) | tp1_too_small=0 (0.0%) | rr_too_low=0 (0.0%) | manual_yes=19 (100.0%) | manual_no=0 (0.0%)
+ManualDiag[sl_2_3] | total=2 | win=1 (50.0%) | avgR=0.646
+ManualDiag[sl>=3] | total=17 | win=6 (35.3%) | avgR=-0.010
+ManualDiag[tp1_2.5_5] | total=19 | win=7 (36.8%) | avgR=0.059
+ManualDiag[long_breakout_retest][LONG] | total=1 | avgSL=3.00% | avgTP1=3.00% | avgTP2=6.00% | avgR=2.000 | manual_yes=1/1
+ManualDiag[short_exhaustion_retest][SHORT] | total=18 | avgSL=3.08% | avgTP1=3.08% | avgTP2=6.17% | avgR=-0.049 | manual_yes=18/18
+ReviewCandidates | exported=80 | file=2026-04-02.csv
+Manual summary | tradable_yes=19/19 (100.0%)
+[detect funnel] long_breakout_retest | symbols_seen=80 | data_ok=80 | oi_ok=1 | new_pending=0 | fail_oi=79 | fail_breakout=1
+[detect funnel] short_exhaustion_retest | symbols_seen=80 | data_ok=80 | exhaustion_ok=17 | new_pending=0 | blocked_duplicate=6 | fail_exhaustion=57 | fail_breakdown=17
+No valid setups this round.
+[round summary] idx=1 | scanned=80 | confirmed=0 | sent=0 | skipped_top_n=0 | new_pending=0 | pending_now=2 | open_now=6
+[round start] idx=2 time_ms=1775097533106

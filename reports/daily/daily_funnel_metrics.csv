@@ -1,0 +1,3 @@
+period_start,period_end,strategy,side,detected_count,pending_count,confirmed_count,invalidated_count,expired_wait_count,rejected_score_count,sent_count,closed_count,detect_to_pending_rate,pending_to_confirm_rate,confirm_to_sent_rate,sent_to_closed_rate
+2026-03-23T00:00:00+00:00,2026-03-24T00:00:00+00:00,long_breakout_retest,LONG,13,1,0,9,3,0,0,0,0.0769,0.0,0.0,0.0
+2026-03-23T00:00:00+00:00,2026-03-24T00:00:00+00:00,short_exhaustion_retest,SHORT,2,0,0,1,1,0,0,3,0.0,0.0,0.0,0.0

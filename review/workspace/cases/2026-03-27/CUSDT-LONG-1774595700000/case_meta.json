@@ -1,0 +1,54 @@
+{
+  "case_id": "CUSDT-LONG-1774595700000",
+  "symbol": "CUSDT",
+  "side": "LONG",
+  "strategy": "long_breakout_retest",
+  "case_day": "2026-03-27",
+  "signal_time_local": "2026-03-27 14:15:00",
+  "created_time_local": "2026-03-27 14:20:54",
+  "confirmed_time_local": "",
+  "sent_time_local": "",
+  "close_time_local": "",
+  "fallback_close_due_time_local": "2026-03-27 18:20:54",
+  "status_final": "EXPIRED_WAIT",
+  "close_reason": "retest wait expired",
+  "is_confirmed": "N",
+  "is_sent_signal": "N",
+  "case_close_type": "true_close",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "full",
+  "lifecycle_complete": "Y",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "Y",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260329/CUSDT_LONG_long_breakout_retest_CUSDT-LONG-1774595700000_pre_pending_1774595400000.png",
+      "note": "pre_pending context"
+    },
+    "pending_open": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260329/CUSDT_LONG_long_breakout_retest_CUSDT-LONG-1774595700000_pending_1774596054949.png",
+      "note": "pending_open | created_ts_ms=1774596054949"
+    },
+    "entry_or_confirm": {
+      "stage_status": "not_applicable",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "case_close": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260329/CUSDT_LONG_long_breakout_retest_CUSDT-LONG-1774595700000_closed_1774598495135.png",
+      "note": "retest wait expired | closed_ts_ms=1774598495135",
+      "case_close_type": "true_close"
+    }
+  }
+}

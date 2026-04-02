@@ -1,0 +1,112 @@
+config_version: phase3-short-exhaustion-v5-scoreparts-manualdiag
+telegram:
+  bot_token: 8643760330:AAFQUt4o1ovC2jfdeUrWk2iUnqipeh7pmgw
+  chat_id: '@MakeM0neyWithCrypt0'
+scanner:
+  quote_asset: USDT
+  interval_5m: 5m
+  interval_15m: 15m
+  interval_1h: 1h
+  loop_seconds: 120
+  top_n: 2
+  max_symbols: 80
+  min_quote_volume_usdt_24h: 5000000
+  min_price: 0.001
+  exclude_symbols:
+  - BTCUSDT
+  - ETHUSDT
+strategy:
+  long_breakout_retest:
+    enabled: true
+  short_exhaustion_retest:
+    enabled: true
+thresholds:
+  oi_jump_pct_5m: 2.0
+  breakout_lookback_bars: 20
+  breakdown_lookback_bars: 20
+  min_break_distance_pct: 0.12
+  min_volume_ratio: 1.2
+  max_wick_ratio: 0.4
+  min_body_ratio: 0.45
+  max_funding_abs_pct: 0.08
+retest:
+  enabled: true
+  retest_max_bars: 20
+  retest_tolerance_pct: 0.2
+  retest_reject_confirm_ratio: 0.35
+  stop_buffer_pct: 0.3
+  max_deep_retest_pct: 0.2
+risk:
+  min_risk_pct: 3.0
+  tp1_r_multiple: 1.0
+  tp2_r_multiple: 2.0
+short_exhaustion_retest:
+  timeframe_confirm: 1h
+  timeframe_entry: 15m
+  exhaustion_1h_lookback_bars: 12
+  exhaustion_1h_min_top_tests: 2
+  exhaustion_1h_resistance_tolerance_pct: 0.35
+  exhaustion_1h_breakout_accept_pct: 0.15
+  exhaustion_1h_min_upper_wick_ratio: 0.35
+  exhaustion_1h_require_failed_breakout: true
+  exhaustion_1h_require_weakening_push: false
+  breakdown_15m_lookback_bars: 12
+  breakdown_15m_min_break_distance_pct: 0.15
+  breakdown_15m_min_body_ratio: 0.45
+  breakdown_15m_min_volume_ratio: 1.1
+  breakdown_15m_close_below_support_required: true
+  retest_15m_min_bars: 1
+  retest_15m_max_bars: 3
+  retest_15m_tolerance_pct: 0.2
+  retest_15m_reject_confirm_ratio: 0.35
+  retest_15m_max_deep_retest_pct: 0.25
+  stop_buffer_pct: 0.3
+  min_risk_pct: 3.0
+  tp1_r_multiple: 1.0
+  tp2_r_multiple: 2.0
+  score_exhaustion_max: 35
+  score_breakdown_max: 30
+  score_retest_max: 35
+  score_min_send: 70
+  score_strong_signal: 80
+  score_high_conviction: 90
+tracking:
+  max_bars_after_entry: 36
+btc_sentiment:
+  bullish_threshold_pct: 1.0
+  bearish_threshold_pct: -1.0
+manual_review:
+  min_sl_distance_pct: 2.0
+  min_tp1_distance_pct: 2.5
+  min_risk_reward_for_manual: 1.0
+review_snapshots:
+  enabled: false
+  output_dir: review_snapshots
+  index_file: review_snapshots.csv
+  save_pending: true
+  save_confirmed: true
+  save_closed: true
+  context_1h_bars: 24
+  entry_5m_bars: 48
+  entry_15m_bars: 36
+  dpi: 120
+  save_pre_pending: true
+  context_15m_bars: 32
+observability:
+  enabled: true
+  export_review_candidates: true
+  review_candidates_file: review_candidates_latest.csv
+  review_candidates_max_rows: 80
+  score_component_summary: true
+  result_score_bucket_summary: true
+  manual_diagnostics: true
+  pipeline_summary: true
+  pending_reason_breakdown: true
+  snapshot_stage_summary: true
+review_case_system:
+  enabled: false
+  workspace_dir: review_workspace
+  timezone: Asia/Ho_Chi_Minh
+  fallback_close_hours: 4
+  daily_exports_dir: review_exports
+  builder_script: build_daily_review_pack.py

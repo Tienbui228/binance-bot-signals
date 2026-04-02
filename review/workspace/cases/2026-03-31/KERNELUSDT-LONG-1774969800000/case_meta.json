@@ -1,0 +1,54 @@
+{
+  "case_id": "KERNELUSDT-LONG-1774969800000",
+  "symbol": "KERNELUSDT",
+  "side": "LONG",
+  "strategy": "long_breakout_retest",
+  "case_day": "2026-03-31",
+  "signal_time_local": "2026-03-31 22:10:00",
+  "created_time_local": "2026-03-31 22:15:16",
+  "confirmed_time_local": "",
+  "sent_time_local": "",
+  "close_time_local": "2026-03-31 22:55:51",
+  "fallback_close_due_time_local": "2026-04-01 02:15:16",
+  "status_final": "EXPIRED_WAIT",
+  "close_reason": "retest wait expired",
+  "is_confirmed": "N",
+  "is_sent_signal": "N",
+  "case_close_type": "true_close",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "full",
+  "lifecycle_complete": "Y",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "Y",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260331/KERNELUSDT_LONG_long_breakout_retest_pre_pending_1774969500000.png",
+      "note": "pre_pending context"
+    },
+    "pending_open": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260331/KERNELUSDT_LONG_long_breakout_retest_pending_1774969800000.png",
+      "note": "OI jump 6.63% + breakout pending + 15m up + 1h up"
+    },
+    "entry_or_confirm": {
+      "stage_status": "not_applicable",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "case_close": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260331/KERNELUSDT_LONG_long_breakout_retest_closed_1774972551193.png",
+      "note": "retest wait expired",
+      "case_close_type": "true_close"
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "verdict_code": [
+    "UNREVIEWED",
+    "KILL_CORRECT",
+    "KILL_TOO_HARSH",
+    "DETECT_TOO_EARLY",
+    "ENTRY_TOO_LATE",
+    "GOOD_SKIP",
+    "MISSED_VALID_SETUP",
+    "TRADE_OK_BUT_EXIT_BAD",
+    "NO_ACTION"
+  ],
+  "root_cause_code": [
+    "UNREVIEWED",
+    "BREAKOUT_INSIDE_RANGE",
+    "NOISY_RETEST_INVALIDATED",
+    "WAIT_WINDOW_TOO_SHORT",
+    "ACCEPTANCE_FLOOR_TOO_STRICT",
+    "CONTEXT_BAD_1H",
+    "CONTEXT_BAD_15M",
+    "CONFIRM_NOT_TRADEABLE",
+    "STOP_TOO_TIGHT",
+    "TP_TOO_OPTIMISTIC",
+    "NO_CHANGE_NEEDED"
+  ],
+  "action_candidate_code": [
+    "UNREVIEWED",
+    "TIGHTEN_DETECT",
+    "RELAX_INVALIDATION",
+    "EXTEND_WAIT_WINDOW",
+    "RELAX_ACCEPTANCE_FLOOR",
+    "ADD_CONTEXT_FILTER",
+    "CHANGE_CONFIRM_RULE",
+    "CHANGE_STOP_RULE",
+    "CHANGE_TP_RULE",
+    "NO_ACTION"
+  ],
+  "confidence_code": [
+    "UNSET",
+    "LOW",
+    "MEDIUM",
+    "HIGH"
+  ]
+}

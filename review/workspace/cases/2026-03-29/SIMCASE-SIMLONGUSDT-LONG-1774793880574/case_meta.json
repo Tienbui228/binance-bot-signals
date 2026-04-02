@@ -1,0 +1,54 @@
+{
+  "case_id": "SIMCASE-SIMLONGUSDT-LONG-1774793880574",
+  "symbol": "SIMLONGUSDT",
+  "side": "LONG",
+  "strategy": "long_breakout_retest",
+  "case_day": "2026-03-29",
+  "signal_time_local": "2026-03-29 21:18:00",
+  "created_time_local": "2026-03-29 21:18:00",
+  "confirmed_time_local": "2026-03-29 21:18:00",
+  "sent_time_local": "2026-03-29 21:18:00",
+  "close_time_local": "2026-03-29 21:18:01",
+  "fallback_close_due_time_local": "2026-03-30 01:18:00",
+  "status_final": "WIN_TP1",
+  "close_reason": "simulated_long_tp1",
+  "is_confirmed": "Y",
+  "is_sent_signal": "Y",
+  "case_close_type": "true_close",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "full",
+  "lifecycle_complete": "Y",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "Y",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260329/SIMLONGUSDT_LONG_long_breakout_retest_pre_pending_1774793580574_placeholder.png",
+      "note": "capture_failed | pre_pending context"
+    },
+    "pending_open": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260329/SIMLONGUSDT_LONG_long_breakout_retest_pending_1774793880574_placeholder.png",
+      "note": "capture_failed | SIMULATED_LONG_TP1"
+    },
+    "entry_or_confirm": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260329/SIMLONGUSDT_LONG_long_breakout_retest_confirmed_1774793880974_placeholder.png",
+      "note": "capture_failed | simulated_confirmed_long_tp1"
+    },
+    "case_close": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260329/SIMLONGUSDT_LONG_long_breakout_retest_closed_1774793881185_placeholder.png",
+      "note": "capture_failed | WIN_TP1 | simulated_long_tp1",
+      "case_close_type": "true_close"
+    }
+  }
+}

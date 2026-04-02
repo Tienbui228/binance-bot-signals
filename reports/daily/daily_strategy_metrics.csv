@@ -1,0 +1,2 @@
+period_start,period_end,strategy,side,signals_count,closed_count,win_count,tp1_count,tp2_count,stop_count,expired_count,winrate,stop_rate,expired_rate,avg_r,median_r,avg_confidence,avg_score,avg_oi_jump_pct,avg_vol_ratio,avg_retest_wait_bars,manual_yes_count,manual_yes_rate,manual_yes_avg_r,manual_no_count,manual_no_avg_r
+2026-03-23T00:00:00+00:00,2026-03-24T00:00:00+00:00,short_exhaustion_retest,SHORT,0,3,0,0,0,1,2,0.0,0.3333,0.6667,-0.4871,-0.2353,,,,,,0,0.0,-0.4871,0,

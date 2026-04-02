@@ -1,0 +1,54 @@
+{
+  "case_id": "ANKRUSDT-SHORT-EXH-1773924300000",
+  "symbol": "ANKRUSDT",
+  "side": "SHORT",
+  "strategy": "short_exhaustion_retest",
+  "case_day": "2026-03-19",
+  "signal_time_local": "2026-03-19 19:45:00",
+  "created_time_local": "2026-03-19 20:01:00",
+  "confirmed_time_local": "",
+  "sent_time_local": "",
+  "close_time_local": "",
+  "fallback_close_due_time_local": "2026-03-20 00:01:00",
+  "status_final": "INVALIDATED",
+  "close_reason": "retest invalidated",
+  "is_confirmed": "N",
+  "is_sent_signal": "N",
+  "case_close_type": "true_close",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "partial",
+  "lifecycle_complete": "Y",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "Y",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "missing_unexpected",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "pending_open": {
+      "stage_status": "missing_unexpected",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "entry_or_confirm": {
+      "stage_status": "not_applicable",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "case_close": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260326/ANKRUSDT_SHORT_short_exhaustion_retest_closed_1773927151273.png",
+      "note": "retest invalidated",
+      "case_close_type": "true_close"
+    }
+  }
+}

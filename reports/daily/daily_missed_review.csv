@@ -1,0 +1,3 @@
+review_ts_ms,review_date,symbol,side_hint,strategy_hint,market_regime,opportunity_type,bot_status,miss_stage,miss_type,reason_code,reason_text,setup_id,signal_id,manual_tradable,improvement_candidate,note,review_dt
+1774237773699,2026-03-23,BLUAIUSDT,LONG_OPPORTUNITY,long_breakout_retest,RANGE,TOP_GAINER,NOT_DETECTED,SCAN,BAD_MISS,not_detected,No pending or sent signal for top mover,,,yes,yes,24h_change=27.21% quote_volume=24595506,2026-03-23 00:00:00+00:00
+1774237773699,2026-03-23,DUSKUSDT,LONG_OPPORTUNITY,long_breakout_retest,RANGE,TOP_GAINER,NOT_DETECTED,SCAN,BAD_MISS,not_detected,No pending or sent signal for top mover,,,yes,yes,24h_change=17.54% quote_volume=48526203,2026-03-23 00:00:00+00:00

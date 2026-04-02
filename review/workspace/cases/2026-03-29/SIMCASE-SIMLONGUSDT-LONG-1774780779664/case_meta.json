@@ -1,0 +1,54 @@
+{
+  "case_id": "SIMCASE-SIMLONGUSDT-LONG-1774780779664",
+  "symbol": "SIMLONGUSDT",
+  "side": "LONG",
+  "strategy": "long_breakout_retest",
+  "case_day": "2026-03-29",
+  "signal_time_local": "2026-03-29 17:39:39",
+  "created_time_local": "2026-03-29 17:39:39",
+  "confirmed_time_local": "2026-03-29 17:39:39",
+  "sent_time_local": "2026-03-29 17:39:39",
+  "close_time_local": "2026-03-29 17:47:40",
+  "fallback_close_due_time_local": "2026-03-29 21:39:39",
+  "status_final": "WIN_TP1",
+  "close_reason": "simulated_long_tp1",
+  "is_confirmed": "Y",
+  "is_sent_signal": "Y",
+  "case_close_type": "true_close",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "none",
+  "lifecycle_complete": "N",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "N",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "capture_failed",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": "pre_pending context"
+    },
+    "pending_open": {
+      "stage_status": "capture_failed",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": "SIMULATED_LONG_TP1"
+    },
+    "entry_or_confirm": {
+      "stage_status": "capture_failed",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": "SIMULATED_LONG_TP1 | full lifecycle simulation"
+    },
+    "case_close": {
+      "stage_status": "capture_failed",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": "SIMULATED_LONG_TP1 | full lifecycle simulation",
+      "case_close_type": "true_close"
+    }
+  }
+}

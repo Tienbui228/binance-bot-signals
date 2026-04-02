@@ -1,0 +1,65 @@
+{
+  "identity": [
+    "case_id",
+    "case_day",
+    "symbol",
+    "side",
+    "strategy",
+    "setup_id",
+    "signal_id"
+  ],
+  "times_local": [
+    "signal_time_local",
+    "created_time_local",
+    "confirmed_time_local",
+    "sent_time_local",
+    "close_time_local",
+    "fallback_close_due_local"
+  ],
+  "times_raw_ms": [
+    "signal_time_ms",
+    "created_time_ms",
+    "confirmed_time_ms",
+    "sent_time_ms",
+    "close_time_ms",
+    "fallback_close_due_ms"
+  ],
+  "levels": [
+    "signal_price",
+    "breakout_level",
+    "entry_price",
+    "stop_price",
+    "tp1_price",
+    "tp2_price"
+  ],
+  "lifecycle": [
+    "status_final",
+    "close_reason",
+    "bars_waited",
+    "time_to_confirm_min",
+    "time_to_close_min",
+    "outcome",
+    "r_multiple"
+  ],
+  "image_slots": [
+    "pre_pending_image",
+    "pending_open_image",
+    "entry_or_confirm_image",
+    "case_close_image"
+  ],
+  "image_integrity": [
+    "has_pre_pending_image",
+    "has_pending_open_image",
+    "has_entry_or_confirm_image",
+    "has_case_close_image",
+    "case_bundle_complete"
+  ],
+  "review_placeholders": [
+    "human_review_status",
+    "verdict_code",
+    "root_cause_code",
+    "action_candidate_code",
+    "confidence_code",
+    "review_notes_short"
+  ]
+}

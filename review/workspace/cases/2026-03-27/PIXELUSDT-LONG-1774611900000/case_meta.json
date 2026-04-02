@@ -1,0 +1,54 @@
+{
+  "case_id": "PIXELUSDT-LONG-1774611900000",
+  "symbol": "PIXELUSDT",
+  "side": "LONG",
+  "strategy": "long_breakout_retest",
+  "case_day": "2026-03-27",
+  "signal_time_local": "2026-03-27 18:45:00",
+  "created_time_local": "2026-03-27 18:51:09",
+  "confirmed_time_local": "",
+  "sent_time_local": "",
+  "close_time_local": "",
+  "fallback_close_due_time_local": "2026-03-27 22:51:09",
+  "status_final": "INVALIDATED",
+  "close_reason": "acceptance_floor_lost 0.008736<0.008908",
+  "is_confirmed": "N",
+  "is_sent_signal": "N",
+  "case_close_type": "true_close",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "full",
+  "lifecycle_complete": "Y",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "Y",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260329/PIXELUSDT_LONG_long_breakout_retest_PIXELUSDT-LONG-1774611900000_pre_pending_1774611600000.png",
+      "note": "pre_pending context"
+    },
+    "pending_open": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260329/PIXELUSDT_LONG_long_breakout_retest_PIXELUSDT-LONG-1774611900000_pending_1774612269582.png",
+      "note": "pending_open | created_ts_ms=1774612269582"
+    },
+    "entry_or_confirm": {
+      "stage_status": "not_applicable",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "case_close": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260329/PIXELUSDT_LONG_long_breakout_retest_PIXELUSDT-LONG-1774611900000_closed_1774612885296.png",
+      "note": "acceptance_floor_lost 0.008736<0.008908 | closed_ts_ms=1774612885296",
+      "case_close_type": "true_close"
+    }
+  }
+}
