@@ -15,12 +15,9 @@ import subprocess
 
 from scanner.strategies.long_breakout_retest import build_pending_long_setup as strategy_build_pending_long_setup
 from scanner.strategies.short_exhaustion_retest import build_pending_short_exhaustion_setup as strategy_build_pending_short_exhaustion_setup
-from dispatch.dispatch_router import route_dispatch_v1
+from scanner.dispatch.router import route_dispatch_v1
 from scanner.regime.classifier import classify_regime
 from scanner import lifecycle as lifecycle_mod
-from regime.regime_normalizer import enrich_row_with_regime
-from delivery.delivery_state_evaluator import evaluate_manual_tradable as delivery_evaluate_manual_tradable
-from veto.veto_engine import check_cooldown as veto_check_cooldown
 
 try:
     from review_capture_runtime import CaseReviewRuntime
@@ -1318,16 +1315,17 @@ class BinanceScanner:
             s.setup_id = s.signal_id
         if not getattr(s, "market_regime", ""):
             s.market_regime = getattr(s, "btc_regime", "unknown")
-        _sd = enrich_row_with_regime({
-            "regime_label": getattr(s, "regime_label", ""),
-            "market_regime": getattr(s, "market_regime", ""),
-            "btc_regime": getattr(s, "btc_regime", ""),
-            "regime_fit_for_strategy": getattr(s, "regime_fit_for_strategy", ""),
-            "strategy": getattr(s, "strategy", ""),
-            "side": getattr(s, "side", ""),
-        })
-        s.regime_label = _sd["regime_label"]
-        s.regime_fit_for_strategy = _sd["regime_fit_for_strategy"]
+        s.regime_label = self._normalize_regime_label_value(
+            getattr(s, "regime_label", ""),
+            getattr(s, "market_regime", ""),
+            getattr(s, "btc_regime", ""),
+        )
+        if not getattr(s, "regime_fit_for_strategy", ""):
+            s.regime_fit_for_strategy = self._derive_regime_fit_for_strategy(
+                getattr(s, "strategy", ""),
+                getattr(s, "side", ""),
+                s.regime_label,
+            )
         if not getattr(s, "dispatch_action", ""):
             s.dispatch_action = "not_evaluated"
         if not getattr(s, "dispatch_confidence_band", ""):
@@ -1391,7 +1389,7 @@ class BinanceScanner:
         pending_row.setdefault("close_trigger_detail", "")
         pending_row.setdefault("confirm_fail_detail", "")
         pending_row.setdefault("invalidation_detail", "")
-        pending_row = enrich_row_with_regime(pending_row, strategy_family=p.strategy, side=p.side)
+        pending_row = self._apply_regime_trace_defaults(pending_row, strategy_hint=p.strategy, side_hint=p.side)
         # Sprint 3A.2 audit log — remove or downgrade after patch is confirmed.
         print(
             f"[RegimeAttach] {p.symbol} {p.side} | strategy={p.strategy} "
@@ -1412,10 +1410,10 @@ class BinanceScanner:
             stage="pending",
             ts_ms=p.signal_open_time,
             breakout_level=p.breakout_level,
-            entry_ref=getattr(p, "entry_ref", None),
-            stop=getattr(p, "stop", None),
-            tp1=getattr(p, "tp1", None),
-            tp2=getattr(p, "tp2", None),
+            entry_ref=p.entry_ref,
+            stop=p.stop,
+            tp1=p.tp1,
+            tp2=p.tp2,
             pending_id=p.pending_id,
             note=p.reason,
         )
@@ -1443,7 +1441,7 @@ class BinanceScanner:
                     )
                 row["send_decision"] = send_decision
                 row["skip_reason"] = skip_reason
-                row = enrich_row_with_regime(row)
+                row = self._apply_regime_trace_defaults(row)
                 row["dispatch_action"] = row.get("dispatch_action") or "not_evaluated"
                 row["dispatch_confidence_band"] = row.get("dispatch_confidence_band") or "not_evaluated"
                 row["dispatch_reason"] = row.get("dispatch_reason") or "not_evaluated"
@@ -1491,7 +1489,7 @@ class BinanceScanner:
                 row["bars_waited"] = bars_waited
                 row["closed_ts_ms"] = int(time.time() * 1000)
                 row["close_trigger_detail"] = close_reason
-                row = enrich_row_with_regime(row)
+                row = self._apply_regime_trace_defaults(row)
                 # Sprint 3A.2 audit log — remove or downgrade after patch is confirmed.
                 print(
                     f"[RegimeClose] {row.get('symbol')} {row.get('side')} | status={status} "
@@ -2301,7 +2299,7 @@ class BinanceScanner:
                 tp2_distance_pct = abs(tp2 - entry_ref) / max(entry_ref, 1e-12) * 100.0
                 break_distance_pct = abs(entry_ref - breakout_level) / max(breakout_level, 1e-12) * 100.0
                 risk_pct_real = sl_distance_pct
-                manual_eval = delivery_evaluate_manual_tradable(side, entry_ref, stop, tp1, self.cfg)
+                manual_eval = self.evaluate_manual_tradable(side, entry_ref, stop, tp1)
 
                 signal = Signal(
                     signal_id=signal_id,
@@ -3230,7 +3228,7 @@ class BinanceScanner:
                     )
                     msg = self.format_signal(s)
                     print("\n" + msg + "\n")
-                    if veto_check_cooldown(s.symbol, s.side, self.sent_cache):
+                    if self.should_send(s):
                         try:
                             self.telegram_send(msg)
                             sent_count += 1
@@ -3251,7 +3249,7 @@ class BinanceScanner:
                     )
                     msg = self.format_watchlist_signal(s)
                     print("\n" + msg + "\n")
-                    if send_watchlist and veto_check_cooldown(s.symbol, s.side, self.sent_cache):
+                    if send_watchlist and self.should_send(s):
                         try:
                             self.telegram_send(msg)
                         except Exception as e:
@@ -3291,6 +3289,12 @@ class BinanceScanner:
                         p.regime_fit_for_strategy = regime.regime_fit_short_exhaustion
                     else:
                         p.regime_fit_for_strategy = "MEDIUM"
+                    # Data plumbing fix: pass round-level breadth into PendingSetup.
+                    # get_btc_context() always returns 0.0 for breadth; the real value
+                    # is computed in build_market_snapshot() and stored in current_market_snapshot.
+                    p.alt_market_breadth_pct = float(
+                        self.current_market_snapshot.get("alt_market_breadth_pct", 0.0) or 0.0
+                    )
                     self.save_pending(p)
                     new_pending += 1
                     print(
