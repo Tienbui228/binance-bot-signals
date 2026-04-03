@@ -8,7 +8,7 @@
   "created_time_local": "2026-04-02 15:38:34",
   "confirmed_time_local": "",
   "sent_time_local": "",
-  "close_time_local": "",
+  "close_time_local": "2026-04-02 17:06:28",
   "fallback_close_due_time_local": "2026-04-02 19:38:34",
   "status_final": "EXPIRED_WAIT",
   "close_reason": "retest wait expired",
@@ -46,7 +46,7 @@
     "case_close": {
       "stage_status": "captured",
       "stage_content_type": "chart_snapshot",
-      "image_path": "/root/binance_bot_signals/review_snapshots/20260402/STOUSDT_LONG_long_breakout_retest_closed_1775121419332.png",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260402/STOUSDT_LONG_long_breakout_retest_closed_1775124388157.png",
       "note": "retest wait expired",
       "case_close_type": "true_close"
     }

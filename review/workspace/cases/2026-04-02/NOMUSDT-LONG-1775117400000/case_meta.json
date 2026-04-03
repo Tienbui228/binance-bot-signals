@@ -8,7 +8,7 @@
   "created_time_local": "2026-04-02 15:17:06",
   "confirmed_time_local": "",
   "sent_time_local": "",
-  "close_time_local": "",
+  "close_time_local": "2026-04-02 17:06:27",
   "fallback_close_due_time_local": "2026-04-02 19:17:06",
   "status_final": "EXPIRED_WAIT",
   "close_reason": "retest wait expired",
@@ -46,7 +46,7 @@
     "case_close": {
       "stage_status": "captured",
       "stage_content_type": "chart_snapshot",
-      "image_path": "/root/binance_bot_signals/review_snapshots/20260402/NOMUSDT_LONG_long_breakout_retest_closed_1775120108298.png",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260402/NOMUSDT_LONG_long_breakout_retest_closed_1775124387214.png",
       "note": "retest wait expired",
       "case_close_type": "true_close"
     }

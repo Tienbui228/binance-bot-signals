@@ -8,7 +8,7 @@
   "created_time_local": "2026-04-02 15:41:39",
   "confirmed_time_local": "",
   "sent_time_local": "",
-  "close_time_local": "",
+  "close_time_local": "2026-04-02 17:06:29",
   "fallback_close_due_time_local": "2026-04-02 19:41:39",
   "status_final": "INVALIDATED",
   "close_reason": "retest invalidated",
@@ -46,7 +46,7 @@
     "case_close": {
       "stage_status": "captured",
       "stage_content_type": "chart_snapshot",
-      "image_path": "/root/binance_bot_signals/review_snapshots/20260402/DUSDT_LONG_long_breakout_retest_closed_1775119944024.png",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260402/DUSDT_LONG_long_breakout_retest_closed_1775124389061.png",
       "note": "retest invalidated",
       "case_close_type": "true_close"
     }
