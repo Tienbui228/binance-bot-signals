@@ -18,6 +18,7 @@ from scanner.strategies.short_exhaustion_retest import build_pending_short_exhau
 from scanner.dispatch.router import route_dispatch_v1
 from scanner.regime.classifier import classify_regime
 from scanner import lifecycle as lifecycle_mod
+from regime.regime_normalizer import enrich_row_with_regime
 
 try:
     from review_capture_runtime import CaseReviewRuntime
@@ -291,22 +292,17 @@ class BinanceScanner:
         return "MEDIUM"
 
     def _apply_regime_trace_defaults(self, row: Dict, strategy_hint: str = "", side_hint: str = "") -> Dict:
-        row = dict(row or {})
-        label = self._normalize_regime_label_value(
-            row.get("regime_label", ""),
-            row.get("market_regime", ""),
-            row.get("btc_regime", ""),
+        # Sprint 3A.2: delegate to canonical normalizer.
+        # enrich_row_with_regime() checks fit explicitly against
+        # {HIGH, MEDIUM, LOW} — correctly handles the truthy
+        # 'not_evaluated' string that caused the original bug.
+        # Covers all 3 write paths: save_pending, close_pending,
+        # sync_pending_send_decision.
+        return enrich_row_with_regime(
+            row,
+            strategy_family=strategy_hint or (row or {}).get("strategy", ""),
+            side=side_hint or (row or {}).get("side", ""),
         )
-        row["regime_label"] = label
-        row["regime_fit_for_strategy"] = (
-            row.get("regime_fit_for_strategy")
-            or self._derive_regime_fit_for_strategy(
-                strategy_hint or row.get("strategy", ""),
-                side_hint or row.get("side", ""),
-                label,
-            )
-        )
-        return row
 
     def _default_value_for_field(self, fieldname: str, row: Optional[Dict] = None) -> str:
         row = row or {}
@@ -1419,7 +1415,7 @@ class BinanceScanner:
         )
         if self.review_runtime:
             try:
-                self._register_pending_case(pending_row)
+                self._review_register_pending_case(pending_row)
             except Exception as e:
                 print(f"[review_case warn] register pending {p.pending_id}: {e}")
 
