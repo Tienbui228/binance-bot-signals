@@ -190,10 +190,10 @@ def load_snapshot_index(path: Path) -> Dict[Tuple, Dict]:
 def infer_stage(row: Dict, case_meta: Dict, snapshots: Dict, stage_key: str) -> Tuple:
     pid = row.get("pending_id") or row.get("setup_id") or ""
     snap_key_map = {
-        "pre_pending":    "pre_pending",
-        "pending_open":   "pending",
+        "pre_pending":      "pre_pending",
+        "pending_open":     "pending",
         "entry_or_confirm": "confirmed",
-        "case_close":     "closed",
+        "case_close":       "closed",
     }
     snap_row = snapshots.get((pid, snap_key_map[stage_key]))
     img_path = None
@@ -202,7 +202,13 @@ def infer_stage(row: Dict, case_meta: Dict, snapshots: Dict, stage_key: str) -> 
         if p.exists():
             img_path = p
 
-    # try workspace case first
+    # Bug 3 fix: case_close not_due_yet MUST be guarded first, before workspace
+    # or snapshot lookup — a fallback snapshot image does not change the truth
+    # that the case close has not happened yet.
+    if stage_key == "case_close" and infer_close_type(row, 4) == "not_due_yet":
+        return "not_reached_yet", "none", "NOT REACHED YET", None
+
+    # try workspace case_meta
     stages = (case_meta.get("stages") or {}) if case_meta else {}
     item = stages.get(stage_key) or {}
     w_status = str(item.get("stage_status") or "")
@@ -211,7 +217,7 @@ def infer_stage(row: Dict, case_meta: Dict, snapshots: Dict, stage_key: str) -> 
     if w_status:
         return w_status, w_ctype or ("chart_snapshot" if img_path else "none"), w_note, img_path
 
-    # fallback inference
+    # fallback inference from row fields + snapshot availability
     final_status = (row.get("status") or "").upper()
     if stage_key in {"pre_pending", "pending_open"}:
         if img_path:
@@ -227,10 +233,9 @@ def infer_stage(row: Dict, case_meta: Dict, snapshots: Dict, stage_key: str) -> 
             return "missing_unexpected", "none", "MISSING UNEXPECTED", None
         return "not_applicable", "none", "NOT APPLICABLE", None
     if stage_key == "case_close":
+        # not_due_yet already handled above — if we reach here, close is due
         if img_path:
             return "captured", "chart_snapshot", row.get("close_reason",""), img_path
-        if infer_close_type(row, 4) == "not_due_yet":
-            return "not_reached_yet", "none", "NOT REACHED YET", None
         return "missing_unexpected", "none", "MISSING UNEXPECTED", None
     return "", "", "", img_path
 
@@ -663,10 +668,16 @@ def s_c(doc, data: ReportData):
         conf_ts   = safe_int(row.get("confirmed_ts_ms"))
         sent_ts   = safe_int(row.get("sent_ts_ms"))
         closed_ts = safe_int(row.get("closed_ts_ms"))
-        # RULE: no fake timestamp — show "missing" or "not_reached_yet" explicitly
-        c_disp = fmt_time(conf_ts, tz)  if conf_ts   else "missing"
-        s_disp = fmt_time(sent_ts, tz)  if sent_ts   else "not_sent"
-        x_disp = fmt_time(closed_ts,tz) if closed_ts else "not_reached_yet"
+        # Bug 1 fix: closed_ts_ms may exist on CONFIRMED rows (set by close_pending)
+        # but close_capture_basis = "not_due_yet" means the real case close has NOT
+        # happened. Must render not_reached_yet, never reuse the confirmed timestamp.
+        close_type = infer_close_type(row, data.fallback_hours)
+        c_disp = fmt_time(conf_ts, tz) if conf_ts else "missing"
+        s_disp = fmt_time(sent_ts, tz) if sent_ts else "not_sent"
+        if close_type == "not_due_yet":
+            x_disp = "not_reached_yet"
+        else:
+            x_disp = fmt_time(closed_ts, tz) if closed_ts else "not_reached_yet"
         ok = yn(row.get("semantic_consistency"))=="Y"
         bgs = [CLR_ROW_ALT if i%2 else CLR_WHITE]*5 + [CLR_GREEN_BG if ok else CLR_RED_BG]
         add_row(tbl, [row.get("symbol",""), row.get("side",""), c_disp, s_disp, x_disp,
@@ -905,12 +916,15 @@ def s_k(doc, data: ReportData):
              f"{row.get('symbol','')} | {row.get('side','')} | {row.get('strategy','')} | "
              f"status={row.get('status','')} | close_reason={row.get('close_reason','')}"),
             ("Times",
+             # Bug 2 fix: close must show not_reached_yet when case_close_type=not_due_yet.
+             # closed_ts_ms may exist on CONFIRMED rows but that does not mean case close occurred.
              f"signal={fmt_ts(safe_int(row.get('signal_open_time')),tz)} | "
              f"created={fmt_ts(cts,tz)} | "
              f"confirmed={fmt_ts(safe_int(row.get('confirmed_ts_ms')),tz)} | "
              f"sent={fmt_ts(safe_int(row.get('sent_ts_ms')),tz)} | "
-             f"close={fmt_ts(safe_int(row.get('closed_ts_ms')),tz)} | "
-             f"fallback_due={fmt_ts(cts+fh*3600000,tz) if cts else ''}"),
+             + (f"close=not_reached_yet | " if infer_close_type(row, fh) == "not_due_yet"
+                else f"close={fmt_ts(safe_int(row.get('closed_ts_ms')),tz) or 'not_reached_yet'} | ")
+             + f"fallback_due={fmt_ts(cts+fh*3600000,tz) if cts else ''}"),
             ("Semantics",
              f"is_confirmed={yn(row.get('is_confirmed'))} | "
              f"is_sent_signal={yn(row.get('is_sent_signal'))} | "
