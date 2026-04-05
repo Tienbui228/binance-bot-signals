@@ -29,7 +29,7 @@ except Exception:
 BASE_FAPI = "https://fapi.binance.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "lifecycle-fix-2026-04-05"
+CODE_BUILD_ID = "dispatch-trace-fix-2026-04-05"
 CODE_BUILD_SOURCE = "version-marker-fix-on-live-file"
 CODE_BUILD_NOTE = "Adds trustworthy runtime build marker and startup build logs so live code version is explicit."
 
