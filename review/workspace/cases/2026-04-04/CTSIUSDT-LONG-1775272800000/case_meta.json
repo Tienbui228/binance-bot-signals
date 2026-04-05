@@ -1,0 +1,54 @@
+{
+  "case_id": "CTSIUSDT-LONG-1775272800000",
+  "symbol": "CTSIUSDT",
+  "side": "LONG",
+  "strategy": "long_breakout_retest",
+  "case_day": "2026-04-04",
+  "signal_time_local": "2026-04-04 10:20:00",
+  "created_time_local": "2026-04-04 10:26:09",
+  "confirmed_time_local": "",
+  "sent_time_local": "",
+  "close_time_local": "",
+  "fallback_close_due_time_local": "2026-04-04 14:26:09",
+  "status_final": "INVALIDATED",
+  "close_reason": "retest invalidated",
+  "is_confirmed": "N",
+  "is_sent_signal": "N",
+  "case_close_type": "true_close",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "partial",
+  "lifecycle_complete": "Y",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "Y",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "capture_failed",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": "pre_fix_backfill_v2 — was missing_unexpected, snapshot was never taken (Sprint 3A.2 bug)"
+    },
+    "pending_open": {
+      "stage_status": "capture_failed",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": "pre_fix_backfill_v2 — was missing_unexpected, snapshot was never taken (Sprint 3A.2 bug)"
+    },
+    "entry_or_confirm": {
+      "stage_status": "not_applicable",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "case_close": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260404/CTSIUSDT_LONG_long_breakout_retest_closed_1775273490921.png",
+      "note": "retest invalidated",
+      "case_close_type": "true_close"
+    }
+  }
+}

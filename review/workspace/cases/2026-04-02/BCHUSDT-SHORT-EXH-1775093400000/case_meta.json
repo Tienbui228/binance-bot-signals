@@ -26,16 +26,16 @@
   "has_case_close_image": "N",
   "stages": {
     "pre_pending": {
-      "stage_status": "missing_unexpected",
+      "stage_status": "capture_failed",
       "stage_content_type": "none",
       "image_path": "",
-      "note": ""
+      "note": "pre_fix_backfill_v2 — was missing_unexpected, snapshot was never taken (Sprint 3A.2 bug)"
     },
     "pending_open": {
-      "stage_status": "missing_unexpected",
+      "stage_status": "capture_failed",
       "stage_content_type": "none",
       "image_path": "",
-      "note": ""
+      "note": "pre_fix_backfill_v2 — was missing_unexpected, snapshot was never taken (Sprint 3A.2 bug)"
     },
     "entry_or_confirm": {
       "stage_status": "captured",

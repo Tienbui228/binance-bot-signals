@@ -1,0 +1,340 @@
+from __future__ import annotations
+
+import time
+from dataclasses import asdict
+from typing import Dict, Optional
+
+from scanner.domain import PendingSetup, Signal
+from regime.regime_normalizer import enrich_row_with_regime
+
+
+def mark_pending_confirmed_fields(app, row: Dict, confirmed_ts_ms: Optional[int] = None, note: str = "signal confirmed") -> Dict:
+    row = dict(row)
+    fallback_ts = row.get("confirmed_ts_ms") or row.get("closed_ts_ms") or int(time.time() * 1000)
+    ts_ms = int(float(confirmed_ts_ms or fallback_ts))
+    row["status"] = "CONFIRMED"
+    row["close_reason"] = note or row.get("close_reason", "signal confirmed")
+    row["is_confirmed"] = "Y"
+    row["confirmed_ts_ms"] = str(ts_ms)
+    row["close_capture_basis"] = "not_due_yet"
+    row["close_anchor_time_ms"] = ""
+    if not str(row.get("send_decision", "")).strip():
+        row["send_decision"] = "UNDECIDED"
+    if not str(row.get("close_trigger_detail", "")).strip():
+        row["close_trigger_detail"] = "signal_confirmed"
+    return app._normalize_row_for_fields(row, app.pending_fields)
+
+
+def sync_confirmed_pending_row(app, setup_id: str, confirmed_ts_ms: Optional[int] = None, note: str = "signal confirmed"):
+    rows = app.read_csv(app.pending_file)
+    changed = False
+    synced_row = None
+    for idx, row in enumerate(rows):
+        row_setup = row.get("setup_id") or row.get("pending_id", "")
+        if row_setup == setup_id:
+            updated = mark_pending_confirmed_fields(app, row, confirmed_ts_ms=confirmed_ts_ms, note=note)
+            rows[idx] = updated
+            synced_row = dict(updated)
+            changed = True
+            break
+    if changed:
+        if synced_row is not None:
+            synced_row = app._enrich_pending_row_for_daily_review(synced_row)
+            for idx, row in enumerate(rows):
+                row_setup = row.get("setup_id") or row.get("pending_id", "")
+                if row_setup == setup_id:
+                    rows[idx] = synced_row
+                    break
+        app.write_csv(app.pending_file, rows, fieldnames=app.pending_fields)
+        return synced_row
+    return None
+
+
+def save_signal(app, s: Signal):
+    if not s.setup_id:
+        s.setup_id = s.signal_id
+    if not getattr(s, "market_regime", ""):
+        s.market_regime = getattr(s, "btc_regime", "unknown")
+    row = app._normalize_row_for_fields(asdict(s), app.signal_fields)
+    app.append_csv(app.signals_file, row, fieldnames=app.signal_fields)
+    synced_pending = sync_confirmed_pending_row(
+        app,
+        s.setup_id,
+        confirmed_ts_ms=int(s.timestamp_ms),
+        note=s.reason or "signal confirmed",
+    )
+    sync_pending_send_decision(app, s.setup_id, "SENT", sent_ts_ms=int(s.timestamp_ms))
+    app.save_review_snapshot(
+        symbol=s.symbol,
+        side=s.side,
+        strategy=s.strategy,
+        stage="confirmed",
+        ts_ms=s.timestamp_ms,
+        breakout_level=s.breakout_level,
+        entry_ref=s.entry_ref,
+        stop=s.stop,
+        tp1=s.tp1,
+        tp2=s.tp2,
+        signal_id=s.signal_id,
+        note=s.reason,
+    )
+    if app.review_runtime:
+        pending_row = synced_pending or app._find_pending_by_setup(s.setup_id)
+        if pending_row:
+            case_day = app._review_case_day(int(pending_row.get("created_ts_ms") or 0))
+            case_id = pending_row.get("pending_id") or pending_row.get("setup_id", "")
+            try:
+                app.review_runtime.register_sent_signal(case_day, case_id, row)
+            except Exception as e:
+                print(f"[review_case warn] register_sent_signal {case_id}: {e}")
+            try:
+                already_captured = app.review_runtime.has_captured_stage(case_day, case_id, "entry_or_confirm")
+            except Exception:
+                already_captured = False
+            if not already_captured:
+                app._capture_and_register_case_stage(pending_row, "entry_or_confirm", int(s.timestamp_ms), note=s.reason, signal_row=row)
+
+
+def save_pending(app, p: PendingSetup):
+    if not p.setup_id:
+        p.setup_id = p.pending_id
+    if not getattr(p, "market_regime", ""):
+        p.market_regime = getattr(p, "btc_regime", "unknown")
+    pending_row = asdict(p)
+    pending_row.setdefault("is_confirmed", "N")
+    pending_row.setdefault("confirmed_ts_ms", "")
+    pending_row.setdefault("is_sent_signal", "N")
+    pending_row.setdefault("sent_ts_ms", "")
+    pending_row.setdefault("semantic_consistency", "Y")
+    pending_row.setdefault("semantic_issue", "")
+    pending_row.setdefault("review_eligible", "Y")
+    pending_row.setdefault("review_exclusion_reason", "")
+    pending_row.setdefault("close_anchor_time_ms", "")
+    pending_row.setdefault("close_capture_basis", "")
+    pending_row.setdefault("close_trigger_detail", "")
+    pending_row.setdefault("confirm_fail_detail", "")
+    pending_row.setdefault("invalidation_detail", "")
+    # Sprint 3A.2 / Phase E: use shared normalizer — single path only.
+    pending_row = enrich_row_with_regime(pending_row)
+    pending_row.setdefault("setup_quality_band", "not_evaluated")
+    pending_row.setdefault("delivery_band", "not_evaluated")
+    pending_row.setdefault("veto_reason_code", "not_evaluated")
+    pending_row.setdefault("dispatch_action", "not_evaluated")
+    pending_row.setdefault("dispatch_confidence_band", "not_evaluated")
+    pending_row.setdefault("dispatch_reason", "not_evaluated")
+    app.append_csv(app.pending_file, app._normalize_row_for_fields(pending_row, app.pending_fields), fieldnames=app.pending_fields)
+    app.save_review_snapshot(
+        symbol=p.symbol,
+        side=p.side,
+        strategy=p.strategy,
+        stage="pending",
+        ts_ms=p.signal_open_time,
+        breakout_level=p.breakout_level,
+        pending_id=p.pending_id,
+        note=p.reason,
+    )
+    if app.review_runtime:
+        app._review_register_pending_case(asdict(p))
+
+
+def sync_pending_send_decision(app, setup_id: str, send_decision: str, skip_reason: str = "", sent_ts_ms: Optional[int] = None):
+    rows = app.read_csv(app.pending_file)
+    changed = False
+    for idx, row in enumerate(rows):
+        row_setup = row.get("setup_id") or row.get("pending_id", "")
+        if row_setup == setup_id:
+            if str(send_decision or "").upper() == "SENT" and (
+                str(row.get("status", "")).upper() != "CONFIRMED"
+                or str(row.get("is_confirmed", "N")).upper() != "Y"
+                or not str(row.get("confirmed_ts_ms", "") or "").strip()
+            ):
+                row = mark_pending_confirmed_fields(
+                    app,
+                    row,
+                    confirmed_ts_ms=int(sent_ts_ms or time.time() * 1000),
+                    note="signal confirmed",
+                )
+            row["send_decision"] = send_decision
+            row["skip_reason"] = skip_reason
+            if str(send_decision or "").upper() == "SENT":
+                row["is_sent_signal"] = "Y"
+                row["sent_ts_ms"] = str(int(sent_ts_ms or time.time() * 1000))
+            rows[idx] = app._normalize_row_for_fields(row, app.pending_fields)
+            changed = True
+            break
+    if changed:
+        changed_row = None
+        for row in rows:
+            row_setup = row.get("setup_id") or row.get("pending_id", "")
+            if row_setup == setup_id:
+                changed_row = dict(row)
+                break
+        if changed_row is not None:
+            changed_row = app._enrich_pending_row_for_daily_review(changed_row)
+            for idx, row in enumerate(rows):
+                row_setup = row.get("setup_id") or row.get("pending_id", "")
+                if row_setup == setup_id:
+                    rows[idx] = changed_row
+                    break
+        app.write_csv(app.pending_file, rows, fieldnames=app.pending_fields)
+    return changed
+
+
+def close_pending(app, pending_id: str, status: str, close_reason: str, bars_waited: int = 0):
+    rows = app.read_csv(app.pending_file)
+    changed = False
+    closed_row = None
+    for idx, row in enumerate(rows):
+        if row.get("pending_id") == pending_id and app._safe_pending_status(row) == "PENDING":
+            row["status"] = status
+            row["close_reason"] = close_reason
+            row["bars_waited"] = bars_waited
+            row["closed_ts_ms"] = int(time.time() * 1000)
+            row["close_trigger_detail"] = close_reason
+            # Sprint 3A.2: normalize regime on every close path so INVALIDATED /
+            # Phase E: use shared normalizer — single path only.
+            row = enrich_row_with_regime(row)
+            if status == "CONFIRMED":
+                row = mark_pending_confirmed_fields(
+                    app,
+                    row,
+                    confirmed_ts_ms=int(row["closed_ts_ms"]),
+                    note=close_reason or "signal confirmed",
+                )
+            else:
+                row["close_anchor_time_ms"] = str(row["closed_ts_ms"])
+                row["close_capture_basis"] = "true_close"
+                if status == "EXPIRED_WAIT":
+                    row["confirm_fail_detail"] = close_reason or "timeout_no_followthrough"
+                elif status == "INVALIDATED":
+                    row["invalidation_detail"] = close_reason or "invalidated"
+            if status == "CONFIRMED" and not str(row.get("send_decision", "")).strip():
+                row["send_decision"] = "UNDECIDED"
+            rows[idx] = app._normalize_row_for_fields(row, app.pending_fields)
+            changed = True
+            closed_row = dict(rows[idx])
+            break
+    if changed:
+        if closed_row is not None:
+            closed_row = app._enrich_pending_row_for_daily_review(closed_row)
+            for idx, row in enumerate(rows):
+                if row.get("pending_id") == pending_id:
+                    rows[idx] = closed_row
+                    break
+        app.write_csv(app.pending_file, rows, fieldnames=app.pending_fields)
+        if app.review_runtime and closed_row:
+            case_day = app._review_case_day(int(closed_row.get("created_ts_ms") or 0))
+            case_id = closed_row.get("pending_id") or closed_row.get("setup_id", "")
+            if status == "CONFIRMED":
+                try:
+                    app.review_runtime.register_confirmed(case_day, case_id, closed_row)
+                except Exception as e:
+                    print(f"[review_case warn] register_confirmed pending {pending_id}: {e}")
+                stage_ts = int(closed_row.get("closed_ts_ms") or int(time.time() * 1000))
+                app._capture_and_register_case_stage(closed_row, "entry_or_confirm", stage_ts, note=close_reason)
+            else:
+                try:
+                    app.review_runtime.register_close(case_day, case_id, closed_row)
+                except Exception as e:
+                    print(f"[review_case warn] register_close pending {pending_id}: {e}")
+                stage_ts = int(closed_row.get("closed_ts_ms") or int(time.time() * 1000))
+                app._capture_and_register_case_stage(closed_row, "case_close", stage_ts, note=close_reason)
+    return changed
+
+
+def close_signal(app, signal_row: Dict, outcome: str, r_multiple: float, bars_checked: int, close_reason: str, mfe_pct: float = 0.0, mae_pct: float = 0.0):
+    results = app.read_csv(app.results_file)
+    result_row = {
+        "signal_id": signal_row.get("signal_id", ""),
+        "setup_id": signal_row.get("setup_id", signal_row.get("signal_id", "")),
+        "timestamp_ms": signal_row.get("timestamp_ms", ""),
+        "symbol": signal_row.get("symbol", ""),
+        "side": signal_row.get("side", ""),
+        "entry_ref": signal_row.get("entry_ref", ""),
+        "stop": signal_row.get("stop", ""),
+        "tp1": signal_row.get("tp1", ""),
+        "tp2": signal_row.get("tp2", ""),
+        "outcome": outcome,
+        "r_multiple": f"{r_multiple:.4f}",
+        "bars_checked": bars_checked,
+        "close_time_ms": int(time.time() * 1000),
+        "close_reason": close_reason,
+        "config_version": signal_row.get("config_version", ""),
+        "strategy": signal_row.get("strategy", signal_row.get("side", "")),
+        "market_regime": signal_row.get("market_regime", signal_row.get("btc_regime", "unknown")),
+        "btc_price": signal_row.get("btc_price", ""),
+        "btc_24h_change_pct": signal_row.get("btc_24h_change_pct", ""),
+        "btc_4h_change_pct": signal_row.get("btc_4h_change_pct", ""),
+        "btc_1h_change_pct": signal_row.get("btc_1h_change_pct", ""),
+        "btc_24h_range_pct": signal_row.get("btc_24h_range_pct", ""),
+        "btc_4h_range_pct": signal_row.get("btc_4h_range_pct", ""),
+        "alt_market_breadth_pct": signal_row.get("alt_market_breadth_pct", ""),
+        "btc_regime": signal_row.get("btc_regime", ""),
+        "risk_pct_real": signal_row.get("risk_pct_real", ""),
+        "sl_distance_pct": signal_row.get("sl_distance_pct", ""),
+        "tp1_distance_pct": signal_row.get("tp1_distance_pct", ""),
+        "tp2_distance_pct": signal_row.get("tp2_distance_pct", ""),
+        "break_distance_pct": signal_row.get("break_distance_pct", ""),
+        "retest_depth_pct": signal_row.get("retest_depth_pct", ""),
+        "score_oi": signal_row.get("score_oi", ""),
+        "score_exhaustion": signal_row.get("score_exhaustion", ""),
+        "score_breakout": signal_row.get("score_breakout", ""),
+        "score_retest": signal_row.get("score_retest", ""),
+        "reason_tags": signal_row.get("reason_tags", ""),
+        "stop_was_forced_min_risk": signal_row.get("stop_was_forced_min_risk", ""),
+        "mfe_pct": f"{mfe_pct:.4f}",
+        "mae_pct": f"{mae_pct:.4f}",
+        "manual_tradable": signal_row.get("manual_tradable", ""),
+        "manual_trade_note": signal_row.get("manual_trade_note", ""),
+    }
+    results.append(app._normalize_row_for_fields(result_row, app.result_fields))
+    app.write_csv(app.results_file, results, fieldnames=app.result_fields)
+
+    try:
+        app.save_review_snapshot(
+            symbol=signal_row.get("symbol", ""),
+            side=signal_row.get("side", ""),
+            strategy=app.infer_legacy_strategy(signal_row),
+            stage="closed",
+            ts_ms=int(result_row.get("close_time_ms") or signal_row.get("timestamp_ms") or 0),
+            breakout_level=float(signal_row.get("breakout_level") or 0.0) if signal_row.get("breakout_level") else None,
+            entry_ref=float(signal_row.get("entry_ref") or 0.0) if signal_row.get("entry_ref") else None,
+            stop=float(signal_row.get("stop") or 0.0) if signal_row.get("stop") else None,
+            tp1=float(signal_row.get("tp1") or 0.0) if signal_row.get("tp1") else None,
+            tp2=float(signal_row.get("tp2") or 0.0) if signal_row.get("tp2") else None,
+            signal_id=signal_row.get("signal_id", ""),
+            outcome=outcome,
+            note=f"{outcome} | r={r_multiple:.2f} | {close_reason}",
+        )
+    except Exception as e:
+        print(f"[snapshot warn] close_signal {signal_row.get('signal_id')}: {e}")
+
+    if app.review_runtime:
+        pending_row = app._find_pending_by_setup(signal_row.get("setup_id", signal_row.get("signal_id", "")))
+        if pending_row:
+            case_day = app._review_case_day(int(pending_row.get("created_ts_ms") or 0))
+            case_id = pending_row.get("pending_id") or pending_row.get("setup_id", "")
+            try:
+                app.review_runtime.register_close(case_day, case_id, result_row)
+            except Exception as e:
+                print(f"[review_case warn] register_close signal {case_id}: {e}")
+            app._capture_and_register_case_stage(
+                pending_row,
+                "case_close",
+                int(result_row.get("close_time_ms") or int(time.time() * 1000)),
+                note=f"{outcome} | {close_reason}",
+                signal_row=signal_row,
+            )
+
+    signals = app.read_csv(app.signals_file)
+    for row in signals:
+        if row.get("signal_id") == signal_row.get("signal_id"):
+            row["status"] = outcome
+    app.write_csv(app.signals_file, signals, fieldnames=app.signal_fields)
+
+    print(f"[close] {signal_row.get('symbol','')} {signal_row.get('side','')} | {outcome} | r={r_multiple:.2f} | {close_reason}")
+    if app.cfg.get("telegram", {}).get("send_close_notifications", True):
+        try:
+            app.telegram_send(app.format_close_message(signal_row, outcome, r_multiple, close_reason))
+        except Exception as e:
+            print(f"[telegram close error] {e}")

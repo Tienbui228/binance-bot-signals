@@ -1,0 +1,54 @@
+{
+  "case_id": "LTCUSDT-SHORT-EXH-1775364300000",
+  "symbol": "LTCUSDT",
+  "side": "SHORT",
+  "strategy": "short_exhaustion_retest",
+  "case_day": "2026-04-05",
+  "signal_time_local": "2026-04-05 11:45:00",
+  "created_time_local": "2026-04-05 12:01:43",
+  "confirmed_time_local": "2026-04-05 12:17:54",
+  "sent_time_local": "",
+  "close_time_local": "",
+  "fallback_close_due_time_local": "2026-04-05 16:01:43",
+  "status_final": "CONFIRMED",
+  "close_reason": "",
+  "is_confirmed": "Y",
+  "is_sent_signal": "N",
+  "case_close_type": "not_due_yet",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "full",
+  "lifecycle_complete": "N",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "N",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260405/LTCUSDT_SHORT_short_exhaustion_retest_LTCUSDT-SHORT-EXH-1775364300000_pre_pending_1775363400000.png",
+      "note": "pre_pending context"
+    },
+    "pending_open": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260405/LTCUSDT_SHORT_short_exhaustion_retest_LTCUSDT-SHORT-EXH-1775364300000_pending_1775365303087.png",
+      "note": "pending_open | created_ts_ms=1775365303087"
+    },
+    "entry_or_confirm": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260405/LTCUSDT_SHORT_short_exhaustion_retest_confirmed_1775366274143.png",
+      "note": "signal confirmed"
+    },
+    "case_close": {
+      "stage_status": "not_reached_yet",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": "",
+      "case_close_type": "not_due_yet"
+    }
+  }
+}

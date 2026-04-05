@@ -213,6 +213,15 @@ def close_pending(app, pending_id: str, status: str, close_reason: str, bars_wai
                     row["invalidation_detail"] = close_reason or "invalidated"
             if status == "CONFIRMED" and not str(row.get("send_decision", "")).strip():
                 row["send_decision"] = "UNDECIDED"
+            # Phase 5A: persist explicit dispatch trace for non-CONFIRMED terminal cases.
+            # CONFIRMED rows get dispatch trace from _update_pending_dispatch_trace()
+            # in scan_once() after routing. All other terminal statuses are closed
+            # before dispatch runs — mark explicitly.
+            if status != "CONFIRMED":
+                if (row.get("dispatch_action") or "not_evaluated") == "not_evaluated":
+                    row["dispatch_action"] = "not_routed"
+                    row["dispatch_confidence_band"] = "none"
+                    row["dispatch_reason"] = "closed_before_dispatch"
             rows[idx] = app._normalize_row_for_fields(row, app.pending_fields)
             changed = True
             closed_row = dict(rows[idx])

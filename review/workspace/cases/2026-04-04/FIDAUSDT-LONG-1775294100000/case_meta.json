@@ -1,0 +1,54 @@
+{
+  "case_id": "FIDAUSDT-LONG-1775294100000",
+  "symbol": "FIDAUSDT",
+  "side": "LONG",
+  "strategy": "long_breakout_retest",
+  "case_day": "2026-04-04",
+  "signal_time_local": "2026-04-04 16:15:00",
+  "created_time_local": "2026-04-04 16:21:42",
+  "confirmed_time_local": "",
+  "sent_time_local": "",
+  "close_time_local": "",
+  "fallback_close_due_time_local": "2026-04-04 20:21:42",
+  "status_final": "INVALIDATED",
+  "close_reason": "acceptance_floor_lost 0.021270<0.021446",
+  "is_confirmed": "N",
+  "is_sent_signal": "N",
+  "case_close_type": "true_close",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "partial",
+  "lifecycle_complete": "Y",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "Y",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "missing_unexpected",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "pending_open": {
+      "stage_status": "missing_unexpected",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "entry_or_confirm": {
+      "stage_status": "not_applicable",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "case_close": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260404/FIDAUSDT_LONG_long_breakout_retest_closed_1775295148545.png",
+      "note": "acceptance_floor_lost 0.021270<0.021446",
+      "case_close_type": "true_close"
+    }
+  }
+}

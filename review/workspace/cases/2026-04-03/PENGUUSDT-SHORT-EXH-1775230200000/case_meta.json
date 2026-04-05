@@ -1,0 +1,54 @@
+{
+  "case_id": "PENGUUSDT-SHORT-EXH-1775230200000",
+  "symbol": "PENGUUSDT",
+  "side": "SHORT",
+  "strategy": "short_exhaustion_retest",
+  "case_day": "2026-04-03",
+  "signal_time_local": "2026-04-03 22:30:00",
+  "created_time_local": "2026-04-03 22:45:35",
+  "confirmed_time_local": "",
+  "sent_time_local": "",
+  "close_time_local": "",
+  "fallback_close_due_time_local": "2026-04-04 02:45:35",
+  "status_final": "EXPIRED_WAIT",
+  "close_reason": "retest wait expired",
+  "is_confirmed": "N",
+  "is_sent_signal": "N",
+  "case_close_type": "true_close",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "partial",
+  "lifecycle_complete": "Y",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "Y",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "capture_failed",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": "pre_fix_backfill_v2 — was missing_unexpected, snapshot was never taken (Sprint 3A.2 bug)"
+    },
+    "pending_open": {
+      "stage_status": "capture_failed",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": "pre_fix_backfill_v2 — was missing_unexpected, snapshot was never taken (Sprint 3A.2 bug)"
+    },
+    "entry_or_confirm": {
+      "stage_status": "not_applicable",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "case_close": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260403/PENGUUSDT_SHORT_short_exhaustion_retest_closed_1775233903476.png",
+      "note": "retest wait expired",
+      "case_close_type": "true_close"
+    }
+  }
+}
