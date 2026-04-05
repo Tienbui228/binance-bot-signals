@@ -18,6 +18,7 @@ from scanner.strategies.short_exhaustion_retest import build_pending_short_exhau
 from scanner.dispatch.router import route_dispatch_v1
 from scanner.regime.classifier import classify_regime
 from scanner import lifecycle as lifecycle_mod
+from scanner import review_service as review_svc
 from regime.regime_normalizer import enrich_row_with_regime
 
 try:
@@ -28,7 +29,7 @@ except Exception:
 BASE_FAPI = "https://fapi.binance.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "livefix-2026-03-19-06"
+CODE_BUILD_ID = "lifecycle-fix-2026-04-05"
 CODE_BUILD_SOURCE = "version-marker-fix-on-live-file"
 CODE_BUILD_NOTE = "Adds trustworthy runtime build marker and startup build logs so live code version is explicit."
 
@@ -1130,12 +1131,8 @@ class BinanceScanner:
         return datetime.fromtimestamp(max(int(created_ts_ms), 0) / 1000.0, tz=timezone.utc).astimezone(tz).strftime("%Y-%m-%d")
 
     def _review_register_stage(self, case_day: str, case_id: str, stage: str, image_path: Optional[str], note: str = ""):
-        if not self.review_runtime:
-            return
-        try:
-            self.review_runtime.register_stage_image(case_day, case_id, stage, image_path, note=note)
-        except Exception as e:
-            print(f"[review_case warn] register_stage {case_id} {stage}: {e}")
+        # Delegated to review_service — tries multiple stage name aliases.
+        review_svc._review_register_stage(self, case_day, case_id, stage, image_path, note=note)
 
     def _capture_and_register_case_stage(self, pending_row: Dict, stage: str, ts_ms: int, note: str = "", signal_row: Optional[Dict] = None):
         if not self.review_runtime:
@@ -1172,16 +1169,8 @@ class BinanceScanner:
             return None
 
     def _review_register_pending_case(self, pending_row: Dict):
-        if not self.review_runtime:
-            return
-        try:
-            rec = self.review_runtime.ensure_case(pending_row)
-            bar_ms = self._bar_interval_ms_for_strategy(pending_row.get("strategy", ""))
-            pre_ts = max(int(pending_row.get("signal_open_time") or 0) - bar_ms, 0)
-            self._capture_and_register_case_stage(pending_row, "pre_pending", pre_ts, note="pre_pending context")
-            self._capture_and_register_case_stage(pending_row, "pending_open", int(pending_row.get("signal_open_time") or 0), note=pending_row.get("reason", "pending_open"))
-        except Exception as e:
-            print(f"[review_case warn] register_pending_case {pending_row.get('pending_id','')}: {e}")
+        # Delegated to review_service.
+        review_svc._review_register_pending_case(self, pending_row)
 
     def _find_pending_row(self, pending_id: str) -> Optional[Dict]:
         rows = self.read_csv(self.pending_file)
@@ -1199,47 +1188,12 @@ class BinanceScanner:
         return None
 
     def collect_due_case_close_fallbacks(self):
-        if not self.review_runtime:
-            return
-        now_ms = int(time.time() * 1000)
-        rows = self.read_csv(self.pending_file)
-        processed = 0
-        max_per_round = int(self.cfg.get("review_case_system", {}).get("fallback_max_per_round", 6))
-        for row in rows:
-            if processed >= max_per_round:
-                break
-            status = str(row.get("status", "") or "").upper()
-            created_ms = int(float(row.get("created_ts_ms") or 0)) if row.get("created_ts_ms") not in (None, "") else 0
-            if not created_ms:
-                continue
-            due_ms = created_ms + self.review_case_fallback_close_hours * 3600 * 1000
-            case_day = self._review_case_day(created_ms)
-            case_id = row.get("pending_id") or row.get("setup_id", "")
-            case_meta = None
-            try:
-                case_meta = self.review_runtime._load_case(case_day, case_id)
-            except Exception:
-                case_meta = None
-            already_has = bool(case_meta and getattr(case_meta, "has_case_close_image", "N") == "Y")
-            if already_has:
-                continue
-            if status == "PENDING" and now_ms >= due_ms:
-                note = f"fallback_case_close_after_{self.review_case_fallback_close_hours}h"
-                self._capture_and_register_case_stage(row, "case_close", now_ms, note=note)
-                processed += 1
-            elif status != "PENDING":
-                close_ts = int(float(row.get("closed_ts_ms") or now_ms)) if row.get("closed_ts_ms") not in (None, "") else now_ms
-                note = row.get("close_reason", status)
-                self._capture_and_register_case_stage(row, "case_close", close_ts, note=note)
-                processed += 1
+        # Delegated to review_service.
+        review_svc.collect_due_case_close_fallbacks(self)
 
     def build_daily_review_pack(self, case_day: str, debug: bool = False):
-        if not self.review_case_system_enabled:
-            print("[review_case] disabled in config")
-            return False
-        if not self.review_builder_script.exists():
-            print(f"[review_case warn] builder script not found: {self.review_builder_script}")
-            return False
+        # Delegated to review_service — includes backfill before build.
+        return review_svc.build_daily_review_pack(self, case_day, debug=debug)
 
         try:
             all_rows = self.read_csv(self.pending_file)
@@ -1399,20 +1353,23 @@ class BinanceScanner:
         pending_row["dispatch_confidence_band"] = pending_row.get("dispatch_confidence_band") or "not_evaluated"
         pending_row["dispatch_reason"] = pending_row.get("dispatch_reason") or "not_evaluated"
         self.append_csv(self.pending_file, self._normalize_row_for_fields(pending_row, self.pending_fields), fieldnames=self.pending_fields)
-        self.save_review_snapshot(
-            symbol=p.symbol,
-            side=p.side,
-            strategy=p.strategy,
-            stage="pending",
-            ts_ms=p.signal_open_time,
-            breakout_level=p.breakout_level,
-            entry_ref=p.entry_ref,
-            stop=p.stop,
-            tp1=p.tp1,
-            tp2=p.tp2,
-            pending_id=p.pending_id,
-            note=p.reason,
-        )
+        try:
+            self.save_review_snapshot(
+                symbol=p.symbol,
+                side=p.side,
+                strategy=p.strategy,
+                stage="pending",
+                ts_ms=p.signal_open_time,
+                breakout_level=p.breakout_level,
+                entry_ref=p.entry_ref,
+                stop=p.stop,
+                tp1=p.tp1,
+                tp2=p.tp2,
+                pending_id=p.pending_id,
+                note=p.reason,
+            )
+        except Exception as _snap_e:
+            print(f"[snapshot warn] save_pending {p.pending_id}: {_snap_e}")
         if self.review_runtime:
             try:
                 self._review_register_pending_case(pending_row)

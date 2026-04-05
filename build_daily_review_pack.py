@@ -819,7 +819,18 @@ def s_h(doc, data: ReportData):
 
     regime_ok   = sum(1 for r in data.owner_rows if r.get("regime_label","") in VALID_3A_LABELS)
     fit_ok      = sum(1 for r in data.owner_rows if r.get("regime_fit_for_strategy","") in VALID_FIT)
+    # dispatch_action is only meaningful for confirmed rows that went through the router
     dispatch_ok = sum(1 for r in data.owner_rows if r.get("dispatch_action","") not in ("not_evaluated","",None))
+    # Flag GAPS when confirmed rows have dispatch=not_evaluated (renderer bug: was always True)
+    confirmed_with_dispatch = sum(
+        1 for r in data.owner_rows
+        if r.get("dispatch_action","") not in ("not_evaluated","",None)
+        and yn(r.get("is_confirmed"))=="Y"
+    )
+    dispatch_ok_for_confirmed = (
+        confirmed_with_dispatch >= len(data.confirmed_rows)
+        or len(data.confirmed_rows)==0
+    )
     setup_ok    = sum(1 for r in data.owner_rows if r.get("setup_quality_band","") not in ("not_evaluated","",None))
 
     tbl = make_table(doc, ["Field","Populated","Coverage","Status"],
@@ -827,7 +838,7 @@ def s_h(doc, data: ReportData):
     for i, (field, pop, ok) in enumerate([
         ("regime_label (3A set)",    regime_ok,   data.legacy_count==0),
         ("regime_fit_for_strategy",  fit_ok,      data.not_eval_fit==0),
-        ("dispatch_action",          dispatch_ok, True),
+        ("dispatch_action",          dispatch_ok, dispatch_ok_for_confirmed),
         ("setup_quality_band",       setup_ok,    True),
     ]):
         bgs = [CLR_ROW_ALT if i%2 else CLR_WHITE]*3 + [CLR_GREEN_BG if ok else CLR_AMBER_BG]
@@ -960,34 +971,48 @@ def s_k(doc, data: ReportData):
                         ] if l])
 
         doc.add_paragraph("Post-Close Outcome", style="CaseTitle")
+        # Renderer improvement: show explicit status when outcome not available yet.
+        # Do not show blank fields — blank looks like a bug; explicit text is honest.
+        _o1_avail = yn(row.get("outcome_1h_available")) == "Y"
+        _o2_avail = yn(row.get("outcome_2h_available")) == "Y"
+        _close_notes = str(row.get("post_close_outcome_notes") or "")
+        _na = "not_available_yet"
+        _reason = _close_notes if _close_notes else _na
+
+        def _fv(key):
+            """Format outcome float value — blank → not_available_yet."""
+            v = str(row.get(key) or "").strip()
+            return v if v else _na
+
         add_kv_table(doc, [
             ("1h outcome",
              f"available={yn(row.get('outcome_1h_available'))} | "
-             f"favor={row.get('future_1h_max_favor_pct','')} | "
-             f"adverse={row.get('future_1h_max_adverse_pct','')}"),
+             + (f"favor={_fv('future_1h_max_favor_pct')} | adverse={_fv('future_1h_max_adverse_pct')}"
+                if _o1_avail else f"reason={_reason}")),
             ("2h outcome",
              f"available={yn(row.get('outcome_2h_available'))} | "
-             f"favor={row.get('future_2h_max_favor_pct','')} | "
-             f"adverse={row.get('future_2h_max_adverse_pct','')}"),
+             + (f"favor={_fv('future_2h_max_favor_pct')} | adverse={_fv('future_2h_max_adverse_pct')}"
+                if _o2_avail else f"reason={_reason}")),
             ("4h reference",
-             f"favor={row.get('future_4h_max_favor_pct','')} | "
-             f"adverse={row.get('future_4h_max_adverse_pct','')}"),
+             (f"favor={_fv('future_4h_max_favor_pct')} | adverse={_fv('future_4h_max_adverse_pct')}"
+              if _o2_avail else _na)),
             ("Reclaim",
-             f"2h={row.get('reclaim_breakout_2h_YN','')} | "
-             f"4h={row.get('reclaim_breakout_4h_YN','')}"),
+             (f"2h={row.get('reclaim_breakout_2h_YN','')} | 4h={row.get('reclaim_breakout_4h_YN','')}"
+              if _o2_avail else _na)),
             ("Execution",
-             f"entry_feasible={row.get('entry_feasible_YN','')} | "
-             f"window={row.get('entry_feasible_window_minutes','')}m | "
-             f"note={row.get('entry_execution_note','')}"),
+             f"entry_feasible={row.get('entry_feasible_YN','') or _na} | "
+             f"window={row.get('entry_feasible_window_minutes','') or _na}m | "
+             f"note={row.get('entry_execution_note','') or _na}"),
             ("Time-to-move",
-             f"to_favor={row.get('time_to_max_favor_minutes','')}m | "
-             f"to_adverse={row.get('time_to_max_adverse_minutes','')}m"),
+             (f"to_favor={row.get('time_to_max_favor_minutes','')}m | "
+              f"to_adverse={row.get('time_to_max_adverse_minutes','')}m"
+              if _o2_avail else _na)),
             ("Regret filter",
-             f"regret_valid={row.get('regret_valid_YN','')} | "
-             f"reason={row.get('regret_filter_reason','')}"),
+             f"regret_valid={row.get('regret_valid_YN','') or _na} | "
+             f"reason={row.get('regret_filter_reason','') or _na}"),
             ("Conclusion",
-             f"{row.get('outcome_conclusion_code','')} | "
-             f"notes={row.get('post_close_outcome_notes','')}"),
+             f"{row.get('outcome_conclusion_code','') or _na} | "
+             f"notes={_close_notes or _na}"),
         ])
         doc.add_paragraph("Review placeholders", style="CaseTitle")
         doc.add_paragraph(

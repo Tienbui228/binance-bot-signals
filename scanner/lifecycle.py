@@ -5,6 +5,7 @@ from dataclasses import asdict
 from typing import Dict, Optional
 
 from scanner.domain import PendingSetup, Signal
+from regime.regime_normalizer import enrich_row_with_regime
 
 
 def mark_pending_confirmed_fields(app, row: Dict, confirmed_ts_ms: Optional[int] = None, note: str = "signal confirmed") -> Dict:
@@ -113,17 +114,8 @@ def save_pending(app, p: PendingSetup):
     pending_row.setdefault("close_trigger_detail", "")
     pending_row.setdefault("confirm_fail_detail", "")
     pending_row.setdefault("invalidation_detail", "")
-    # Sprint 3A.2: always normalize regime label through the 3A normalizer,
-    # never persist raw market_regime / btc_regime values (which may be legacy).
-    _raw_label = pending_row.get("regime_label") or pending_row.get("market_regime") or pending_row.get("btc_regime") or ""
-    pending_row["regime_label"] = app._normalize_regime_label_value(_raw_label)
-    _existing_fit = str(pending_row.get("regime_fit_for_strategy") or "").strip()
-    if _existing_fit not in ("LOW", "MEDIUM", "HIGH"):
-        pending_row["regime_fit_for_strategy"] = app._derive_regime_fit_for_strategy(
-            pending_row.get("strategy", ""),
-            pending_row.get("side", ""),
-            pending_row["regime_label"],
-        )
+    # Sprint 3A.2 / Phase E: use shared normalizer — single path only.
+    pending_row = enrich_row_with_regime(pending_row)
     pending_row.setdefault("setup_quality_band", "not_evaluated")
     pending_row.setdefault("delivery_band", "not_evaluated")
     pending_row.setdefault("veto_reason_code", "not_evaluated")
@@ -131,16 +123,19 @@ def save_pending(app, p: PendingSetup):
     pending_row.setdefault("dispatch_confidence_band", "not_evaluated")
     pending_row.setdefault("dispatch_reason", "not_evaluated")
     app.append_csv(app.pending_file, app._normalize_row_for_fields(pending_row, app.pending_fields), fieldnames=app.pending_fields)
-    app.save_review_snapshot(
-        symbol=p.symbol,
-        side=p.side,
-        strategy=p.strategy,
-        stage="pending",
-        ts_ms=p.signal_open_time,
-        breakout_level=p.breakout_level,
-        pending_id=p.pending_id,
-        note=p.reason,
-    )
+    try:
+        app.save_review_snapshot(
+            symbol=p.symbol,
+            side=p.side,
+            strategy=p.strategy,
+            stage="pending",
+            ts_ms=p.signal_open_time,
+            breakout_level=p.breakout_level,
+            pending_id=p.pending_id,
+            note=p.reason,
+        )
+    except Exception as _snap_e:
+        print(f"[snapshot warn] save_pending {p.pending_id}: {_snap_e}")
     if app.review_runtime:
         app._review_register_pending_case(asdict(p))
 
@@ -200,16 +195,8 @@ def close_pending(app, pending_id: str, status: str, close_reason: str, bars_wai
             row["closed_ts_ms"] = int(time.time() * 1000)
             row["close_trigger_detail"] = close_reason
             # Sprint 3A.2: normalize regime on every close path so INVALIDATED /
-            # EXPIRED_WAIT rows never carry legacy labels.
-            _raw_label = row.get("regime_label") or row.get("market_regime") or row.get("btc_regime") or ""
-            row["regime_label"] = app._normalize_regime_label_value(_raw_label)
-            _existing_fit = str(row.get("regime_fit_for_strategy") or "").strip()
-            if _existing_fit not in ("LOW", "MEDIUM", "HIGH"):
-                row["regime_fit_for_strategy"] = app._derive_regime_fit_for_strategy(
-                    row.get("strategy", ""),
-                    row.get("side", ""),
-                    row["regime_label"],
-                )
+            # Phase E: use shared normalizer — single path only.
+            row = enrich_row_with_regime(row)
             if status == "CONFIRMED":
                 row = mark_pending_confirmed_fields(
                     app,
