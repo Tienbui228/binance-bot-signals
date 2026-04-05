@@ -474,9 +474,17 @@ class ReportData:
         self.clean_confirmed = len(self.confirmed_rows) - len(self.broken_confirmed)
         self.sent_no_ts      = sum(1 for r in self.sent_rows
                                    if not str(r.get("sent_ts_ms") or "").strip())
+        # Bug 1 fix: only count truly terminal rows (INVALIDATED / EXPIRED_WAIT)
+        # that have a real closed_ts_ms but are missing close_reason.
+        # CONFIRMED rows with case_close_type=not_due_yet must NOT be counted —
+        # they have closed_ts_ms set at confirm time, but the case is not yet closed.
+        _TERMINAL_STATUSES = {"INVALIDATED", "EXPIRED_WAIT"}
         self.closed_no_reason = sum(
             1 for r in rows
-            if str(r.get("closed_ts_ms") or "").strip()
+            if str(r.get("status", "")).strip().upper() in _TERMINAL_STATUSES
+            and str(r.get("closed_ts_ms") or "").strip()
+            and str(r.get("closed_ts_ms") or "").strip()
+                not in ("not_reached_yet", "0", "")
             and not str(r.get("close_reason") or "").strip()
         )
         self.semantic_health_ok = (
@@ -833,16 +841,28 @@ def s_h(doc, data: ReportData):
     )
     setup_ok    = sum(1 for r in data.owner_rows if r.get("setup_quality_band","") not in ("not_evaluated","",None))
 
+    # Bug 2 fix: when there are no confirmed rows, dispatch_action coverage
+    # is N/A — not OK and not GAPS. Showing 0%/OK is misleading.
+    if len(data.confirmed_rows) == 0:
+        dispatch_status_label = "N/A"
+        dispatch_status_bg    = CLR_AMBER_BG
+    elif dispatch_ok_for_confirmed:
+        dispatch_status_label = "OK"
+        dispatch_status_bg    = CLR_GREEN_BG
+    else:
+        dispatch_status_label = "GAPS"
+        dispatch_status_bg    = CLR_AMBER_BG
+
     tbl = make_table(doc, ["Field","Populated","Coverage","Status"],
                      [2.4, 0.9, 0.9, 1.0])
-    for i, (field, pop, ok) in enumerate([
-        ("regime_label (3A set)",    regime_ok,   data.legacy_count==0),
-        ("regime_fit_for_strategy",  fit_ok,      data.not_eval_fit==0),
-        ("dispatch_action",          dispatch_ok, dispatch_ok_for_confirmed),
-        ("setup_quality_band",       setup_ok,    True),
+    for i, (field, pop, ok, status_label, status_bg) in enumerate([
+        ("regime_label (3A set)",   regime_ok, data.legacy_count==0,        "OK" if data.legacy_count==0   else "GAPS", CLR_GREEN_BG if data.legacy_count==0   else CLR_AMBER_BG),
+        ("regime_fit_for_strategy", fit_ok,    data.not_eval_fit==0,         "OK" if data.not_eval_fit==0   else "GAPS", CLR_GREEN_BG if data.not_eval_fit==0   else CLR_AMBER_BG),
+        ("dispatch_action",         dispatch_ok, dispatch_ok_for_confirmed,  dispatch_status_label,                       dispatch_status_bg),
+        ("setup_quality_band",      setup_ok,  True,                         "OK",                                        CLR_GREEN_BG),
     ]):
-        bgs = [CLR_ROW_ALT if i%2 else CLR_WHITE]*3 + [CLR_GREEN_BG if ok else CLR_AMBER_BG]
-        add_row(tbl, [field, str(pop), data.pct(pop), "OK" if ok else "GAPS"],
+        bgs = [CLR_ROW_ALT if i%2 else CLR_WHITE]*3 + [status_bg]
+        add_row(tbl, [field, str(pop), data.pct(pop), status_label],
                 [2.4,0.9,0.9,1.0], bgs=bgs)
     doc.add_paragraph()
 
