@@ -249,6 +249,16 @@ def build_case_row(
         decision_grade=grade,
     )
 
+    # --- new canonical fields ---
+    anc_quality  = _derive_anchor_quality_flag(anchors)
+    anc_conflict = _derive_anchor_conflict_flag(anchors)
+    anc_validity = _derive_anchor_validity_reason(anchors)
+    data_conf    = conf["classification_confidence"]
+    interv_conf  = _derive_intervention_confidence(
+        grade, strat["existing_strategy_fit_confidence"], data_conf, caution, anc_conflict
+    )
+    p4_trigger   = _derive_p4_trigger(anchors.p4)
+
     # --- range expansion ---
     range_exp = compute_range_expansion_ratio(
         p3_bar=anchors.p3.bar if anchors.p3 else None,
@@ -350,6 +360,13 @@ def build_case_row(
         "anchor_detect_method": move.detection_method,
         "data_quality_ok":   "Y" if move.data_quality_ok else "N",
         "data_quality_note": move.data_quality_note or "",
+        # Canonical new fields
+        "anchor_quality_flag":     anc_quality,
+        "anchor_conflict_flag":    anc_conflict,
+        "anchor_validity_reason":  anc_validity,
+        "p4_resolution_trigger":   p4_trigger,
+        "data_confidence":         data_conf,
+        "intervention_confidence": interv_conf,
     }
     return row
 
@@ -422,3 +439,88 @@ def _classify_research_verdict(struct_q, part_pat, data_ok):
     if struct_q in ("repeated_test_then_break","shallow_pullback_continuation"):
         return "worth_monitoring"
     return "skip"
+
+
+# ---------------------------------------------------------------------------
+# New helpers for canonical case dataset fields
+# ---------------------------------------------------------------------------
+
+def _derive_anchor_quality_flag(anchors) -> str:
+    p2 = anchors.p2
+    if p2 is None:
+        return "LOW"
+    if (p2.break_quality_band in ("clean", "strong")
+            and (p2.auto_confidence or 0) >= 0.6
+            and not p2.fallback_used
+            and anchors.p3 and not anchors.p3.fallback_used):
+        return "HIGH"
+    if (p2.break_quality_band in ("clean", "strong")
+            or ((p2.auto_confidence or 0) >= 0.4 and not p2.fallback_used)):
+        return "MEDIUM"
+    return "LOW"
+
+
+def _derive_anchor_conflict_flag(anchors) -> str:
+    for ap in [anchors.p0, anchors.p1, anchors.p2, anchors.p3]:
+        if ap and ap.fallback_used:
+            return "Y"
+    return "N"
+
+
+def _derive_anchor_validity_reason(anchors) -> str:
+    notes = []
+    if anchors.p1 and anchors.p1.fallback_used:
+        notes.append("p1_no_ignition")
+    if anchors.p2 and anchors.p2.fallback_used:
+        notes.append("p2_no_clean_break")
+    if anchors.p3 and anchors.p3.fallback_used:
+        notes.append("p3_at_p2")
+    return "_".join(notes) if notes else "all_anchors_auto_detected"
+
+
+def _derive_p4_trigger(p4) -> str:
+    if p4 is None:
+        return "not_reached"
+    if p4.fallback_used:
+        return "timeout"
+    conf = p4.auto_confidence or 0
+    if conf >= 0.75:
+        return "structure_loss"
+    if conf >= 0.65:
+        return "expansion_cool"
+    return "timeout"
+
+
+def _derive_intervention_confidence(
+    decision_grade: str,
+    fit_confidence: str,
+    data_confidence: str,
+    caution_flag: str,
+    anchor_conflict_flag: str,
+) -> str:
+    grade = decision_grade or ""
+    fit   = fit_confidence or ""
+    _ord  = ["HIGH", "MEDIUM", "LOW"]
+
+    base = fit if (grade == "OLD_STRATEGY_IMPROVEMENT_CANDIDATE" and fit in _ord) else "LOW"
+    if grade == "OLD_STRATEGY_IMPROVEMENT_CANDIDATE" and base == "LOW":
+        base = "MEDIUM"  # default for improvement candidates without explicit fit
+
+    downgrade = (
+        data_confidence == "LOW"
+        or caution_flag == "Y"
+        or anchor_conflict_flag == "Y"
+    )
+    if downgrade:
+        idx  = _ord.index(base) if base in _ord else 2
+        base = _ord[min(idx + 1, 2)]
+
+    # Cap at MEDIUM unless explicit OLD_IMPROVEMENT + HIGH fit + no downgrade triggers
+    if base == "HIGH" and not (
+        grade == "OLD_STRATEGY_IMPROVEMENT_CANDIDATE"
+        and fit == "HIGH"
+        and not downgrade
+    ):
+        base = "MEDIUM"
+
+    return base

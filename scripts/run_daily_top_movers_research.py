@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from research.top_movers.research_binance_client import ResearchBinanceClient
 from research.top_movers.io import (
     ensure_output_dirs, day_window_ms, lookback_start_ms,
-    load_or_fetch, write_csv, write_markdown, csv_path, report_path,
+    load_or_fetch, write_csv, write_markdown, csv_path, dated_csv_path, report_path,
 )
 from research.top_movers.daily_selector import (
     select_daily_top_movers, selection_to_movers_list_rows,
@@ -195,7 +195,8 @@ def main():
 
     # === Step 3: Save core CSVs ===
     print(f"\n=== Step 3: Saving CSVs ===")
-    write_csv(csv_path(research_day, "daily_top_mover_cases.csv"), all_case_rows)
+    write_csv(dated_csv_path(research_day, "daily_case_dataset_{}.csv"), all_case_rows)  # canonical
+    write_csv(csv_path(research_day, "daily_top_mover_cases.csv"), all_case_rows)         # compat mirror
     write_csv(csv_path(research_day, "daily_top_mover_anchor_snapshots.csv"), all_anchor_rows)
 
     # === Step 4: Signature candidates + ledger ===
@@ -205,6 +206,10 @@ def main():
     # Always write candidates CSV with correct schema header (even if 0 rows)
     write_candidates_csv(
         csv_path(research_day, "daily_signature_candidates.csv"),
+        sig_candidates,
+    )
+    write_candidates_csv(
+        dated_csv_path(research_day, "daily_signature_candidates_{}.csv"),
         sig_candidates,
     )
     print(f"  Signature candidates: {len(sig_candidates)}" +
@@ -218,6 +223,7 @@ def main():
     daily_summary = build_daily_research_summary(
         research_day, selection_context, all_case_rows, sig_candidates)
     write_csv(csv_path(research_day, "daily_research_summary.csv"), [daily_summary])
+    write_csv(dated_csv_path(research_day, "daily_research_summary_{}.csv"), [daily_summary])
 
     journal_row = build_daily_journal_row(research_day, all_case_rows, sig_candidates)
     write_csv(csv_path(research_day, "research_daily_journal.csv"), [journal_row])
@@ -244,8 +250,55 @@ def main():
     report_md = build_report(
         research_day=research_day, selection_context=selection_context,
         cases=all_case_rows, anchor_rows=all_anchor_rows, images_created=images_created,
+        sig_candidates=sig_candidates,
     )
     write_markdown(report_path(research_day), report_md)
+
+    # === Step 7: Unified analysis pack ===
+    print(f"\n=== Step 7: Unified analysis pack ===")
+    from research.top_movers.unified_analysis_pack_builder import build_unified_analysis_pack
+    unified_out = os.path.join(
+        "data/research_output/top_movers", research_day, "report",
+        f"R1_unified_analysis_pack_{research_day}.docx",
+    )
+    try:
+        build_unified_analysis_pack(
+            research_day=research_day,
+            cases=all_case_rows,
+            sig_candidates=sig_candidates,
+            daily_summary=daily_summary,
+            output_path=unified_out,
+            window_days=7,
+        )
+        print(f"  Saved: R1_unified_analysis_pack_{research_day}.docx")
+    except Exception as e:
+        print(f"  Unified pack build failed: {e}"); traceback.print_exc()
+
+
+    # === Step 8: Analysis bundle (manifest + xlsx) ===
+    print(f'\n=== Step 8: Analysis bundle ===')
+    from research.top_movers.analysis_bundle_builder import build_manifest, build_xlsx_bundle
+    _bundle_dir = os.path.join('data/research_output/top_movers', research_day, 'report')
+    _manifest_out = os.path.join(_bundle_dir, f'analysis_bundle_manifest_{research_day}.md')
+    try:
+        build_manifest(
+            research_day=research_day, cases=all_case_rows,
+            sig_candidates=sig_candidates, daily_summary=daily_summary,
+            output_path=_manifest_out,
+        )
+        print(f'  Saved: analysis_bundle_manifest_{research_day}.md')
+    except Exception as e:
+        print(f'  Manifest failed: {e}'); traceback.print_exc()
+    _xlsx_out = os.path.join(_bundle_dir, f'R1_analysis_bundle_{research_day}.xlsx')
+    try:
+        build_xlsx_bundle(
+            research_day=research_day, cases=all_case_rows,
+            sig_candidates=sig_candidates, daily_summary=daily_summary,
+            output_path=_xlsx_out, window_days=7,
+        )
+        print(f'  Saved: R1_analysis_bundle_{research_day}.xlsx')
+    except Exception as e:
+        print(f'  xlsx failed: {e}'); traceback.print_exc()
 
     # === Summary ===
     print(f"\n{'='*60}")

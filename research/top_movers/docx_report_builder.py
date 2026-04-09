@@ -19,6 +19,21 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
 from research.top_movers.io import image_path
+from research.top_movers.signature_ledger import (
+    load_and_normalize_ledger_rows,
+    build_ledger_snapshot_for_report,
+    validate_ledger_semantics,
+    build_intervention_shortlist,
+)
+
+# Maps image key to primary anchor code (for missing-reason lookup)
+_IMG_KEY_TO_ANCHOR = {
+    "P0_context_1h":            "P0",
+    "P0_P1_setup_15m":          "P0",
+    "P1_ignition_5m":           "P1",
+    "P2_P3_break_expansion_5m": "P2",
+    "P4_resolution_15m":        "P4",
+}
 
 _IMAGE_DEFS = [
     ("P0_context_1h",              "P0 Context (1h)"),
@@ -35,7 +50,7 @@ _GRADE_COLORS = {
     "DESCRIPTIVE_ONLY":                   "808080",
     "NOT_RELIABLE_YET":                   "C00000",
 }
-_HEALTH_COLORS = {"CLEAN": "70AD47", "PARTIAL": "FFC000", "WEAK": "C00000"}
+_HEALTH_COLORS = {"CLEAN": "70AD47", "CLEAN_WITH_VISUAL_GAPS": "92D050", "PARTIAL": "FFC000", "WEAK": "C00000"}
 _YN_COLORS     = {"Y": "70AD47", "N": "C00000"}
 _DQ_COLORS     = {"CLEAN": "70AD47", "PARTIAL": "FFC000", "WEAK": "C00000"}
 
@@ -55,6 +70,7 @@ def _font(cell, bold=False, size=8):
         for r in p.runs: r.bold=bold; r.font.size=Pt(size)
 
 def _make_table(doc, headers, col_w, fill="2E75B6"):
+    if sum(col_w) > 6.5: col_w = [w * 6.5 / sum(col_w) for w in col_w]
     t = doc.add_table(rows=1, cols=len(headers)); t.style="Table Grid"
     tbl = t._tbl; tblPr = tbl.find(qn("w:tblPr")) or OxmlElement("w:tblPr")
     tblW = OxmlElement("w:tblW"); tblW.set(qn("w:w"),str(int(sum(col_w)*1440))); tblW.set(qn("w:type"),"dxa"); tblPr.append(tblW)
@@ -123,7 +139,7 @@ def _s2_integrity(doc, cases, image_results_all):
     missing_prx = [c.get("symbol","") for c in cases if c.get("proxy_complete_YN")!="Y"]
     missing_out = [c.get("symbol","") for c in cases if c.get("outcome_complete_YN")!="Y"]
     n=len(cases); er=len(eligible)/n if n else 0; pr=(n-len(missing_prx))/n if n else 0; ir=(n-len(missing_img))/n if n else 0
-    health="CLEAN" if er>=0.75 and pr>=0.60 and ir>=0.60 else "PARTIAL" if er>=0.40 or pr>=0.40 else "WEAK"
+    health = ("CLEAN_WITH_VISUAL_GAPS" if missing_img else "CLEAN") if er>=0.75 and pr>=0.60 else "PARTIAL" if er>=0.40 or pr>=0.40 else "WEAK"
     t=_make_table(doc, ["Metric","Value"], [3.0,4.7], fill="404040")
     _add_row(t, ["Research health", health], hi_col=1, hi_map=_HEALTH_COLORS)
     _add_row(t, ["Research-eligible", f"{len(eligible)}/{n}"])
@@ -146,7 +162,7 @@ def _s3_exec_summary(doc, cases, selection_context, signature_candidates):
     n=len(cases); missing_prx=sum(1 for c in cases if c.get("proxy_complete_YN")!="Y")
     missing_img=sum(1 for c in cases if c.get("full_visual_complete_YN")!="Y")
     er=len(eligible)/n if n else 0; pr=(n-missing_prx)/n if n else 0; ir=(n-missing_img)/n if n else 0
-    health="CLEAN" if er>=0.75 and pr>=0.60 and ir>=0.60 else "PARTIAL" if er>=0.40 or pr>=0.40 else "WEAK"
+    health = ("CLEAN_WITH_VISUAL_GAPS" if missing_img>0 else "CLEAN") if er>=0.75 and pr>=0.60 else "PARTIAL" if er>=0.40 or pr>=0.40 else "WEAK"
 
     improve=sum(1 for c in eligible if c.get("strategy_action_type")=="improve_existing")
     create =sum(1 for c in eligible if c.get("strategy_action_type")=="create_new")
@@ -326,9 +342,14 @@ def _s11_strategy_mapping(doc, cases):
 
 
 def _s12_new_strategy(doc, cases):
-    _h2(doc, "12. New Strategy Candidate Board")
+    _h2(doc, "12. Research Families Under Investigation")
     eligible=[c for c in cases if c.get("new_strategy_candidate_flag")=="Y"]
-    if not eligible: _p(doc,"No new strategy candidates today."); doc.add_paragraph(); return
+    _p(doc,
+       "These are exploratory research families under investigation — NOT actual NEW_STRATEGY_THESIS_CANDIDATE cases. "
+       "A case reaching this board means its move pattern did not map to an existing strategy and showed "
+       "some structural interest. It does NOT mean a new strategy is validated or recommended.",
+       size=9, italic=True)
+    if not eligible: _p(doc,"No exploratory families today."); doc.add_paragraph(); return
     t=_make_table(doc, ["Symbol","Side","Candidate Family","Trigger","Env","Invalid","Conf"],
                   [0.9,0.5,1.8,2.0,1.3,1.5,0.7])
     for c in eligible:
@@ -393,7 +414,7 @@ def _s16_case_registry(doc, cases):
     doc.add_paragraph()
 
 
-def _s17_case_appendix(doc, cases, anchor_rows, research_day):
+def _s17_case_appendix(doc, cases, anchor_rows, research_day, image_results_all=None):
     _h1(doc, "17. Full Case Detail Appendix")
     _p(doc, "One section per token. 5 images embedded. v2 taxonomy labels.", size=9)
 
@@ -410,6 +431,12 @@ def _s17_case_appendix(doc, cases, anchor_rows, research_day):
         _p(doc, f"Elig={c.get('research_eligible_YN')}  FullVis={c.get('full_visual_complete_YN')}  "
                 f"Proxy={c.get('proxy_complete_YN')}  Outcome={c.get('outcome_complete_YN')}  "
                 f"Caution={c.get('caution_flag')}", size=9)
+        if c.get("full_visual_complete_YN") != "Y":
+            _p(doc,
+               "Note: full_visual_complete = N means one or more chart images could not be rendered. "
+               "This does NOT affect outcome/resolution fields (which are computed from price data, not images). "
+               "P4 anchor availability and P4 image availability are separate — see anchor table above.",
+               size=8, italic=True)
         t1=c.get("case_takeaway_1",""); t2=c.get("case_takeaway_2","")
         if t1: _p(doc, f"► {t1}")
         if t2: _p(doc, f"  {t2}", size=9)
@@ -450,7 +477,9 @@ def _s17_case_appendix(doc, cases, anchor_rows, research_day):
                 except Exception as e:
                     _p(doc, f"  [Embed failed: {e}]", size=8)
             else:
-                _p(doc, f"  [Image not available: {img_key}]", size=8)
+                _img_res = (image_results_all or {}).get(cid, {}).get(img_key, {})
+                _reason = _img_res.get("reason", "") or "reason_unknown"
+                _p(doc, f"  [Missing: {img_key} | reason: {_reason}]", size=8)
             doc.add_paragraph()
 
 
@@ -459,13 +488,15 @@ def _s18_footer(doc, cases, signature_candidates):
     eligible=[c for c in cases if c.get("research_eligible_YN")=="Y"]
     keep  = [s.get("signature_candidate_code","") for s in signature_candidates if s.get("strategy_action_type")=="keep_observing"]
     imp   = [c.get("case_id","") for c in eligible if c.get("strategy_action_type")=="improve_existing"]
-    new_t = list(set(c.get("candidate_strategy_family_name","") for c in eligible
-                     if c.get("new_strategy_candidate_flag")=="Y" and c.get("candidate_strategy_family_name")))
+    # Only surface case-level new thesis candidates (NEW_STRATEGY_THESIS_CANDIDATE), not exploratory families
+    new_t = list(set(c.get("case_id","") for c in eligible
+                     if c.get("decision_grade")=="NEW_STRATEGY_THESIS_CANDIDATE"))
     not_yet=[c.get("case_id","") for c in eligible if c.get("decision_grade")=="NOT_RELIABLE_YET"]
     t=_make_table(doc, ["Action","Items"], [2.0,6.6])
     _add_row(t, ["Keep tracking (repeated sigs):", ", ".join(keep) or "none today"])
     _add_row(t, ["Improve existing (case-level):", ", ".join(imp) or "none today"])
-    _add_row(t, ["New thesis (case-level):",       ", ".join(new_t) or "none today"])
+    _add_row(t, ["New thesis case-level (decision_grade=NEW_STRATEGY_THESIS_CANDIDATE):",
+                 ", ".join(new_t) or "none today"])
     _add_row(t, ["Not conclude yet:",              ", ".join(not_yet) or "none"])
 
 
@@ -509,6 +540,129 @@ def _avg_field(cases, f):
     return round(sum(vs)/len(vs),4) if vs else None
 
 
+
+# ---------------------------------------------------------------------------
+# New sections (Decision Bridge — inserted after Section 14)
+# ---------------------------------------------------------------------------
+
+_ROLE_COLORS_DB = {
+    "repeated_candidate": "70AD47",
+    "tracking":           "FFC000",
+    "first_observation":  "2E75B6",
+    "stale":              "808080",
+}
+
+_ANTIPATTERN_WHY = {
+    "RUNAWAY_NO_BASE":         "Entry chases price with no base; high reversal risk",
+    "DIRTY_BREAK":             "Break quality insufficient; unclear participation",
+    "LOW_PARTICIPATION_BREAK": "Minimal flow at break; often fails without follow-through",
+    "CROWD_CHASE_DOMINANT":    "Crowd-driven without large participant confirmation; reverses quickly",
+}
+
+
+def _snew_semantic_warning(doc, normalized_ledger_rows):
+    warnings = validate_ledger_semantics(normalized_ledger_rows)
+    if not warnings:
+        return
+    _h2(doc, "14a. Ledger Semantic Warnings")
+    tbl = doc.add_table(rows=1, cols=1); tbl.style = "Table Grid"
+    cell = tbl.rows[0].cells[0]; _shade(cell, "FFF2CC")
+    cell.paragraphs[0].clear()
+    for w in warnings:
+        p = cell.add_paragraph(f"\u26a0  {w}")
+        for r in p.runs:
+            r.font.size = Pt(9); r.bold = True
+    doc.add_paragraph()
+
+
+def _snew_intervention_shortlist(doc, cases, sig_candidates, normalized_ledger_rows):
+    _h2(doc, "14b. Strategy Intervention Shortlist")
+    eligible = [c for c in cases if c.get("research_eligible_YN") == "Y"]
+    shortlist = build_intervention_shortlist(eligible, sig_candidates, normalized_ledger_rows)
+    if not shortlist:
+        _p(doc, "No intervention candidates today."); doc.add_paragraph(); return
+    t = _make_table(doc,
+        ["Strategy Family", "Issue Layer", "Cases", "Repeated?", "Cross-Day", "Evidence Source", "Readiness"],
+        [1.8, 1.5, 0.6, 0.7, 0.8, 1.5, 2.3])
+    for row in shortlist:
+        _add_row(t, [row.get("strategy_family",""), row.get("issue_layer",""),
+            row.get("case_count_today",0), str(row.get("repeated_support_today",0)),
+            row.get("cross_day_support",0), row.get("evidence_source",""), row.get("readiness","")])
+    doc.add_paragraph()
+
+
+def _snew_antipattern_board(doc, cases):
+    _h2(doc, "14c. Anti-Pattern / Downgrade Board")
+    patterns = []
+    runaway = [c for c in cases if c.get("structural_quality") == "runaway_no_base"]
+    if runaway:
+        patterns.append({"code":"RUNAWAY_NO_BASE","affected":", ".join(c.get("symbol","") for c in runaway[:5]),
+            "why":_ANTIPATTERN_WHY["RUNAWAY_NO_BASE"],"repeated":"Y" if len(runaway)>=2 else "N"})
+    dirty = [c for c in cases if c.get("structural_quality") == "dirty_break"]
+    if dirty:
+        patterns.append({"code":"DIRTY_BREAK","affected":", ".join(c.get("symbol","") for c in dirty[:5]),
+            "why":_ANTIPATTERN_WHY["DIRTY_BREAK"],"repeated":"Y" if len(dirty)>=2 else "N"})
+    lowpart = [c for c in cases if c.get("participation_pattern") == "low_participation_move"]
+    if lowpart:
+        patterns.append({"code":"LOW_PARTICIPATION_BREAK","affected":", ".join(c.get("symbol","") for c in lowpart[:5]),
+            "why":_ANTIPATTERN_WHY["LOW_PARTICIPATION_BREAK"],"repeated":"Y" if len(lowpart)>=2 else "N"})
+    crowd = [c for c in cases if c.get("participation_pattern") == "crowd_chase_dominant"
+             and c.get("structural_quality") not in ("clean_base_break","repeated_test_then_break","exhaustion_spike")]
+    if crowd:
+        patterns.append({"code":"CROWD_CHASE_DOMINANT","affected":", ".join(c.get("symbol","") for c in crowd[:5]),
+            "why":_ANTIPATTERN_WHY["CROWD_CHASE_DOMINANT"],"repeated":"Y" if len(crowd)>=2 else "N"})
+    if not patterns:
+        _p(doc, "No anti-pattern flags today."); doc.add_paragraph(); return
+    t = _make_table(doc, ["Pattern Code","Affected Symbols","Why Downgrade","Repeated Today","Note"],
+                    [1.6,1.5,2.4,0.9,1.8])
+    for pt in patterns:
+        _add_row(t, [pt["code"],pt["affected"],pt["why"],pt["repeated"],"do not use as strategy thesis"])
+    doc.add_paragraph()
+
+
+def _snew_ledger_snapshot(doc, normalized_ledger_rows, research_day):
+    _h2(doc, f"14d. Cross-Day Ledger Snapshot (as of {research_day})")
+    snapshot = build_ledger_snapshot_for_report(normalized_ledger_rows, research_day)
+    if not snapshot:
+        _p(doc, "No ledger data available."); doc.add_paragraph(); return
+    t = _make_table(doc,
+        ["Code","First Seen","Last Seen","Support Days","Recent 7d","Status","Role"],
+        [2.0,0.9,0.9,0.9,0.8,1.3,1.4])
+    for row in snapshot:
+        role = row.get("current_role","")
+        r = t.add_row()
+        vals = [row.get("signature_candidate_code", row.get("signature_key","")[:25]),
+                row.get("first_seen_date",""), row.get("last_seen_date",""),
+                row.get("support_days_count",0), row.get("recent_support_days_count",0),
+                row.get("latest_validation_status",""), role]
+        for i, v in enumerate(vals):
+            cell = r.cells[i]; cell.text = str(v) if v is not None else "\u2014"; _font(cell)
+            if i == 6:
+                color = _ROLE_COLORS_DB.get(role)
+                if color:
+                    _shade(cell, color)
+                    for p in cell.paragraphs:
+                        for run in p.runs: run.font.color.rgb = RGBColor(0xFF,0xFF,0xFF)
+            elif role == "stale":
+                _shade(cell, "D9D9D9")
+    doc.add_paragraph()
+
+
+def _snew_promotion_rules(doc):
+    _h2(doc, "14e. Readiness Promotion Rules")
+    t = _make_table(doc, ["Readiness Level","Meaning"], [2.5,5.8], fill="404040")
+    for level, meaning in [
+        ("descriptive_only",                  "Not enough repetition or strategy relevance."),
+        ("keep_tracking",                      "Interesting but insufficient for intervention."),
+        ("old_strategy_improvement_candidate", "Points to existing strategy + identifiable improvement layer."),
+        ("new_strategy_thesis_candidate",      "New family candidate — not yet validated, needs multi-day support."),
+    ]:
+        _add_row(t, [level, meaning])
+    _p(doc, "Note: Repeated signatures (Section 10) and case-level theses (Section 13) are independent. Do not conflate.",
+       size=9, italic=True)
+    doc.add_paragraph()
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -516,6 +670,7 @@ def _avg_field(cases, f):
 def build_docx_pack(research_day, selection_context, cases, anchor_rows, signature_candidates,
                     output_path, image_results_all=None) -> str:
     if image_results_all is None: image_results_all={}
+    normalized_ledger_rows = load_and_normalize_ledger_rows(research_day, window_days=7, as_of_day=research_day)
     doc=Document()
 
     _h1(doc, "Daily Top Movers Research Pack")
@@ -541,9 +696,14 @@ def build_docx_pack(research_day, selection_context, cases, anchor_rows, signatu
     _s12_new_strategy(doc, cases)
     _s13_decision_grade(doc, cases)
     _s14_trap_caution(doc, cases)
+    _snew_semantic_warning(doc, normalized_ledger_rows)
+    _snew_intervention_shortlist(doc, cases, signature_candidates, normalized_ledger_rows)
+    _snew_antipattern_board(doc, cases)
+    _snew_ledger_snapshot(doc, normalized_ledger_rows, research_day)
+    _snew_promotion_rules(doc)
     _s15_review_queue(doc, cases)
     _s16_case_registry(doc, cases)
-    _s17_case_appendix(doc, cases, anchor_rows, research_day)
+    _s17_case_appendix(doc, cases, anchor_rows, research_day, image_results_all)
     _s18_footer(doc, cases, signature_candidates)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)

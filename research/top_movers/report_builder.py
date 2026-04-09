@@ -80,7 +80,19 @@ def _section_header(
     ok_count = data_quality_summary.get("ok", 0)
     warn_count = data_quality_summary.get("warn", 0)
 
-    quality_banner = "✅ DATA QUALITY: GOOD" if warn_count == 0 else f"⚠️ DATA QUALITY: {warn_count} TOKENS WITH ISSUES"
+    # Compute health label consistent with canonical summary
+    _ok_c = data_quality_summary.get("ok", 0)
+    _missing_img = data_quality_summary.get("missing_img", 0)
+    _er = _ok_c / max(total_cases, 1)
+    if _er >= 0.75:
+        _hl = "CLEAN_WITH_VISUAL_GAPS" if _missing_img > 0 else "CLEAN"
+    elif _er >= 0.40:
+        _hl = "PARTIAL"
+    else:
+        _hl = "WEAK"
+    quality_banner = f"Research Health: {_hl}" + (
+        f" | ⚠️ {warn_count} token(s) with data issues" if warn_count else ""
+    )
 
     return f"""# Daily Top Movers Research Report
 ## {research_day}
@@ -265,64 +277,34 @@ def _section_repeated_clues(cases: List[Dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _section_candidate_signatures(cases: List[Dict]) -> str:
-    candidates = [
-        c for c in cases
-        if c.get("research_verdict") == "setup_signature_candidate"
-        and c.get("data_quality_ok") == "Y"
-    ]
-    monitoring = [
-        c for c in cases
-        if c.get("research_verdict") == "worth_monitoring"
-        and c.get("data_quality_ok") == "Y"
-    ]
+def _section_candidate_signatures(cases: List[Dict], sig_candidates: Optional[List[Dict]] = None) -> str:
+    """
+    Show repeated signature candidates only (cross-case pattern evidence).
+    verdict-based setup_signature_candidate logic removed from this section.
+    """
+    sig_candidates = sig_candidates or []
+    lines = ["## 6. Repeated Signature Candidates\n"]
 
-    lines = ["## 6. Candidate Setup Signatures\n"]
-
-    if candidates:
-        lines.append(f"**{len(candidates)} setup signature candidate(s):**\n")
-        for c in candidates:
-            lines.append(
-                f"- `{c['symbol']}` {c['side']} | "
-                f"move={c.get('move_class', '?')} | "
-                f"pre_sig={c.get('pre_move_signature', '?')} | "
-                f"bq={c.get('break_quality_band', '?')} | "
-                f"comp={_fmt(c.get('compression_score'), 3)} | "
-                f"large_proxy={_fmt(c.get('large_participant_proxy'), 3)}"
-            )
+    if sig_candidates:
+        top_code = sig_candidates[0].get("signature_candidate_code", "-")
+        lines.append(f"**Repeated signature candidates (>=2 eligible cases): {len(sig_candidates)}**")
+        lines.append(f"Top: `{top_code}`\n")
+        for s in sig_candidates:
+            code  = s.get("signature_candidate_code", "")
+            n     = s.get("support_count", "?")
+            side  = s.get("dominant_side", "?")
+            grade = s.get("decision_grade", "")
+            conf  = s.get("confidence", "")
+            nxt   = s.get("next_action", "")
+            lines.append(f"- `{code}` | N={n} | {side} | grade={grade} | conf={conf} | next={nxt}")
+        lines.append("")
     else:
-        lines.append("_No setup signature candidates today._\n")
-
-    if monitoring:
-        lines.append(f"\n**{len(monitoring)} worth monitoring:**\n")
-        for c in monitoring:
-            lines.append(
-                f"- `{c['symbol']}` {c['side']} | "
-                f"sq={c.get('structural_quality', '?')} | "
-                f"pattern={c.get('participation_pattern', '?')}"
-            )
-
-    lines.append("")
-
-    # Decision note (generated from truth-clean subset only)
-    ok_cases = [c for c in cases if c.get("data_quality_ok") == "Y"]
-    if ok_cases:
-        candidate_count = len(candidates)
-        total_ok = len(ok_cases)
-        lines.append("**Daily Decision Note** (truth-clean subset only):\n")
-        if candidate_count >= 3:
-            lines.append(
-                f"Today produced {candidate_count}/{total_ok} setup signature candidates. "
-                "Consider reviewing for repeating patterns in next session.\n"
-            )
-        else:
-            lines.append(
-                f"Today produced {candidate_count}/{total_ok} setup signature candidates. "
-                "Insufficient for pattern generalization — continue observation.\n"
-            )
+        lines.append(
+            "**Repeated signature candidates: 0**  "
+            "(no cross-case pattern met threshold today - valid and expected on heterogeneous mover days)\n"
+        )
 
     return "\n".join(lines) + "\n"
-
 
 def _section_footer(
     research_day: str,
@@ -359,6 +341,38 @@ def _section_footer(
     return "\n".join(lines)
 
 
+
+def _section_decision_bridge(cases: List[Dict], sig_candidates: List[Dict]) -> str:
+    """Minimal markdown stubs for the decision bridge (text-only, no tables)."""
+    from collections import Counter
+    eligible = [c for c in cases if c.get("decision_grade") in (
+        "OLD_STRATEGY_IMPROVEMENT_CANDIDATE", "NEW_STRATEGY_THESIS_CANDIDATE",
+    ) and c.get("research_eligible_YN") == "Y"]
+    lines = ["## 8. Decision Bridge Summary\n"]
+    if eligible:
+        families = Counter(
+            (c.get("maps_to_existing_strategy_family","?"), c.get("improvement_target_layer","?"))
+            for c in eligible
+        )
+        lines.append(f"**Intervention candidates: {len(eligible)} eligible case(s)**\n")
+        for (fam, layer), cnt in families.most_common(2):
+            lines.append(f"  - `{fam}` / `{layer}`: {cnt} case(s)")
+        lines.append("")
+    else:
+        lines.append("**Intervention candidates:** none today.\n")
+    flags = []
+    if any(c.get("structural_quality") == "runaway_no_base" for c in cases): flags.append("RUNAWAY_NO_BASE")
+    if any(c.get("structural_quality") == "dirty_break" for c in cases): flags.append("DIRTY_BREAK")
+    if any(c.get("participation_pattern") == "low_participation_move" for c in cases): flags.append("LOW_PARTICIPATION_BREAK")
+    if any(c.get("participation_pattern") == "crowd_chase_dominant"
+           and c.get("structural_quality") not in ("clean_base_break","repeated_test_then_break","exhaustion_spike")
+           for c in cases): flags.append("CROWD_CHASE_DOMINANT")
+    flag_str = ', '.join(flags) if flags else 'none.'
+    lines.append(f"**Anti-pattern flags today:** {flag_str}\n")
+    lines.append("_Cross-day ledger snapshot and promotion rules available in the DOCX pack._\n")
+    return "\n".join(lines) + "\n"
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -369,6 +383,7 @@ def build_report(
     cases: List[Dict],
     anchor_rows: List[Dict],
     images_created: int = 0,
+    sig_candidates: Optional[List[Dict]] = None,
 ) -> str:
     """Build the full markdown research report.
 
@@ -379,10 +394,11 @@ def build_report(
     images_created: count of successfully rendered images
     """
     total = len(cases)
-    images_total = total * 4  # 4 images per token
+    images_total = total * 5  # 5 images per token
 
     ok_count = sum(1 for c in cases if c.get("data_quality_ok") == "Y")
     warn_count = total - ok_count
+    missing_img_count = sum(1 for c in cases if c.get("full_visual_complete_YN") != "Y")
 
     btc_24h = selection_context.get("btc_24h_change_pct", 0.0) or 0.0
     alt_breadth = selection_context.get("alt_breadth_pct", 0.0) or 0.0
@@ -396,7 +412,7 @@ def build_report(
         btc_24h=float(btc_24h),
         alt_breadth_pct=float(alt_breadth),
         total_cases=total,
-        data_quality_summary={"ok": ok_count, "warn": warn_count},
+        data_quality_summary={"ok": ok_count, "warn": warn_count, "missing_img": missing_img_count},
     ))
 
     sections.append(_section_data_gate(cases))
@@ -405,12 +421,13 @@ def build_report(
     sections.append(_section_participation_pattern(cases))
     sections.append(_section_structural_quality(cases))
     sections.append(_section_repeated_clues(cases))
-    sections.append(_section_candidate_signatures(cases))
+    sections.append(_section_candidate_signatures(cases, sig_candidates or []))
+    sections.append(_section_decision_bridge(cases, sig_candidates or []))
 
     deferred = [
-        "Live post-fix pre_pending/pending_open capture validation (requires fresh CUT_MS rows)",
-        "alignment_bonus for large_participant_proxy (deferred to v1.1)",
-        "Sprint 3B regime expansion (not approved)",
+        "alignment_bonus for large_participant_proxy (deferred to R1 v1.1)",
+        "Multi-day anchor QA sample for P0-P4 correctness (not yet run)",
+        "Fresh-case validation: visual gap reduction as proxy endpoint coverage improves",
     ]
     sections.append(_section_footer(
         research_day=research_day,

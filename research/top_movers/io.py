@@ -88,6 +88,13 @@ def image_path(research_day: str, case_id: str, image_key: str) -> str:
     return os.path.join(output_dir(research_day), "images", f"{case_id}_{image_key}.png")
 
 
+def dated_csv_path(research_day: str, name_template: str) -> str:
+    """Dated CSV path. name_template uses {} as day placeholder.
+    e.g. 'daily_case_dataset_{}.csv' -> 'daily_case_dataset_2026-04-08.csv'
+    """
+    return csv_path(research_day, name_template.format(research_day))
+
+
 def report_path(research_day: str) -> str:
     return os.path.join(output_dir(research_day), "report", "daily_top_mover_research_report.md")
 

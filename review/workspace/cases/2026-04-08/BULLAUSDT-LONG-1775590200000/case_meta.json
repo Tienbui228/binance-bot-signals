@@ -1,0 +1,54 @@
+{
+  "case_id": "BULLAUSDT-LONG-1775590200000",
+  "symbol": "BULLAUSDT",
+  "side": "LONG",
+  "strategy": "long_breakout_retest",
+  "case_day": "2026-04-08",
+  "signal_time_local": "2026-04-08 02:30:00",
+  "created_time_local": "2026-04-08 02:37:56",
+  "confirmed_time_local": "",
+  "sent_time_local": "",
+  "close_time_local": "2026-04-08 02:40:41",
+  "fallback_close_due_time_local": "2026-04-08 06:37:56",
+  "status_final": "INVALIDATED",
+  "close_reason": "retest invalidated",
+  "is_confirmed": "N",
+  "is_sent_signal": "N",
+  "case_close_type": "true_close",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "full",
+  "lifecycle_complete": "Y",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "Y",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260407/BULLAUSDT_LONG_long_breakout_retest_BULLAUSDT-LONG-1775590200000_pre_pending_1775589900000.png",
+      "note": "pre_pending context"
+    },
+    "pending_open": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260407/BULLAUSDT_LONG_long_breakout_retest_BULLAUSDT-LONG-1775590200000_pending_1775590676980.png",
+      "note": "pending_open | created_ts_ms=1775590676980"
+    },
+    "entry_or_confirm": {
+      "stage_status": "not_applicable",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "case_close": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260407/BULLAUSDT_LONG_long_breakout_retest_closed_1775590841020.png",
+      "note": "retest invalidated",
+      "case_close_type": "true_close"
+    }
+  }
+}

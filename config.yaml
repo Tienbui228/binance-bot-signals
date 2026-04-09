@@ -110,3 +110,12 @@ review_case_system:
   fallback_close_hours: 4
   daily_exports_dir: review_exports
   builder_script: build_daily_review_pack.py
+
+# Long breakout retest — strategy-specific tuning
+# min_post_break_acceptance_ratio: how far into the impulse body the retest
+# can dip and still be considered acceptable.
+# Default hardcoded = 0.55 (top 45% of impulse range required)
+# Patch 1: relaxed to 0.42 to unlock acceptance_floor_lost cases
+# that already passed find_retest_long() confirmation.
+long_breakout_retest:
+  min_post_break_acceptance_ratio: 0.42
