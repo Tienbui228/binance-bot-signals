@@ -33,6 +33,7 @@ from research.top_movers.io import OUTPUT_BASE
 from research.top_movers.signature_ledger import (
     LEDGER_PATH,
     load_and_normalize_ledger_rows,
+    ledger_rows_as_of,
     build_ledger_snapshot_for_report,
     build_intervention_shortlist,
 )
@@ -398,26 +399,24 @@ def _u5_ledger_snapshot(doc, normalized_ledger_rows: List[Dict], research_day: s
 # Section 6 — Raw Ledger Appendix
 # ---------------------------------------------------------------------------
 
-def _u6_raw_ledger(doc, as_of_day: str = None) -> None:
+def _u6_raw_ledger(doc, normalized_rows: List[Dict] = None, as_of_day: str = None) -> None:
     _h2(doc, f"6. Raw Ledger Appendix (as of {as_of_day})" if as_of_day else "6. Raw Ledger Appendix")
     _p(doc,
-       "All rows from signature_evidence_ledger.csv. Key fields only. "
-       "Sorted newest first. Use for full audit.",
+       "All ledger rows as of report day. Key fields only. "
+       "Sorted newest first. Same canonical source as Ledger Snapshot (Section 5).",
        size=9, italic=True)
+    _p(doc,
+       "Status@Write = validation_status recorded at write time, not history-aware. "
+       "Use Section 5 (Ledger Snapshot) for normalized current status.",
+       size=8, italic=True)
 
-    if not os.path.exists(LEDGER_PATH):
-        _p(doc, "signature_evidence_ledger.csv not found — no ledger data yet.", italic=True)
+    all_rows_sorted = [r for r in (normalized_rows or [])]
+
+    if not all_rows_sorted:
+        _p(doc, "No ledger data available as of this report day.", italic=True)
         doc.add_paragraph()
         return
-
-    all_rows: List[Dict] = []
-    with open(LEDGER_PATH, "r", newline="", encoding="utf-8") as f:
-        all_rows = list(csv.DictReader(f))
-
-    if not all_rows:
-        _p(doc, "Ledger file exists but contains no data rows.", italic=True)
-        doc.add_paragraph()
-        return
+    all_rows = all_rows_sorted
 
     key_fields = [
         "research_day", "signature_candidate_code",
@@ -428,6 +427,7 @@ def _u6_raw_ledger(doc, as_of_day: str = None) -> None:
     col_w   = [1.0, 2.2, 0.8, 0.7, 2.0, 1.3, 1.0, 1.0]
     t = _make_table(doc, headers, col_w, fill="404040")
     for row in sorted(all_rows, key=lambda r: r.get("research_day", ""), reverse=True):
+        # Use derived first/last_seen (already normalized by ledger_rows_as_of)
         _add_row(t, [row.get(f, "") for f in key_fields])
     doc.add_paragraph()
 
@@ -478,8 +478,9 @@ def build_unified_analysis_pack(
 
     Returns the output_path on success.
     """
-    # Load and normalize ledger once (safe if file doesn't exist yet)
-    normalized_ledger_rows = load_and_normalize_ledger_rows(research_day, window_days=window_days, as_of_day=research_day)
+    # Canonical as-of-day ledger source — used by ALL ledger-derived sections
+    # Single call enforces consistent filtering and derivation everywhere
+    normalized_ledger_rows = ledger_rows_as_of(research_day, window_days=window_days)
 
     doc = Document()
 
@@ -509,7 +510,7 @@ def build_unified_analysis_pack(
     _u5_ledger_snapshot(doc, normalized_ledger_rows, research_day)
     doc.add_page_break()
 
-    _u6_raw_ledger(doc, as_of_day=research_day)
+    _u6_raw_ledger(doc, normalized_rows=normalized_ledger_rows, as_of_day=research_day)
     doc.add_page_break()
 
     _u7_raw_summary(doc, daily_summary)

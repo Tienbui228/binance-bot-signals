@@ -24,6 +24,7 @@ from research.top_movers.io import OUTPUT_BASE
 from research.top_movers.signature_ledger import (
     LEDGER_PATH,
     load_and_normalize_ledger_rows,
+    ledger_rows_as_of,
     build_ledger_snapshot_for_report,
 )
 
@@ -225,7 +226,7 @@ def build_manifest(
         f"| daily_summary | 33+ day-level fields | Day health, dominant patterns, short intervention flag |",
         f"| signature_candidates | {len(sig_candidates)} repeated pattern candidates | Cross-case pattern evidence |",
         f"| ledger_snapshot | 7-day deduped view (one row per signature_key) | Cross-day tracking |",
-        f"| ledger_raw | Full raw ledger (all days) | Audit and history |",
+        f"| ledger_raw | Raw ledger rows as of {research_day} | Audit trail up to report day |",
         f"",
         f"---",
         f"",
@@ -300,7 +301,8 @@ def build_xlsx_bundle(
     # Sheet 4: ledger_snapshot (7-day deduped, one row per signature_key)
     # ------------------------------------------------------------------
     ws_snap = wb.create_sheet("ledger_snapshot")
-    normalized = load_and_normalize_ledger_rows(research_day, window_days=window_days, as_of_day=research_day)
+    # Canonical as-of-day source — same derivation rules as unified pack
+    normalized = ledger_rows_as_of(research_day, window_days=window_days)
     snapshot   = build_ledger_snapshot_for_report(normalized, research_day)
     if snapshot:
         snap_fields = _LEDGER_SNAP_FIELDS + [
@@ -317,23 +319,19 @@ def build_xlsx_bundle(
     # Sheet 5: ledger_raw (full raw ledger — all days)
     # ------------------------------------------------------------------
     ws_raw = wb.create_sheet("ledger_raw")
-    if os.path.exists(LEDGER_PATH):
-        with open(LEDGER_PATH, newline="", encoding="utf-8") as f:
-            raw_rows = [dict(r) for r in csv.DictReader(f)
-                        if r.get("research_day", "") <= research_day]
-        if raw_rows:
-            # Show key fields first, then remaining
-            available = set(raw_rows[0].keys())
-            key_first = [f for f in _LEDGER_RAW_FIELDS if f in available]
-            rest = [f for f in raw_rows[0].keys() if f not in key_first]
-            all_fields = key_first + rest
-            sorted_rows = sorted(raw_rows, key=lambda r: r.get("research_day", ""), reverse=True)
-            rows = _rows_from_dicts(sorted_rows, all_fields)
-            _xl_write_sheet(ws_raw, all_fields, rows)
-        else:
-            ws_raw.cell(row=1, column=1, value="Ledger file exists but is empty")
+    # Use same canonical source as ledger_snapshot — no separate disk read
+    raw_rows = list(normalized)  # already filtered by ledger_rows_as_of above
+    if raw_rows:
+        # Show key fields first, then remaining
+        available = set(raw_rows[0].keys())
+        key_first = [f for f in _LEDGER_RAW_FIELDS if f in available]
+        rest = [f for f in raw_rows[0].keys() if f not in key_first]
+        all_fields = key_first + rest
+        sorted_rows = sorted(raw_rows, key=lambda r: r.get("research_day", ""), reverse=True)
+        rows = _rows_from_dicts(sorted_rows, all_fields)
+        _xl_write_sheet(ws_raw, all_fields, rows)
     else:
-        ws_raw.cell(row=1, column=1, value="signature_evidence_ledger.csv not found yet")
+        ws_raw.cell(row=1, column=1, value="No ledger data as of this report day")
 
     # ------------------------------------------------------------------
     # Save

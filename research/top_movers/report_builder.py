@@ -342,21 +342,21 @@ def _section_footer(
 
 
 
-def _section_decision_bridge(cases: List[Dict], sig_candidates: List[Dict]) -> str:
-    """Minimal markdown stubs for the decision bridge (text-only, no tables)."""
-    from collections import Counter
-    eligible = [c for c in cases if c.get("decision_grade") in (
-        "OLD_STRATEGY_IMPROVEMENT_CANDIDATE", "NEW_STRATEGY_THESIS_CANDIDATE",
-    ) and c.get("research_eligible_YN") == "Y"]
+def _section_decision_bridge(cases: List[Dict], sig_candidates: List[Dict],
+                              normalized_ledger_rows: Optional[List[Dict]] = None) -> str:
+    """Minimal markdown for the decision bridge — uses shortlist helper for identity fix."""
+    from research.top_movers.signature_ledger import build_intervention_shortlist
+    eligible = [c for c in cases if c.get("research_eligible_YN") == "Y"]
+    shortlist = build_intervention_shortlist(eligible, sig_candidates, normalized_ledger_rows or [])
     lines = ["## 8. Decision Bridge Summary\n"]
-    if eligible:
-        families = Counter(
-            (c.get("maps_to_existing_strategy_family","?"), c.get("improvement_target_layer","?"))
-            for c in eligible
-        )
-        lines.append(f"**Intervention candidates: {len(eligible)} eligible case(s)**\n")
-        for (fam, layer), cnt in families.most_common(2):
-            lines.append(f"  - `{fam}` / `{layer}`: {cnt} case(s)")
+    if shortlist:
+        lines.append(f"**Intervention candidates: {len(shortlist)} family/layer group(s)**\n")
+        for row in shortlist[:3]:
+            fam   = row.get("strategy_family", "?")
+            layer = row.get("issue_layer", "?")
+            cnt   = row.get("case_count_today", 0)
+            rdy   = row.get("readiness", "?")
+            lines.append(f"  - `{fam}` / `{layer}`: {cnt} case(s) — {rdy}")
         lines.append("")
     else:
         lines.append("**Intervention candidates:** none today.\n")
@@ -373,6 +373,99 @@ def _section_decision_bridge(cases: List[Dict], sig_candidates: List[Dict]) -> s
     return "\n".join(lines) + "\n"
 
 
+
+def _section_ledger_snapshot_md(normalized_ledger_rows: List[Dict], research_day: str) -> str:
+    """Minimal markdown for Cross-Day Ledger Snapshot."""
+    from research.top_movers.signature_ledger import build_ledger_snapshot_for_report
+    snapshot = build_ledger_snapshot_for_report(normalized_ledger_rows, research_day)
+    lines = [f"## Cross-Day Ledger Snapshot (as of {research_day})\n"]
+    if not snapshot:
+        lines.append("_No ledger data with recent activity in rolling window._\n")
+        return "\n".join(lines) + "\n"
+    lines.append(f"Rolling 7-day compact view ({len(snapshot)} active signature(s)):\n")
+    lines.append("| Code | First Seen | Last Seen | Support | Recent 7d | Status | Role |")
+    lines.append("|---|---|---|---|---|---|---|")
+    for r in snapshot:
+        lines.append(
+            f"| `{r.get('signature_candidate_code', r.get('signature_key','')[:20])}` "
+            f"| {r.get('first_seen_date','')} | {r.get('last_seen_date','')} "
+            f"| {r.get('support_days_count',0)} | {r.get('recent_support_days_count',0)} "
+            f"| {r.get('latest_validation_status','')} | {r.get('current_role','')} |"
+        )
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def _section_promotion_rules_md() -> str:
+    """Minimal markdown for Promotion Rules Box."""
+    return """## Readiness Promotion Rules
+
+| Level | Meaning |
+|---|---|
+| descriptive_only | Not enough repetition or strategy relevance. |
+| keep_tracking | Interesting but insufficient for intervention. |
+| old_strategy_improvement_candidate | Points to existing strategy + identifiable layer. |
+| new_strategy_thesis_candidate | New family candidate — not yet validated, needs multi-day support. |
+
+> Repeated signatures (cross-case patterns) and case-level theses are independent. Do not conflate.
+
+"""
+
+
+def _section_decision_card_md(cases: List[Dict], sig_candidates: List[Dict],
+                               normalized_ledger_rows: List[Dict]) -> str:
+    """Minimal markdown for Measurement Decision Card."""
+    from research.top_movers.signature_ledger import build_measurement_decision_card
+    card = build_measurement_decision_card(cases, sig_candidates, normalized_ledger_rows)
+    lines = ["## Measurement Decision Card\n"]
+    lines.append(f"**Decision State: {card.get('decision_state','—')}**\n")
+    fields = [
+        ("Chosen Family",          "chosen_family"),
+        ("Chosen Issue Layer",     "chosen_issue_layer"),
+        ("Why This Family Now",    "why_this_family_now"),
+        ("Expected Upside",        "expected_upside"),
+        ("Main Risk",              "main_risk_or_side_effect"),
+        ("Evidence Strength",      "evidence_strength_note"),
+        ("Validation Next Step",   "validation_next_step"),
+    ]
+    lines.append("| Field | Value |")
+    lines.append("|---|---|")
+    for label, key in fields:
+        lines.append(f"| {label} | {card.get(key,'—')} |")
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def _section_trusted_weak_deferred_md(cases: List[Dict], sig_candidates: List[Dict],
+                                       selection_context: Dict) -> str:
+    """Minimal markdown for Trusted / Weak / Deferred Summary."""
+    from research.top_movers.signature_ledger import build_trusted_weak_deferred
+    twd = build_trusted_weak_deferred(cases, sig_candidates, selection_context)
+    lines = ["## Trusted / Weak / Deferred Summary\n"]
+    for label, key in [("Trusted Today", "trusted"),
+                        ("Weak Today", "weak"),
+                        ("Deferred Before Action", "deferred")]:
+        lines.append(f"**{label}:**")
+        for item in twd.get(key, []):
+            lines.append(f"- {item}")
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
+def _section_semantic_warning_md(normalized_ledger_rows: List[Dict]) -> str:
+    """Minimal markdown for Semantic Warning Box (only if warnings exist)."""
+    from research.top_movers.signature_ledger import validate_ledger_semantics
+    warnings = validate_ledger_semantics(normalized_ledger_rows)
+    if not warnings:
+        return ""
+    lines = ["## Ledger Semantic Warnings\n",
+             "> The following semantic inconsistencies were detected in the ledger snapshot:\n"]
+    for w in warnings:
+        lines.append(f"- {w}")
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -384,6 +477,7 @@ def build_report(
     anchor_rows: List[Dict],
     images_created: int = 0,
     sig_candidates: Optional[List[Dict]] = None,
+    normalized_ledger_rows: Optional[List[Dict]] = None,
 ) -> str:
     """Build the full markdown research report.
 
@@ -399,6 +493,14 @@ def build_report(
     ok_count = sum(1 for c in cases if c.get("data_quality_ok") == "Y")
     warn_count = total - ok_count
     missing_img_count = sum(1 for c in cases if c.get("full_visual_complete_YN") != "Y")
+    # Auto-load ledger if not passed — ensures markdown gets real data
+    if normalized_ledger_rows is None:
+        try:
+            from research.top_movers.signature_ledger import ledger_rows_as_of
+            normalized_ledger_rows = ledger_rows_as_of(research_day)
+        except Exception:
+            normalized_ledger_rows = []
+    _lr = normalized_ledger_rows
 
     btc_24h = selection_context.get("btc_24h_change_pct", 0.0) or 0.0
     alt_breadth = selection_context.get("alt_breadth_pct", 0.0) or 0.0
@@ -422,7 +524,18 @@ def build_report(
     sections.append(_section_structural_quality(cases))
     sections.append(_section_repeated_clues(cases))
     sections.append(_section_candidate_signatures(cases, sig_candidates or []))
-    sections.append(_section_decision_bridge(cases, sig_candidates or []))
+    sections.append(_section_decision_bridge(cases, sig_candidates or [], _lr))
+    _lr = normalized_ledger_rows or []
+    sections.append(_section_ledger_snapshot_md(_lr, research_day))
+    sections.append(_section_promotion_rules_md())
+    sections.append(_section_semantic_warning_md(_lr))
+    sections.append(_section_decision_card_md(cases, sig_candidates or [], _lr))
+    sections.append(_section_trusted_weak_deferred_md(cases, sig_candidates or [], selection_context))
+    # Minimal markdown sync for new decision-bridge sections
+    if sig_candidates is not None and hasattr(build_report, '_ledger_rows'):
+        _lr = getattr(build_report, '_ledger_rows', [])
+    else:
+        _lr = []
 
     deferred = [
         "alignment_bonus for large_participant_proxy (deferred to R1 v1.1)",

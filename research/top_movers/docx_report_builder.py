@@ -24,6 +24,8 @@ from research.top_movers.signature_ledger import (
     build_ledger_snapshot_for_report,
     validate_ledger_semantics,
     build_intervention_shortlist,
+    build_measurement_decision_card,
+    build_trusted_weak_deferred,
 )
 
 # Maps image key to primary anchor code (for missing-reason lookup)
@@ -663,6 +665,108 @@ def _snew_promotion_rules(doc):
     doc.add_paragraph()
 
 
+
+
+# ---------------------------------------------------------------------------
+# Section 14f — Outcome Horizon Contract Note (static)
+# ---------------------------------------------------------------------------
+
+def _snew_outcome_horizon_note(doc):
+    _h2(doc, "14f. Outcome Horizon Contract")
+    t = _make_table(doc, ["Horizon", "Role", "Usage Rule"], [1.2, 1.8, 5.3], fill="404040")
+    _add_row(t, ["1h", "Reaction horizon", "Primary: first directional signal after P2. Used for all family answer contracts."])
+    _add_row(t, ["4h", "Tail horizon", "Primary: sustained move / reversal confirmation. Used for resolution label and missed-opportunity assessment."])
+    _add_row(t, ["2h", "Diagnostic only", "Optional: interim diagnostic when available. Do NOT mix with 1h or 4h in comparisons without explicit labeling."])
+    _p(doc,
+       "Do not mix horizons silently. If a board uses 2h data, it must be labeled explicitly. "
+       "All family-level measurement boards in this pack use 1h and 4h only unless stated otherwise.",
+       size=9, italic=True)
+    doc.add_paragraph()
+
+
+# ---------------------------------------------------------------------------
+# Section 14g — Measurement Decision Card
+# ---------------------------------------------------------------------------
+
+_DECISION_STATE_COLORS = {
+    "NO_CHANGE":                      "808080",
+    "KEEP_TRACKING":                  "FFC000",
+    "PREPARE_HYPOTHESIS":             "2E75B6",
+    "READY_FOR_CONTROLLED_VALIDATION": "70AD47",
+}
+
+
+def _snew_measurement_decision_card(doc, cases, sig_candidates, normalized_ledger_rows):
+    _h2(doc, "14g. Measurement Decision Card")
+    _p(doc,
+       "One-family-at-a-time measurement decision. Conservative by design. "
+       "Repeated signatures are NOT strategy proof. This card reflects current evidence accumulation only.",
+       size=9, italic=True)
+
+    card = build_measurement_decision_card(cases, sig_candidates, normalized_ledger_rows)
+
+    # State row — highlighted
+    state = card.get("decision_state", "NO_CHANGE")
+    t = _make_table(doc, ["Field", "Value"], [2.2, 6.2], fill="404040")
+    state_row = t.add_row()
+    state_row.cells[0].text = "Decision State"
+    state_row.cells[1].text = state
+    _font(state_row.cells[0], bold=True)
+    color = _DECISION_STATE_COLORS.get(state, "808080")
+    _shade(state_row.cells[1], color)
+    for p in state_row.cells[1].paragraphs:
+        for r in p.runs:
+            r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            r.bold = True
+
+    rows = [
+        ("Chosen Family",            card.get("chosen_family", "—")),
+        ("Chosen Issue Layer",        card.get("chosen_issue_layer", "—")),
+        ("Why This Family Now",       card.get("why_this_family_now", "—")),
+        ("Expected Upside",           card.get("expected_upside", "—")),
+        ("Main Risk / Side Effect",   card.get("main_risk_or_side_effect", "—")),
+        ("Evidence Strength",         card.get("evidence_strength_note", "—")),
+        ("Why Not Others",            card.get("why_not_others", "—")),
+        ("Validation Next Step",      card.get("validation_next_step", "—")),
+    ]
+    for k, v in rows:
+        _add_row(t, [k, v])
+    doc.add_paragraph()
+
+
+# ---------------------------------------------------------------------------
+# Section 14h — Trusted / Weak / Deferred Summary
+# ---------------------------------------------------------------------------
+
+def _snew_trusted_weak_deferred(doc, cases, sig_candidates, selection_context):
+    _h2(doc, "14h. Trusted / Weak / Deferred Summary")
+    _p(doc,
+       "Explicit separation of what is trusted today, what is weak, "
+       "and what must be resolved before any strategy action.",
+       size=9, italic=True)
+
+    twd = build_trusted_weak_deferred(cases, sig_candidates, selection_context)
+
+    labels = [
+        ("Trusted Today",        twd.get("trusted", []),  "70AD47"),
+        ("Weak Today",           twd.get("weak", []),     "FFC000"),
+        ("Deferred Before Action", twd.get("deferred", []), "C00000"),
+    ]
+    for label, items, color in labels:
+        # Sub-header row as shaded single-cell
+        tbl = doc.add_table(rows=1, cols=1)
+        tbl.style = "Table Grid"
+        hdr_cell = tbl.rows[0].cells[0]
+        hdr_cell.text = label
+        _shade(hdr_cell, color)
+        _white_bold(hdr_cell)
+        # Items
+        for item in items:
+            row = tbl.add_row()
+            row.cells[0].text = f"• {item}"
+            _font(row.cells[0], size=9)
+        doc.add_paragraph()
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -701,6 +805,9 @@ def build_docx_pack(research_day, selection_context, cases, anchor_rows, signatu
     _snew_antipattern_board(doc, cases)
     _snew_ledger_snapshot(doc, normalized_ledger_rows, research_day)
     _snew_promotion_rules(doc)
+    _snew_outcome_horizon_note(doc)
+    _snew_measurement_decision_card(doc, cases, signature_candidates, normalized_ledger_rows)
+    _snew_trusted_weak_deferred(doc, cases, signature_candidates, selection_context)
     _s15_review_queue(doc, cases)
     _s16_case_registry(doc, cases)
     _s17_case_appendix(doc, cases, anchor_rows, research_day, image_results_all)

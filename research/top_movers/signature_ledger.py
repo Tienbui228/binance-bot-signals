@@ -501,7 +501,6 @@ def load_and_normalize_ledger_rows(research_day: str, window_days: int = 7, as_o
     for row in all_rows:
         sk = row.get("signature_key", "")
         day_str = row.get("research_day", "")
-        last_seen_str = row.get("last_seen_date", day_str)
         if sk and day_str:
             sig_all_days[sk].add(day_str)
             try:
@@ -509,14 +508,23 @@ def load_and_normalize_ledger_rows(research_day: str, window_days: int = 7, as_o
                     sig_recent_days[sk].add(day_str)
             except ValueError:
                 pass
-        if sk:
-            if last_seen_str >= sig_latest_seen.get(sk, ""):
-                sig_latest_seen[sk] = last_seen_str
+        if sk and day_str:
+            # Use research_day, NOT stored last_seen_date, to avoid future contamination
+            # (upsert_ledger writes future last_seen_date onto historical rows)
+            if day_str >= sig_latest_seen.get(sk, ""):
+                sig_latest_seen[sk] = day_str
                 sig_latest_status[sk] = row.get("validation_status_day", "")
+
+    # Derive first/last_seen from raw research_day facts within as-of-filtered set
+    _sig_first_seen = {sk: min(days) for sk, days in sig_all_days.items()}
+    _sig_last_seen  = sig_latest_seen  # already = max(research_day) per sig
 
     for row in all_rows:
         sk = row.get("signature_key", "")
-        last_seen_str = row.get("last_seen_date", row.get("research_day", ""))
+        # Override stored first/last_seen with correctly derived values
+        row["first_seen_date"] = _sig_first_seen.get(sk, row.get("research_day", ""))
+        row["last_seen_date"]  = _sig_last_seen.get(sk, row.get("research_day", ""))
+        derived_last_seen = row["last_seen_date"]
         support_days = len(sig_all_days.get(sk, set()))
         recent_days = len(sig_recent_days.get(sk, set()))
         latest_status = sig_latest_status.get(sk, "")
@@ -527,7 +535,7 @@ def load_and_normalize_ledger_rows(research_day: str, window_days: int = 7, as_o
             latest_status = "tracking"
         row["latest_validation_status"] = latest_status
         try:
-            is_stale = datetime.strptime(last_seen_str, "%Y-%m-%d") < stale_cutoff
+            is_stale = datetime.strptime(derived_last_seen, "%Y-%m-%d") < stale_cutoff
         except ValueError:
             is_stale = False
         if is_stale:
@@ -579,7 +587,9 @@ def build_ledger_snapshot_for_report(normalized_rows: List[Dict], research_day: 
         if not existing or last_seen >= existing.get("last_seen_date", ""):
             latest_by_sig[sk] = row
 
-    snapshot = list(latest_by_sig.values())
+    # Compact snapshot: exclude rows with no activity in current rolling window
+    snapshot = [r for r in latest_by_sig.values()
+                if (r.get("recent_support_days_count") or 0) > 0]
     _role_order = {"repeated_candidate": 0, "tracking": 1, "first_observation": 2, "stale": 3}
     snapshot.sort(key=lambda r: (
         _role_order.get(r.get("current_role", ""), 4),
@@ -609,11 +619,19 @@ def validate_ledger_semantics(normalized_rows: List[Dict]) -> List[str]:
         first_seen = row.get("first_seen_date", "")
         global_last = row.get("last_seen_date", "")
         support_days = row.get("support_days_count", 0) or 0
+        recent_days  = row.get("recent_support_days_count", 0) or 0
         latest_status = row.get("latest_validation_status", "")
         if first_seen and global_last and first_seen > global_last:
             warnings.append(f"{code}: first_seen_date ({first_seen}) > last_seen_date ({global_last})")
         if support_days >= 3 and latest_status in ("first_observation", ""):
             warnings.append(f"{code}: support_days={support_days} but validation_status=\'{latest_status}\'")
+        # Snapshot-membership inconsistency: has history but no recent window activity
+        if support_days >= 2 and recent_days == 0:
+            warnings.append(
+                f"{code}: support_days={support_days} but recent_7d=0 — "
+                "signature has history but no activity in current rolling window. "
+                "Excluded from compact snapshot."
+            )
     return warnings
 
 
@@ -676,8 +694,23 @@ def build_intervention_shortlist(
             "NEW_STRATEGY_THESIS_CANDIDATE":       "new_strategy_thesis_candidate",
         }.get(dom_grade, "keep_tracking")
         actions = [c.get("strategy_action_type", "") for c in group_cases]
+        # Display identity for thesis cases: preserve persisted family=none,
+        # but surface candidate_strategy_family_name as display label
+        def _thesis_display_family(cases_in_group, persisted_family):
+            if persisted_family not in ("", "none", "unclear"):
+                return persisted_family
+            cands = [c.get("candidate_strategy_family_name","") for c in cases_in_group
+                     if c.get("candidate_strategy_family_name","") not in ("","under_investigation")]
+            if cands:
+                return f"[new] {max(set(cands), key=cands.count)}"
+            trigs = [c.get("candidate_trigger_description","") for c in cases_in_group
+                     if c.get("candidate_trigger_description","") not in ("","under_investigation")]
+            if trigs:
+                return f"[new] {trigs[0][:40]}"
+            return persisted_family
+        display_family = _thesis_display_family(group_cases, family)
         results.append({
-            "strategy_family":         family,
+            "strategy_family":         display_family,
             "issue_layer":             layer,
             "case_count_today":        len(group_cases),
             "repeated_support_today":  repeated_support_today,
@@ -820,3 +853,259 @@ def repair_ledger_history(window_days: int = 7) -> Dict:
         print("  All invariants pass after repair.")
 
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Canonical as-of-day ledger entry point
+# ---------------------------------------------------------------------------
+
+def ledger_rows_as_of(report_day: str, window_days: int = 7) -> List[Dict]:
+    """
+    Canonical entry point for all as-of-day ledger consumption.
+
+    Rules:
+      - Filters: only rows where research_day <= report_day
+      - Derives first_seen_date, last_seen_date, support_days_count,
+        recent_support_days_count from filtered raw research_day facts only
+      - Does NOT trust stored denormalized first_seen_date / last_seen_date fields
+        (those fields may have been written with future-date contamination)
+      - Returns normalized rows ready for snapshot, raw appendix, and summary use
+
+    All ledger-derived sections in any pack must use this function, not
+    load from disk independently.
+    """
+    return load_and_normalize_ledger_rows(
+        research_day=report_day,
+        window_days=window_days,
+        as_of_day=report_day,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Measurement Decision Card helper
+# ---------------------------------------------------------------------------
+
+def build_measurement_decision_card(
+    cases: List[Dict],
+    sig_candidates: List[Dict],
+    normalized_ledger_rows: List[Dict],
+) -> Dict:
+    """
+    Derive measurement decision state from existing downstream fields.
+    Returns a dict with all Measurement Decision Card fields.
+
+    Decision state ladder:
+      NO_CHANGE           — no eligible improvement cases, no repeated sigs
+      KEEP_TRACKING       — some improvement cases or sigs, not enough for hypothesis
+      PREPARE_HYPOTHESIS  — >= 3 improvement cases AND >= 1 MEDIUM+ repeated sig
+      (READY_FOR_CONTROLLED_VALIDATION — not reachable yet; deferred to future cycles)
+
+    Does NOT promote strategy change. Conservative by design.
+    """
+    eligible = [c for c in cases if c.get("research_eligible_YN") == "Y"]
+    improve   = [c for c in eligible
+                 if c.get("decision_grade") == "OLD_STRATEGY_IMPROVEMENT_CANDIDATE"]
+    thesis    = [c for c in eligible
+                 if c.get("decision_grade") == "NEW_STRATEGY_THESIS_CANDIDATE"]
+    thesis_count = len(thesis)
+    strong_sigs = [s for s in sig_candidates
+                   if s.get("confidence") in ("HIGH", "MEDIUM")]
+
+    # Repeated candidates from normalized ledger (deduped by signature_key)
+    _seen_rpt: set = set()
+    repeated_sig_count = 0
+    for r in normalized_ledger_rows:
+        sk = r.get("signature_key", "")
+        if r.get("current_role") == "repeated_candidate" and sk and sk not in _seen_rpt:
+            _seen_rpt.add(sk)
+            repeated_sig_count += 1
+
+    improve_count    = len(improve)
+    strong_sig_count = len(strong_sigs)
+
+    # Derive decision_state
+    if improve_count >= 3 and strong_sig_count >= 1 and repeated_sig_count >= 1:
+        decision_state = "PREPARE_HYPOTHESIS"
+    elif improve_count >= 1 and (strong_sig_count >= 1 or repeated_sig_count >= 1):
+        decision_state = "KEEP_TRACKING"
+    elif improve_count >= 1 or strong_sig_count >= 1:
+        decision_state = "KEEP_TRACKING"
+    else:
+        decision_state = "NO_CHANGE"
+
+    # Chosen family and layer — from dominant improvement candidate
+    def _dom(lst, field):
+        vs = [c.get(field, "") for c in lst if c.get(field)]
+        return max(set(vs), key=vs.count) if vs else "—"
+
+    chosen_family = _dom(improve, "maps_to_existing_strategy_family") if improve else "—"
+    chosen_layer  = _dom(improve, "improvement_target_layer") if improve else "—"
+
+    # Evidence note
+    if improve_count == 0 and strong_sig_count == 0 and thesis_count == 0:
+        evidence_note = "No improvement candidates, repeated signatures, or new thesis cases today."
+    elif improve_count == 0 and strong_sig_count == 0 and thesis_count > 0:
+        # Isolated new thesis: visible but not action-ready
+        _thesis_fams = list(set(
+            c.get("candidate_strategy_family_name","") for c in thesis
+            if c.get("candidate_strategy_family_name","") not in ("","under_investigation")
+        ))
+        _fam_str = ", ".join(_thesis_fams[:2]) if _thesis_fams else "unnamed"
+        evidence_note = (f"{thesis_count} isolated new-thesis candidate(s) observed "
+                         f"(family: {_fam_str}). Not action-ready — needs multi-day repetition "
+                         "before hypothesis stage.")
+    elif improve_count > 0 and strong_sig_count == 0:
+        evidence_note = (f"{improve_count} case-level improvement candidate(s); "
+                         f"no repeated cross-day signature yet.")
+    elif improve_count == 0 and strong_sig_count > 0:
+        evidence_note = (f"No case-level improvement candidates; "
+                         f"{strong_sig_count} repeated signature(s) with MEDIUM+ confidence.")
+    else:
+        evidence_note = (f"{improve_count} improvement candidate(s) + "
+                         f"{strong_sig_count} repeated signature(s). "
+                         f"Cross-day support: {repeated_sig_count} signature(s) in repeated_candidate role.")
+
+    # Why this family
+    if chosen_family != "—":
+        why_now = (f"{improve_count} eligible improvement case(s) map to {chosen_family} "
+                   f"at layer {chosen_layer}.")
+    else:
+        why_now = "No dominant family identified today."
+
+    # Expected upside
+    upside = ("Better detection or delivery precision for chosen family "
+              "if evidence holds across more days." if chosen_family != "—" else "—")
+
+    # Risk
+    risk = ("Overfitting risk if rule is changed before evidence repeats across >= 5 days "
+            "with stable anchor quality.")
+
+    # Why not others
+    other_families = set(c.get("maps_to_existing_strategy_family", "")
+                         for c in eligible
+                         if c.get("maps_to_existing_strategy_family","") not in ("", "—", "none", chosen_family))
+    _other_str = ', '.join(sorted(other_families)[:3]) if other_families else 'none'
+    _sig_note = ""
+    if sig_candidates:
+        _sig_fams = list(set(s.get("maps_to_existing_strategy_family","") or
+                             s.get("dominant_side","") for s in sig_candidates
+                             if s.get("confidence") in ("HIGH","MEDIUM")))
+        if _sig_fams:
+            _sig_note = (f" Note: repeated signature(s) exist ({', '.join(_sig_fams[:2])}) "
+                         "but no action-ready improvement candidates for that family today.")
+    why_not = (f"No other action-ready families today (observed: {_other_str})."
+               + _sig_note)
+
+    # Validation next step
+    next_step_map = {
+        "NO_CHANGE":          "Continue daily tracking. No action until evidence builds.",
+        "KEEP_TRACKING":      "Accumulate >= 3 improvement cases + 1 repeated MEDIUM+ sig before hypothesis.",
+        "PREPARE_HYPOTHESIS": "Define one improvement rule, run controlled validation on unseen days.",
+    }
+    next_step = next_step_map.get(decision_state, "Continue tracking.")
+
+    return {
+        "decision_state":           decision_state,
+        "chosen_family":            chosen_family,
+        "chosen_issue_layer":       chosen_layer,
+        "why_this_family_now":      why_now,
+        "expected_upside":          upside,
+        "main_risk_or_side_effect": risk,
+        "evidence_strength_note":   evidence_note,
+        "why_not_others":           why_not,
+        "validation_next_step":     next_step,
+        # raw counts for rendering
+        "_improve_count":      improve_count,
+        "_strong_sig_count":   strong_sig_count,
+        "_repeated_sig_count": repeated_sig_count,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Trusted / Weak / Deferred Summary helper
+# ---------------------------------------------------------------------------
+
+def build_trusted_weak_deferred(
+    cases: List[Dict],
+    sig_candidates: List[Dict],
+    selection_context: Dict,
+) -> Dict:
+    """
+    Derive trusted / weak / deferred items from existing downstream fields.
+    Returns dict with three lists of strings.
+
+    Conservative by design: err toward weaker trust labels.
+    """
+    eligible     = [c for c in cases if c.get("research_eligible_YN") == "Y"]
+    proxy_ok     = [c for c in cases if c.get("proxy_complete_YN") == "Y"]
+    outcome_ok   = [c for c in cases if c.get("outcome_complete_YN") == "Y"]
+    full_vis     = [c for c in cases if c.get("full_visual_complete_YN") == "Y"]
+    n            = max(len(cases), 1)
+
+    elig_pct    = round(100 * len(eligible) / n)
+    proxy_pct   = round(100 * len(proxy_ok) / n)
+    outcome_pct = round(100 * len(outcome_ok) / n)
+    vis_pct     = round(100 * len(full_vis) / n)
+    missing_vis = n - len(full_vis)
+
+    strong_sigs = [s for s in sig_candidates if s.get("confidence") in ("HIGH","MEDIUM")]
+    improve_cases = [c for c in eligible
+                     if c.get("decision_grade") == "OLD_STRATEGY_IMPROVEMENT_CANDIDATE"]
+
+    regime = selection_context.get("research_regime", "—")
+
+    # --- Trusted ---
+    trusted = []
+    if elig_pct >= 75:
+        trusted.append(f"Data completeness: {elig_pct}% eligible — sufficient for directional reading.")
+    if proxy_pct >= 60:
+        trusted.append(f"Proxy completeness: {proxy_pct}% — flow classification is usable.")
+    if outcome_pct >= 67:
+        trusted.append(f"Outcome completeness: {outcome_pct}% — 1h/4h horizons available for interpretation.")
+    if not trusted:
+        trusted.append("No fields meet trusted threshold today — treat all conclusions as provisional.")
+
+    # --- Weak ---
+    weak = []
+    sig_count = len(sig_candidates)
+    if sig_count == 0:
+        weak.append("Repeated signature support: 0 today — no cross-case pattern confirmed.")
+    elif not strong_sigs:
+        weak.append(f"Repeated signature support: {sig_count} candidate(s) but all LOW confidence.")
+    else:
+        weak.append(f"Repeated signature support: {sig_count} candidate(s), {len(strong_sigs)} MEDIUM+. "
+                    "Not yet multi-day stable.")
+
+    # Family isolation
+    active_families = set(c.get("maps_to_existing_strategy_family","")
+                          for c in improve_cases
+                          if c.get("maps_to_existing_strategy_family","") not in ("","—"))
+    if len(active_families) > 1:
+        weak.append(f"Family isolation: {len(active_families)} families present — "
+                    "evidence is not yet concentrated in one family.")
+    elif len(improve_cases) == 0:
+        weak.append("Family isolation: no improvement candidates today.")
+
+    if missing_vis > 0:
+        weak.append(f"Visual completeness: {missing_vis}/{n} chart(s) missing — "
+                    "manual review quality reduced for those cases.")
+
+    if not weak:
+        weak.append("No major weaknesses identified today — verify with multi-day accumulation.")
+
+    # --- Deferred ---
+    deferred = []
+    deferred.append("Multi-day stability: need >= 5 days with consistent improvement candidates "
+                    "before any rule change is proposed.")
+    deferred.append("Anchor QA sample: P0–P4 manual spot-check not yet run for this dataset.")
+    deferred.append("Controlled validation loop: fresh unseen-day validation required before "
+                    "any promoted hypothesis is considered for live implementation.")
+    if len(improve_cases) < 3:
+        deferred.append(f"More short clean cases: currently {len(improve_cases)} improvement "
+                        f"candidate(s); target >= 3 per day before hypothesis stage.")
+
+    return {
+        "trusted":  trusted,
+        "weak":     weak,
+        "deferred": deferred,
+    }
