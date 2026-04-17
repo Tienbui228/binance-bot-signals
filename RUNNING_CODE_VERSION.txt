@@ -2,4 +2,4 @@ code_build_id=long-acceptance-unlock-2026-04-06
 code_build_source=version-marker-fix-on-live-file
 code_build_note=Adds trustworthy runtime build marker and startup build logs so live code version is explicit.
 config_version=phase3-short-exhaustion-v5-scoreparts-manualdiag
-written_at_utc=2026-04-08T08:48:58.434116+00:00
+written_at_utc=2026-04-11T06:16:54.257825+00:00

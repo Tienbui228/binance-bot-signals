@@ -26,6 +26,18 @@ from research.top_movers.signature_ledger import (
     build_intervention_shortlist,
     build_measurement_decision_card,
     build_trusted_weak_deferred,
+    # Phase 2A
+    build_anchor_qa_summary,
+    build_short_family_boards,
+    build_interaction_board,
+    build_measurement_confidence_summary,
+    # Phase 2B
+    build_multiday_family_stats,
+    build_multiday_interaction_stats,
+    build_controlled_validation_summary,
+    # Phase 2D
+    build_family_validation_stats,
+    build_family_answer_contracts,
 )
 
 # Maps image key to primary anchor code (for missing-reason lookup)
@@ -55,6 +67,58 @@ _GRADE_COLORS = {
 _HEALTH_COLORS = {"CLEAN": "70AD47", "CLEAN_WITH_VISUAL_GAPS": "92D050", "PARTIAL": "FFC000", "WEAK": "C00000"}
 _YN_COLORS     = {"Y": "70AD47", "N": "C00000"}
 _DQ_COLORS     = {"CLEAN": "70AD47", "PARTIAL": "FFC000", "WEAK": "C00000"}
+
+# Phase 2A color maps
+_READINESS_COLORS = {
+    "MEASUREMENT_READY":   "70AD47",
+    "USABLE_WITH_CAUTION": "FFC000",
+    "DIRECTIONAL_ONLY":    "2E75B6",
+    "NOT_RUN":             "C00000",
+}
+_CONFIDENCE_BAND_COLORS = {
+    "HIGH":   "70AD47",
+    "MEDIUM": "FFC000",
+    "LOW":    "C00000",
+}
+_GATE_COLORS = {
+    "MET":     "70AD47",
+    "PARTIAL": "FFC000",
+    "NOT_MET": "C00000",
+}
+_STABILITY_COLORS_P2 = {
+    "STABLE":       "70AD47",
+    "EARLY_SIGNAL": "FFC000",
+    "UNSTABLE":     "C00000",
+}
+_REGIME_COLORS_P2 = {
+    "CONSISTENT": "70AD47",
+    "MIXED":      "FFC000",
+    "UNKNOWN":    "808080",
+}
+
+# Phase 2B color maps
+_SAMPLE_GATE_COLORS_2B = {
+    "RECOMMENDATION_GRADE": "70AD47",
+    "TRACKING_GRADE":       "FFC000",
+    "LOW_SAMPLE":           "C0504D",
+    "NOT_ENOUGH_SAMPLE":    "808080",
+}
+_BUCKET_GATE_COLORS_2B = {
+    "BUCKET_READY":         "70AD47",
+    "BUCKET_THIN":          "FFC000",
+    "BUCKET_INSUFFICIENT":  "808080",
+}
+_CONFIDENCE_2B_COLORS = {
+    "MODERATE":         "FFC000",
+    "LOW":              "C00000",
+    "DESCRIPTIVE_ONLY": "808080",
+}
+_PROMOTION_COLORS = {
+    "DESCRIPTIVE_ONLY":                    "808080",
+    "KEEP_TRACKING":                       "FFC000",
+    "PREPARE_HYPOTHESIS":                  "2E75B6",
+    "NOT_READY_FOR_CONTROLLED_VALIDATION": "C00000",
+}
 
 
 def _shade(cell, hex_color):
@@ -488,7 +552,10 @@ def _s17_case_appendix(doc, cases, anchor_rows, research_day, image_results_all=
 def _s18_footer(doc, cases, signature_candidates):
     doc.add_page_break(); _h1(doc, "Research Action Footer")
     eligible=[c for c in cases if c.get("research_eligible_YN")=="Y"]
-    keep  = [s.get("signature_candidate_code","") for s in signature_candidates if s.get("strategy_action_type")=="keep_observing"]
+    # All repeated signature candidates today are 'keep tracking' by definition —
+    # filtering by strategy_action_type=='keep_observing' uses the wrong field
+    # (that is a case-level field, not a signature-level action value).
+    keep  = [s.get("signature_candidate_code","") for s in signature_candidates]
     imp   = [c.get("case_id","") for c in eligible if c.get("strategy_action_type")=="improve_existing"]
     # Only surface case-level new thesis candidates (NEW_STRATEGY_THESIS_CANDIDATE), not exploratory families
     new_t = list(set(c.get("case_id","") for c in eligible
@@ -584,12 +651,13 @@ def _snew_intervention_shortlist(doc, cases, sig_candidates, normalized_ledger_r
     if not shortlist:
         _p(doc, "No intervention candidates today."); doc.add_paragraph(); return
     t = _make_table(doc,
-        ["Strategy Family", "Issue Layer", "Cases", "Repeated?", "Cross-Day", "Evidence Source", "Readiness"],
-        [1.8, 1.5, 0.6, 0.7, 0.8, 1.5, 2.3])
+        ["Strategy Family", "Issue Layer", "Cases", "Repeated?", "Cross-Day", "Evidence Source", "Readiness", "Next Action"],
+        [1.5, 1.3, 0.5, 0.6, 0.7, 1.3, 1.5, 1.2])
     for row in shortlist:
         _add_row(t, [row.get("strategy_family",""), row.get("issue_layer",""),
             row.get("case_count_today",0), str(row.get("repeated_support_today",0)),
-            row.get("cross_day_support",0), row.get("evidence_source",""), row.get("readiness","")])
+            row.get("cross_day_support",0), row.get("evidence_source",""), row.get("readiness",""),
+            row.get("next_action","")])
     doc.add_paragraph()
 
 
@@ -771,10 +839,702 @@ def _snew_trusted_weak_deferred(doc, cases, sig_candidates, selection_context):
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def build_docx_pack(research_day, selection_context, cases, anchor_rows, signature_candidates,
-                    output_path, image_results_all=None) -> str:
+
+
+# ---------------------------------------------------------------------------
+# Phase 2A — shared board rendering helper
+# ---------------------------------------------------------------------------
+
+_BOARD_H = ["Group", "N", "F1h", "F4h", "A4h", "Dom.Res", "Ready"]
+_BOARD_W = [2.3, 0.3, 0.6, 0.6, 0.6, 1.5, 1.3]
+
+
+def _render_compact_board(doc, title, question, rows, proxy_note=""):
+    _p(doc, title, bold=True, size=10)
+    _p(doc, f"Q: {question}", size=9, italic=True)
+    if proxy_note:
+        _p(doc, f"Group: {proxy_note}", size=9, italic=True)
+    if not rows:
+        _p(doc, "No combinations in current eligible SHORT cases.", size=9)
+        doc.add_paragraph()
+        return
+    t = _make_table(doc, _BOARD_H, _BOARD_W, fill="2E75B6")
+    for row in rows:
+        _add_row(t, [
+            row.get("group_label", "—"),
+            row.get("case_count", "—"),
+            _fmt(row.get("median_f1h")),
+            _fmt(row.get("median_f4h")),
+            _fmt(row.get("median_a4h")),
+            row.get("dominant_resolution", "—"),
+            row.get("readiness_note", "—"),
+        ])
+    doc.add_paragraph()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2A — 14c2  Short Family Measurement Boards
+# ---------------------------------------------------------------------------
+
+def _snew_short_family_boards(doc, short_boards):
+    _h2(doc, "14c2. Short Family Measurement Boards")
+    _p(doc,
+       "Five compact boards for short-side family measurement. "
+       "Eligible SHORT cases only. Directional reading — not action-ready at current sample size. "
+       "F1h/F4h = median favor pct. A4h = median adverse pct.",
+       size=9, italic=True)
+    count = short_boards.get("short_eligible_count", 0)
+    _p(doc, f"Eligible SHORT cases today: {count}  |  {short_boards.get('note', '')}")
+    if count == 0:
+        doc.add_paragraph()
+        return
+    _render_compact_board(
+        doc, "B1. Breakdown Quality Board",
+        "Which short breakdown structures look promising vs dirty/fake?",
+        short_boards.get("b1_breakdown_quality", []),
+        "move_class | structural_quality | break_quality_band | resolution_label",
+    )
+    _render_compact_board(
+        doc, "B2. Retest / Reclaim Behavior Board",
+        "Are short candidates failing because reclaim is too deep or fail confirmation is weak/late?",
+        short_boards.get("b2_retest_reclaim", []),
+        "move_class | structural_quality | reclaim_break_4h_YN (proxy) | resolution_label",
+    )
+    _render_compact_board(
+        doc, "B3. Exhaustion / Top Behavior Board",
+        "Is exhaustion/top behavior usable or still descriptive-only?",
+        short_boards.get("b3_exhaustion_top", []),
+        "pre_move_signature | participation_pattern | move_class | resolution_label",
+    )
+    _render_compact_board(
+        doc, "B4. Timing / Staleness Board",
+        "Are some shorts weak because they are late/stale rather than structurally invalid?",
+        short_boards.get("b4_timing_staleness", []),
+        "display_family | timing_band (from time_to_2pct_favor_min) | resolution_label",
+    )
+    _render_compact_board(
+        doc, "B5. Context / Regime Board",
+        "Does the same short structure behave differently by regime / breadth / BTC context?",
+        short_boards.get("b5_context_regime", []),
+        "research_regime | btc_bucket | breadth_bucket | resolution_label",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2A — 14c3  Interaction Board
+# ---------------------------------------------------------------------------
+
+def _snew_interaction_board(doc, interaction_data):
+    _h2(doc, "14c3. Interaction Board")
+    _p(doc,
+       "Combined-pattern behavior. Four interaction pairs. Top 5 combinations per pair. "
+       "Directional only — not action-ready at current sample size.",
+       size=9, italic=True)
+    if not interaction_data:
+        _p(doc, "No eligible cases for interaction analysis today.")
+        doc.add_paragraph()
+        return
+    _ch = ["Combination", "N", "F1h", "F4h", "A4h", "Dom.Res", "Sample"]
+    _cw = [2.3, 0.3, 0.6, 0.6, 0.6, 1.5, 0.9]
+    for pair in interaction_data:
+        _p(doc, pair.get("interaction_pair", "—"), bold=True, size=9)
+        combos = pair.get("top_combinations", [])
+        if not combos:
+            _p(doc, "No combinations found.", size=9)
+            doc.add_paragraph()
+            continue
+        t = _make_table(doc, _ch, _cw, fill="404040")
+        for combo in combos:
+            _add_row(t, [
+                combo.get("combination_key", "—"),
+                combo.get("case_count", "—"),
+                _fmt(combo.get("median_f1h")),
+                _fmt(combo.get("median_f4h")),
+                _fmt(combo.get("median_a4h")),
+                combo.get("dominant_resolution", "—"),
+                combo.get("sample_note", "—"),
+            ])
+        _p(doc, pair.get("analyst_note", ""), size=9, italic=True)
+        doc.add_paragraph()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2A — 14f2  Anchor QA / Anchor Audit Summary
+# ---------------------------------------------------------------------------
+
+def _snew_anchor_qa(doc, anchor_qa):
+    _h2(doc, "14f2. Anchor QA / Anchor Audit Summary")
+    _p(doc,
+       "Anchor render completeness vs manual audit readiness. "
+       "anchor_measurement_readiness cannot exceed DIRECTIONAL_ONLY "
+       "without a manual spot-check sample.",
+       size=9, italic=True)
+    readiness = anchor_qa.get("anchor_measurement_readiness", "NOT_RUN")
+    t = _make_table(doc, ["Field", "Value"], [3.2, 4.5], fill="404040")
+    r0 = t.add_row()
+    r0.cells[0].text = "anchor_measurement_readiness"
+    r0.cells[1].text = readiness
+    _font(r0.cells[0], bold=True)
+    _shade(r0.cells[1], _READINESS_COLORS.get(readiness, "808080"))
+    for p in r0.cells[1].paragraphs:
+        for run in p.runs:
+            run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            run.bold = True
+    _add_row(t, ["anchor_rows_expected",           str(anchor_qa.get("anchor_rows_expected", "—"))])
+    _add_row(t, ["anchor_rows_rendered",            str(anchor_qa.get("anchor_rows_rendered", "—"))])
+    _add_row(t, ["anchor_images_rendered",          str(anchor_qa.get("anchor_images_rendered", "—"))])
+    _add_row(t, ["anchor_detect_method",            str(anchor_qa.get("anchor_detect_method", "—"))])
+    _add_row(t, ["anchor_conflict_cases_count",     str(anchor_qa.get("anchor_conflict_cases_count", "—"))])
+    _add_row(t, ["anchor_fallback_cases_count",     str(anchor_qa.get("anchor_fallback_cases_count", "—"))])
+    _add_row(t, ["anchor_conflict_rows_count",      str(anchor_qa.get("anchor_conflict_rows_count", "—"))])
+    _add_row(t, ["manual_anchor_audit_sample_size", str(anchor_qa.get("manual_anchor_audit_sample_size", "—"))])
+    _add_row(t, ["manual_anchor_audit_pass_rate",   str(anchor_qa.get("manual_anchor_audit_pass_rate", "—"))])
+    doc.add_paragraph()
+    _p(doc, anchor_qa.get("anchor_audit_note", ""), size=9, italic=True)
+    doc.add_paragraph()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2A — 14g2  Measurement Confidence Summary
+# ---------------------------------------------------------------------------
+
+def _snew_measurement_confidence(doc, conf):
+    _h2(doc, "14g2. Measurement Confidence Summary")
+    _p(doc,
+       "Explicit confidence frame. Conservative by design. "
+       "confidence_band capped at MEDIUM — HIGH not achievable at Phase 2A stage. "
+       "Do not use this section to justify action-ready recommendations.",
+       size=9, italic=True)
+    cb = conf.get("confidence_band", "LOW")
+    t = _make_table(doc, ["Field", "Value"], [3.2, 4.5], fill="404040")
+    cb_row = t.add_row()
+    cb_row.cells[0].text = "confidence_band"
+    cb_row.cells[1].text = cb
+    _font(cb_row.cells[0], bold=True)
+    _shade(cb_row.cells[1], _CONFIDENCE_BAND_COLORS.get(cb, "808080"))
+    for p in cb_row.cells[1].paragraphs:
+        for run in p.runs:
+            run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            run.bold = True
+    _add_row(t, ["decision_sample_size",            str(conf.get("decision_sample_size", "—"))])
+    _add_row(t, ["chosen_family_sample_size",        str(conf.get("chosen_family_sample_size", "—"))])
+    _add_row(t, ["largest_short_family_sample_size", str(conf.get("largest_short_family_sample_size", "—"))])
+    _add_row(t, ["sample_gate_status",
+                 conf.get("sample_gate_status", "—")],    hi_col=1, hi_map=_GATE_COLORS)
+    _add_row(t, ["bucket_gate_status",
+                 conf.get("bucket_gate_status", "—")],    hi_col=1, hi_map=_GATE_COLORS)
+    _add_row(t, ["stability_flag",
+                 conf.get("stability_flag", "—")],        hi_col=1, hi_map=_STABILITY_COLORS_P2)
+    _add_row(t, ["regime_consistency_flag",
+                 conf.get("regime_consistency_flag", "—")], hi_col=1, hi_map=_REGIME_COLORS_P2)
+    doc.add_paragraph()
+    _p(doc, conf.get("confidence_note", ""), size=9, italic=True)
+    doc.add_paragraph()
+    t2 = _make_table(doc, ["Gate", "Requirement"], [2.0, 5.7], fill="404040")
+    _add_row(t2, ["Why not promoted",           conf.get("why_not_promoted", "—")])
+    _add_row(t2, ["Next validation requirement", conf.get("next_validation_requirement", "—")])
+    doc.add_paragraph()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2C — 14f3  Layer Field Coverage Audit
+# ---------------------------------------------------------------------------
+
+_COVERAGE_STATUS_COLORS = {
+    "OK":       "70AD47",
+    "PARTIAL":  "FFC000",
+    "BLOCKING": "C00000",
+}
+
+def _snew_layer_field_coverage(doc, layer_audit: dict) -> None:
+    _h2(doc, "14f3. Layer Field Coverage Audit")
+    _p(doc,
+       "Audit of mandatory fields against the Layer 0–8 master spec. "
+       "BLOCKING = mandatory field missing from case schema. "
+       "PARTIAL = field present but always null. "
+       "OK = field present and usable. "
+       "Layers 3–6 showing BLOCKING is expected Phase 2C output — not a bug.",
+       size=9, italic=True)
+
+    if not layer_audit:
+        _p(doc, "Layer audit not available.", size=9, italic=True)
+        doc.add_paragraph()
+        return
+
+    # Summary card
+    t_sum = _make_table(doc, ["Field", "Value"], [3.2, 4.5], fill="404040")
+    _add_row(t_sum, ["total_required_fields",    str(layer_audit.get("total_required_fields", "—"))])
+    _add_row(t_sum, ["fields_present_count",      str(layer_audit.get("fields_present_count", "—"))])
+    _add_row(t_sum, ["fields_missing_count",      str(layer_audit.get("fields_missing_count", "—"))])
+    _add_row(t_sum, ["fields_all_null_count",     str(layer_audit.get("fields_all_null_count", "—"))])
+    _add_row(t_sum, ["blocking_layers_count",     str(layer_audit.get("blocking_layers_count", "—"))])
+    _add_row(t_sum, ["blocking_layers",           str(layer_audit.get("blocking_layers", "—"))])
+    doc.add_paragraph()
+
+    # Per-layer compact table
+    layer_rows = layer_audit.get("layer_rows", [])
+    if layer_rows:
+        t = _make_table(doc,
+            ["Layer", "Name", "Req", "Present", "Missing", "Null", "Status"],
+            [0.4, 2.2, 0.5, 0.6, 0.6, 0.5, 0.9])
+        for row in layer_rows:
+            status = row.get("coverage_status", "—")
+            tr = t.add_row()
+            vals = [
+                str(row.get("layer_id", "—")),
+                row.get("layer_name", "—")[:30],
+                str(row.get("required_fields_count", "—")),
+                str(row.get("present_fields_count", "—")),
+                str(row.get("missing_fields_count", "—")),
+                str(row.get("all_null_fields_count", "—")),
+                status,
+            ]
+            for i, v in enumerate(vals):
+                cell = tr.cells[i]
+                cell.text = v
+                _font(cell)
+                if i == 6:
+                    color = _COVERAGE_STATUS_COLORS.get(status)
+                    if color:
+                        _shade(cell, color)
+                        for p in cell.paragraphs:
+                            for run in p.runs:
+                                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    doc.add_paragraph()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2B — 14g3  Multi-Day Validation Snapshot (Phase 2C updated)
+# ---------------------------------------------------------------------------
+
+def _snew_multiday_validation_snapshot(
+    doc,
+    validation_summary: dict,
+    family_history_snapshot: Optional[dict] = None,  # accepted but NOT used — Phase 2B is independent
+) -> None:
+    _h2(doc, "14g3. Multi-Day Validation Snapshot")
+    # Phase 2B is today-only conservative promotion frame.
+    # Phase 2C family history is in section 14g3b and is completely independent.
+    # Do NOT override Phase 2B fields with Phase 2C data.
+    _p(doc,
+       "Phase 2B — today-only conservative promotion frame. "
+       "SHORT-side, research_eligible_YN == Y. "
+       "Phase 2C family history (multiday) is shown separately in 14g3b. "
+       "PREPARE_HYPOTHESIS blocked — Phase 2E gates required "
+       "(anchor QA, unseen-day validation, sample thresholds). "
+       "Bucket-ready: >= 10. Tracking-grade: >= 20. Recommendation: >= 50.",
+       size=9, italic=True)
+
+    if not validation_summary:
+        _p(doc, "No validation summary available.", size=9, italic=True)
+        doc.add_paragraph()
+        return
+
+    promotion_state = validation_summary.get("promotion_state", "DESCRIPTIVE_ONLY")
+
+    t = _make_table(doc, ["Field", "Value"], [3.2, 4.5], fill="404040")
+    ps_row = t.add_row()
+    ps_row.cells[0].text = "promotion_state"
+    ps_row.cells[1].text = promotion_state
+    _font(ps_row.cells[0], bold=True)
+    _shade(ps_row.cells[1], _PROMOTION_COLORS.get(promotion_state, "808080"))
+    for p in ps_row.cells[1].paragraphs:
+        for run in p.runs:
+            run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            run.bold = True
+
+    _add_row(t, ["Top Family (today only)",
+                 str(validation_summary.get("top_candidate_family", "—"))])
+    _add_row(t, ["Case Count (today only)",
+                 str(validation_summary.get("_top_case_count", "—"))])
+    _add_row(t, ["Ledger Research Days (global context only)",
+                 str(validation_summary.get("ledger_research_days_global_context", "—"))])
+    _add_row(t, ["families_at_bucket_ready_or_above (>= 10)",
+                 str(validation_summary.get("families_at_bucket_ready_or_above", "—"))])
+    _add_row(t, ["families_at_tracking_grade_or_above (>= 20)",
+                 str(validation_summary.get("families_at_tracking_grade_or_above", "—"))])
+    _add_row(t, ["families_at_recommendation_grade_or_above (>= 50)",
+                 str(validation_summary.get("families_at_recommendation_grade_or_above", "—"))])
+    doc.add_paragraph()
+
+    t2 = _make_table(doc, ["Item", "Detail"], [2.0, 5.7], fill="404040")
+    _add_row(t2, ["promotion_reason",     str(validation_summary.get("promotion_reason", "—"))])
+    _add_row(t2, ["blocking_reason",      str(validation_summary.get("blocking_reason", "—"))])
+    _add_row(t2, ["validation_next_step", str(validation_summary.get("validation_next_step", "—"))])
+    doc.add_paragraph()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2C — 14g3b  Family History Compact (inserted after Phase 2B snapshot)
+# ---------------------------------------------------------------------------
+
+def _snew_phase2c_family_history_compact(
+    doc,
+    family_history_snapshot: Optional[dict],
+) -> None:
+    """Compact Phase 2C family history block — after 14g3, before 14g4."""
+    _h2(doc, "14g3b. Phase 2C Family History (compact)")
+    _p(doc,
+       "Multiday SHORT family history from daily_case_dataset CSVs — NOT from ledger. "
+       "PREPARE_HYPOTHESIS remains blocked — Phase 2E gates required "
+       "(anchor QA, unseen-day validation, sample thresholds).",
+       size=9, italic=True)
+
+    if not family_history_snapshot:
+        _p(doc, "Family history snapshot not available.", size=9, italic=True)
+        doc.add_paragraph()
+        return
+
+    fhs = family_history_snapshot
+    t = _make_table(doc, ["Field", "Value"], [3.2, 4.5], fill="404040")
+    _add_row(t, ["top_candidate_family",          str(fhs.get("top_candidate_family", "—"))])
+    _add_row(t, ["top_family_case_count_multiday", str(fhs.get("top_family_case_count_multiday", "—"))])
+    _add_row(t, ["top_family_days_count",          str(fhs.get("top_family_days_count", "—"))])
+
+    hist_status = fhs.get("family_history_status", "not_available_yet")
+    hs_row = t.add_row()
+    hs_row.cells[0].text = "family_history_status"
+    hs_row.cells[1].text = hist_status
+    _font(hs_row.cells[0])
+    _HIST_STATUS_COLORS = {
+        "available":       "70AD47",
+        "early_tracking":  "FFC000",
+        "not_available_yet": "808080",
+    }
+    color = _HIST_STATUS_COLORS.get(hist_status)
+    if color:
+        _shade(hs_row.cells[1], color)
+        for p in hs_row.cells[1].paragraphs:
+            for run in p.runs:
+                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+    _add_row(t, ["families_with_history_count",   str(fhs.get("families_with_history_count", "—"))])
+    _add_row(t, ["historical_case_days_loaded",    str(fhs.get("historical_case_days_loaded", "—"))])
+    doc.add_paragraph()
+    _p(doc, fhs.get("history_note", ""), size=8, italic=True)
+    doc.add_paragraph()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2D — 14g4  Family Validation Snapshot
+# ---------------------------------------------------------------------------
+
+# Color maps for Phase 2D
+_BUCKET_STATUS_COLORS_2D = {
+    "bucket_ready":         "70AD47",
+    "tracking_grade":       "2E75B6",
+    "recommendation_grade": "375623",
+    "not_enough_sample":    "808080",
+}
+_STABILITY_COLORS_2D = {
+    "STABLE":       "70AD47",
+    "EARLY_SIGNAL": "FFC000",
+    "UNSTABLE":     "C00000",
+    "INSUFFICIENT": "808080",
+}
+_RECOMMENDATION_COLORS_2D = {
+    "keep_tracking":     "2E75B6",
+    "descriptive_only":  "808080",
+    "blocked":           "C00000",
+    "no_change":         "808080",
+}
+
+_P2E_STATE_COLORS = {
+    "READY_FOR_CONTROLLED_VALIDATION":     "375623",
+    "PREPARE_HYPOTHESIS":                  "538135",
+    "NOT_READY_FOR_CONTROLLED_VALIDATION": "C55A11",
+    "KEEP_TRACKING":                       "2E75B6",
+    "DESCRIPTIVE_ONLY":                    "808080",
+}
+
+_P2E_UNSEEN_COLORS = {
+    "NOT_READY_no_holdout_data":             "808080",
+    "NOT_READY_insufficient_holdout_sample": "C55A11",
+    "PARTIAL_holdout_available":             "2E75B6",
+}
+
+
+def _snew_phase2d_validation_snapshot(
+    doc,
+    family_validation_stats: Optional[list],
+) -> None:
+    """Phase 2D — Section 14g4: Family Validation Snapshot."""
+    _h2(doc, "14g4. Phase 2D Family Validation Snapshot")
+    _p(doc,
+       "Phase 2D — statistical validation per SHORT family using multiday case pool. "
+       "Bootstrap CI (95%) from stdlib random. KS/t-test via optional scipy. "
+       "Conservative: blocked / not_enough_sample outputs are expected at current sample sizes. "
+       "PREPARE_HYPOTHESIS is NOT unlocked by Phase 2D stats alone.",
+       size=9, italic=True)
+
+    if not family_validation_stats:
+        _p(doc,
+           "No Phase 2D validation stats available. "
+           "Run after historical daily_case_dataset CSVs exist.",
+           size=9, italic=True)
+        doc.add_paragraph()
+        return
+
+    t = _make_table(doc,
+        ["Family", "N multi", "Days", "Med F1h", "Med F4h", "Med A4h",
+         "CI Low", "CI High", "Bucket", "Stability", "KS", "t-test"],
+        [1.8, 0.55, 0.45, 0.6, 0.6, 0.6, 0.55, 0.55, 0.75, 0.75, 0.9, 1.0])
+
+    for row in family_validation_stats:
+        bk = row.get("bucket_ready_status", "—")
+        st = row.get("stability_flag", "—")
+        is_actionable = row.get("is_actionable_family", True)
+        tr = t.add_row()
+        vals = [
+            row.get("display_family", "—"),
+            row.get("case_count_multiday", "—"),
+            row.get("family_days_count", "—"),
+            _fmt(row.get("median_f1h")),
+            _fmt(row.get("median_f4h")),
+            _fmt(row.get("median_a4h")),
+            _fmt(row.get("bootstrap_ci_low")),
+            _fmt(row.get("bootstrap_ci_high")),
+            bk,
+            st,
+            str(row.get("ks_test_status_or_na", "—")),
+            str(row.get("ttest_status_or_na", "—")),
+        ]
+        for i, v in enumerate(vals):
+            cell = tr.cells[i]
+            cell.text = str(v) if v is not None else "—"
+            _font(cell)
+            if i == 8:
+                # Population buckets (unclassified) get grey regardless of grade
+                color = "808080" if not is_actionable else _BUCKET_STATUS_COLORS_2D.get(str(v))
+                if color:
+                    _shade(cell, color)
+                    for p in cell.paragraphs:
+                        for r in p.runs:
+                            r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            elif i == 9:
+                color = _STABILITY_COLORS_2D.get(str(v))
+                if color:
+                    _shade(cell, color)
+                    for p in cell.paragraphs:
+                        for r in p.runs:
+                            r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+    doc.add_paragraph()
+
+    # Statistical readiness notes (one paragraph per family)
+    for row in family_validation_stats:
+        note = row.get("statistical_readiness_note", "")
+        if note:
+            _p(doc, f"[{row.get('display_family','?')}] {note}", size=8, italic=True)
+    doc.add_paragraph()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2D — 14g5  Family Answer Contracts
+# ---------------------------------------------------------------------------
+
+def _snew_phase2d_answer_contracts(
+    doc,
+    family_answer_contracts: Optional[list],
+) -> None:
+    """Phase 2D — Section 14g5: Family Answer Contracts (6 question families)."""
+    _h2(doc, "14g5. Phase 2D Family Answer Contracts")
+    _p(doc,
+       "One contract per question family: Exhaustion / Breakdown / Retest fail / "
+       "Timing / Invalidation / Context. "
+       "Blocked when required Layer fields are missing at source. "
+       "Does NOT write live-rule instructions. "
+       "recommendation_state stays conservative — see validation_next_step to unblock.",
+       size=9, italic=True)
+
+    if not family_answer_contracts:
+        _p(doc,
+           "No Phase 2D answer contracts available. "
+           "Run after historical case datasets exist.",
+           size=9, italic=True)
+        doc.add_paragraph()
+        return
+
+    for contract in family_answer_contracts:
+        fname = contract.get("family_name", "—")
+        rstate = contract.get("recommendation_state", "blocked")
+
+        _p(doc, fname, bold=True, size=10)
+
+        t = _make_table(doc, ["Field", "Detail"], [2.2, 5.5], fill="404040")
+
+        # recommendation_state gets color treatment
+        rs_row = t.add_row()
+        rs_row.cells[0].text = "recommendation_state"
+        rs_row.cells[1].text = rstate
+        _font(rs_row.cells[0], bold=True)
+        color = _RECOMMENDATION_COLORS_2D.get(rstate)
+        if color:
+            _shade(rs_row.cells[1], color)
+            for p in rs_row.cells[1].paragraphs:
+                for run in p.runs:
+                    run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+                    run.bold = True
+
+        _add_row(t, ["strategy_question",
+                     str(contract.get("strategy_question", "—"))[:200]])
+        _add_row(t, ["threshold_direction",
+                     str(contract.get("threshold_direction", "—"))])
+        _add_row(t, ["evidence_summary",
+                     str(contract.get("evidence_summary", "—"))[:200]])
+        _add_row(t, ["confidence_summary",
+                     str(contract.get("confidence_summary", "—"))])
+        _add_row(t, ["blocking_reason",
+                     str(contract.get("blocking_reason", "—"))[:180]])
+        _add_row(t, ["likely_side_effect",
+                     str(contract.get("likely_side_effect", "—"))[:180]])
+        _add_row(t, ["validation_next_step",
+                     str(contract.get("validation_next_step", "—"))[:180]])
+        doc.add_paragraph()
+
+
+
+
+def _trunc(text, limit: int = 130) -> str:
+    """Clean truncation with ellipsis for Phase 2E display fields."""
+    s = str(text) if text is not None else "—"
+    if len(s) <= limit:
+        return s
+    # Break at word boundary when possible
+    cut = s[:limit - 1].rsplit(" ", 1)[0]
+    return cut + "…"
+
+
+def _snew_phase2e_card(
+    doc,
+    controlled_validation_state: Optional[list],
+    unseen_day_summary: Optional[list],
+) -> None:
+    """
+    Phase 2E — Controlled validation gate card.
+    Renderer only: consumes producer outputs, does not invent gate logic.
+    """
+    _h2(doc, "14g6. Phase 2E — Controlled Validation Gate")
+    _p(doc,
+       "Gate-building phase. Expected output: conservative for all families. "
+       "PREPARE_HYPOTHESIS / READY_FOR_CONTROLLED_VALIDATION require all hard gates. "
+       "Conservative NOT_READY / KEEP_TRACKING / DESCRIPTIVE_ONLY is the correct result "
+       "at current evidence level.",
+       size=9, italic=True)
+
+    if not controlled_validation_state:
+        _p(doc,
+           "No Phase 2E controlled validation state available. "
+           "Requires Phase 2C family history + Phase 2D validation stats.",
+           size=9, italic=True)
+        doc.add_paragraph()
+    else:
+        _p(doc, "Controlled Validation State — one row per display_family:", bold=True, size=9)
+        t = _make_table(
+            doc,
+            ["Family", "State", "N multi", "Days", "Anchor Gate", "Blocker Summary"],
+            [1.8, 2.0, 0.6, 0.5, 1.2, 2.3],
+        )
+        for row in controlled_validation_state:
+            state = row.get("controlled_validation_state", "—")
+            tr = t.add_row()
+            vals = [
+                row.get("display_family", "—"),
+                state,
+                row.get("case_count_multiday", "—"),
+                row.get("family_days_count", "—"),
+                row.get("anchor_qa_gate", "—"),
+                _trunc(row.get("promotion_blocker_summary", "—"), 130),
+            ]
+            for i, v in enumerate(vals):
+                cell = tr.cells[i]
+                cell.text = str(v) if v is not None else "—"
+                _font(cell, size=8)
+                if i == 1:
+                    color = _P2E_STATE_COLORS.get(str(v))
+                    if color:
+                        _shade(cell, color)
+                        for p in cell.paragraphs:
+                            for r in p.runs:
+                                r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+        doc.add_paragraph()
+
+    if not unseen_day_summary:
+        _p(doc, "No unseen-day validation summary available.", size=9, italic=True)
+        doc.add_paragraph()
+        return
+
+    _p(doc, "Unseen-Day / Holdout Validation Summary:", bold=True, size=9)
+    t2 = _make_table(
+        doc,
+        ["Family", "Unseen Status", "Holdout N", "Days", "Summary"],
+        [1.8, 2.0, 0.65, 0.5, 3.45],
+    )
+    for row in unseen_day_summary:
+        status = row.get("unseen_validation_status", "—")
+        tr = t2.add_row()
+        vals = [
+            row.get("display_family", "—"),
+            status,
+            row.get("holdout_case_count", 0),
+            row.get("holdout_days_used", 0),
+            _trunc(row.get("holdout_result_summary", "—"), 130),
+        ]
+        for i, v in enumerate(vals):
+            cell = tr.cells[i]
+            cell.text = str(v) if v is not None else "—"
+            _font(cell, size=8)
+            if i == 1:
+                color = _P2E_UNSEEN_COLORS.get(str(v))
+                if color:
+                    _shade(cell, color)
+                    for p in cell.paragraphs:
+                        for r in p.runs:
+                            r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    doc.add_paragraph()
+    _p(doc,
+       "> Unseen-day validation not yet run. "
+       "Holdout data required before any promotion claim is valid.",
+       size=8, italic=True)
+    doc.add_paragraph()
+
+def build_docx_pack(
+    research_day, selection_context, cases, anchor_rows, signature_candidates,
+    output_path, image_results_all=None,
+    layer_audit: Optional[dict] = None,
+    family_history_snapshot: Optional[dict] = None,
+    p2d_family_validation_stats: Optional[list] = None,
+    p2d_family_answer_contracts: Optional[list] = None,
+    p2e_controlled_validation_state: Optional[list] = None,
+    p2e_unseen_day_summary: Optional[list] = None,
+) -> str:
     if image_results_all is None: image_results_all={}
     normalized_ledger_rows = load_and_normalize_ledger_rows(research_day, window_days=7, as_of_day=research_day)
+
+    # Phase 2A pre-computations
+    anchor_qa        = build_anchor_qa_summary(cases, anchor_rows)
+    short_boards     = build_short_family_boards(cases)
+    interaction_data = build_interaction_board(cases)
+    conf_summary     = build_measurement_confidence_summary(
+        cases, signature_candidates, normalized_ledger_rows)
+
+    # Phase 2B pre-computations
+    _ledger_days_context = len(set(
+        r.get("research_day", "") for r in normalized_ledger_rows
+        if r.get("research_day")
+    ))
+    multiday_fam_stats    = build_multiday_family_stats(cases, normalized_ledger_rows)
+    multiday_inter_stats  = build_multiday_interaction_stats(cases)
+    validation_summary    = build_controlled_validation_summary(
+        multiday_fam_stats, multiday_inter_stats, _ledger_days_context)
+    # Attach top case_count aligned with top_candidate_family (named family, not unclassified)
+    if multiday_fam_stats:
+        _top_fam = validation_summary.get("top_candidate_family", "")
+        _top_row = next((r for r in multiday_fam_stats if r.get("display_family") == _top_fam), None)
+        validation_summary["_top_case_count"] = (
+            _top_row.get("case_count", "—") if _top_row else "—"
+        )
+
     doc=Document()
 
     _h1(doc, "Daily Top Movers Research Pack")
@@ -803,10 +1563,20 @@ def build_docx_pack(research_day, selection_context, cases, anchor_rows, signatu
     _snew_semantic_warning(doc, normalized_ledger_rows)
     _snew_intervention_shortlist(doc, cases, signature_candidates, normalized_ledger_rows)
     _snew_antipattern_board(doc, cases)
+    _snew_short_family_boards(doc, short_boards)
+    _snew_interaction_board(doc, interaction_data)
     _snew_ledger_snapshot(doc, normalized_ledger_rows, research_day)
     _snew_promotion_rules(doc)
     _snew_outcome_horizon_note(doc)
+    _snew_anchor_qa(doc, anchor_qa)
+    _snew_layer_field_coverage(doc, layer_audit or {})
     _snew_measurement_decision_card(doc, cases, signature_candidates, normalized_ledger_rows)
+    _snew_measurement_confidence(doc, conf_summary)
+    _snew_multiday_validation_snapshot(doc, validation_summary, family_history_snapshot)
+    _snew_phase2c_family_history_compact(doc, family_history_snapshot)
+    _snew_phase2d_validation_snapshot(doc, p2d_family_validation_stats)
+    _snew_phase2d_answer_contracts(doc, p2d_family_answer_contracts)
+    _snew_phase2e_card(doc, p2e_controlled_validation_state, p2e_unseen_day_summary)
     _snew_trusted_weak_deferred(doc, cases, signature_candidates, selection_context)
     _s15_review_queue(doc, cases)
     _s16_case_registry(doc, cases)

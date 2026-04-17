@@ -37,7 +37,7 @@ from research.top_movers.decision_mapping import (
     generate_case_takeaways,
     map_to_existing_strategy,
 )
-from research.top_movers.proxy_features import build_proxy_features, compute_flow_composite
+from research.top_movers.proxy_features import build_proxy_features, compute_flow_composite, compute_btc_context_fields
 from research.top_movers.io import image_path, safe_round
 
 # Image key per anchor (v2 standard set)
@@ -160,11 +160,21 @@ def build_case_row(
     top_mover_rank: int,
     top_mover_bucket: str,
     image_results: Dict,
+    btc_bars_15m: Optional[List[Dict]] = None,
+    btc_bars_1h: Optional[List[Dict]] = None,
 ) -> Dict:
     """Build one row for daily_top_mover_cases.csv."""
 
     p2_idx = anchors.p2.bar_idx
     px = proxy.at(p2_idx) if proxy else {}
+
+    # --- BTC context fields (Layer 7) ---
+    p2_ts_ms_val = anchors.p2.ts_ms if anchors.p2 else 0
+    btc_ctx = compute_btc_context_fields(
+        p2_ts_ms=p2_ts_ms_val or 0,
+        btc_bars_15m=btc_bars_15m or [],
+        btc_bars_1h=btc_bars_1h or [],
+    )
 
     bq_score = anchors.p2.break_quality_score
     bq_band  = anchors.p2.break_quality_band
@@ -308,6 +318,9 @@ def build_case_row(
         "global_acc_imbalance_at_p2": safe_round(px.get("global_acc_imbalance"), 4),
         "taker_imbalance_at_p2": safe_round(px.get("taker_imbalance"), 4),
         "btc_24h_change_pct": safe_round(btc_24h, 4),
+        "btc_change_15m_pct": btc_ctx.get("btc_change_15m_pct"),
+        "btc_change_1h_pct":  btc_ctx.get("btc_change_1h_pct"),
+        "market_volatility_proxy": btc_ctx.get("market_volatility_proxy"),
         "alt_breadth_pct": safe_round(alt_breadth_pct, 2),
         "research_regime": research_regime,
         # Outcomes (post-P2, retrospective)

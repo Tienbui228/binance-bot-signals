@@ -466,9 +466,304 @@ def _section_semantic_warning_md(normalized_ledger_rows: List[Dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _section_phase2b_validation_md(
+    cases: List[Dict],
+    research_day: str,
+    normalized_ledger_rows: List[Dict],
+) -> str:
+    """
+    Compact Phase 2B markdown section — today-only conservative promotion frame.
+    Phase 2B and Phase 2C are independent. Top Family and multiday history
+    appear only in the Phase 2C section below.
+    """
+    try:
+        from research.top_movers.signature_ledger import (
+            build_multiday_family_stats,
+            build_multiday_interaction_stats,
+            build_controlled_validation_summary,
+        )
+        ledger_days = len(set(
+            r.get("research_day", "") for r in normalized_ledger_rows
+            if r.get("research_day")
+        ))
+        fam_stats   = build_multiday_family_stats(cases, normalized_ledger_rows)
+        inter_stats = build_multiday_interaction_stats(cases)
+        val         = build_controlled_validation_summary(fam_stats, inter_stats, ledger_days)
+    except Exception as e:
+        return f"## Multi-Day Validation Snapshot (Phase 2B today-only)\n\n> Phase 2B unavailable: {e}\n\n"
+
+    lines = [
+        "## Multi-Day Validation Snapshot (Phase 2B today-only)\n",
+        "_Phase 2B = today-only conservative promotion frame. "
+        "Top Family and multiday history are in Phase 2C section below._\n",
+        "| Field | Value |",
+        "|---|---|",
+        f"| promotion_state | **{val.get('promotion_state', '—')}** |",
+        f"| Ledger Research Days (global context only) | {val.get('ledger_research_days_global_context', '—')} |",
+        f"| families_at_bucket_ready_or_above (>= 10) | {val.get('families_at_bucket_ready_or_above', 0)} |",
+        f"| families_at_tracking_grade_or_above (>= 20) | {val.get('families_at_tracking_grade_or_above', 0)} |",
+        f"| families_at_recommendation_grade_or_above (>= 50) | {val.get('families_at_recommendation_grade_or_above', 0)} |",
+        f"| blocking_reason | {val.get('blocking_reason', '—')} |",
+        f"| validation_next_step | {val.get('validation_next_step', '—')} |",
+        "",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _section_phase2c_note_md(
+    family_history_snapshot: Optional[Dict] = None,
+) -> str:
+    """
+    Compact Phase 2C note for the markdown fallback report.
+    Secondary artifact — summary only, no raw tables.
+    """
+    if not family_history_snapshot:
+        return (
+            "## Phase 2C Family History Foundation\n\n"
+            "| Field | Value |\n|---|---|\n"
+            "| family_history_status | not_available_yet |\n"
+            "| history_note | Run historical days to build foundation. |\n\n"
+        )
+
+    lines = [
+        "## Phase 2C Family History Foundation\n",
+        "| Field | Value |",
+        "|---|---|",
+        f"| family_history_status | {family_history_snapshot.get('family_history_status', 'not_available_yet')} |",
+        f"| top_candidate_family | {family_history_snapshot.get('top_candidate_family', '—')} |",
+        f"| top_family_case_count_today | {family_history_snapshot.get('top_family_case_count_today', '—')} |",
+        f"| top_family_case_count_multiday | {family_history_snapshot.get('top_family_case_count_multiday', '—')} |",
+        f"| top_family_days_count | {family_history_snapshot.get('top_family_days_count', '—')} |",
+        f"| families_with_history_count | {family_history_snapshot.get('families_with_history_count', '—')} |",
+        f"| Historical Case Days Loaded | {family_history_snapshot.get('historical_case_days_loaded', '—')} |",
+        f"| History Window Days | {family_history_snapshot.get('history_window_days', '—')} |",
+        "",
+        f"> {family_history_snapshot.get('history_note', '')}",
+        "",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2D — compact markdown note
+# ---------------------------------------------------------------------------
+
+def _section_phase2d_note_md(
+    family_validation_stats: Optional[List[Dict]] = None,
+    family_answer_contracts: Optional[List[Dict]] = None,
+) -> str:
+    """
+    Compact Phase 2D note for the markdown fallback report.
+    Secondary artifact — summary only, no raw tables.
+    """
+    fvs = family_validation_stats or []
+    fac = family_answer_contracts or []
+
+    def _truncate_words(text: str, limit: int = 90) -> str:
+        """Truncate at word boundary with ellipsis."""
+        s = str(text)
+        if len(s) <= limit:
+            return s
+        cut = s[:limit].rsplit(" ", 1)[0]
+        return cut + "…"
+
+    lines = [
+        "## Phase 2D Statistical Validation\n",
+        "_Phase 2D = statistical validation layer. Conservative. "
+        "PREPARE_HYPOTHESIS not unlocked here._\n",
+    ]
+
+    if not fvs:
+        lines.append(
+            "_No Phase 2D validation stats yet. "
+            "Run after historical daily_case_dataset CSVs exist._\n"
+        )
+    else:
+        sorted_fvs = sorted(fvs, key=lambda r: -(r.get("case_count_multiday") or 0))
+        # Headline note from best actionable family; fall back to largest bucket
+        actionable = [r for r in sorted_fvs if r.get("is_actionable_family", True)]
+        note_row = actionable[0] if actionable else sorted_fvs[0]
+
+        lines += [
+            "### Family Validation Snapshot\n",
+            "| Family | Role | N Multi | Days | Med F1h | Bucket | Stability |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for row in sorted_fvs:
+            role = row.get("family_bucket_role", "actionable_family")
+            lines.append(
+                f"| {row.get('display_family', '—')} "
+                f"| {role} "
+                f"| {row.get('case_count_multiday', '—')} "
+                f"| {row.get('family_days_count', '—')} "
+                f"| {row.get('median_f1h', '—')} "
+                f"| {row.get('bucket_ready_status', '—')} "
+                f"| {row.get('stability_flag', '—')} |"
+            )
+        lines += [
+            "",
+            f"_{note_row.get('statistical_readiness_note', '')}_",
+            "",
+        ]
+
+    if not fac:
+        lines.append("_No Phase 2D answer contracts yet._\n")
+    else:
+        lines += [
+            "### Answer Contracts\n",
+            "| Question Family | State | Blocking Reason |",
+            "|---|---|---|",
+        ]
+        for c in fac:
+            blocking = _truncate_words(c.get("blocking_reason", "—"), 90)
+            lines.append(
+                f"| {c.get('family_name', '—')} "
+                f"| {c.get('recommendation_state', '—')} "
+                f"| {blocking} |"
+            )
+        lines += [""]
+
+    lines += [
+        "> Phase 2D does not write live-rule instructions. "
+        "See family_validation_stats and family_answer_contracts sheets in xlsx bundle.",
+        "",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2D — compact markdown note
+# ---------------------------------------------------------------------------
+
+def _section_phase2d_note_md(
+    family_validation_stats: Optional[List[Dict]] = None,
+    family_answer_contracts: Optional[List[Dict]] = None,
+) -> str:
+    """
+    Compact Phase 2D note for the markdown fallback report.
+    Secondary artifact — summary only, no raw tables.
+    """
+    fvs = family_validation_stats or []
+    fac = family_answer_contracts or []
+
+    lines = [
+        "## Phase 2D Statistical Validation\n",
+        "_Phase 2D = statistical validation layer. Conservative. "
+        "PREPARE_HYPOTHESIS not unlocked here._\n",
+    ]
+
+    if not fvs:
+        lines.append(
+            "_No Phase 2D validation stats yet. "
+            "Run after historical daily_case_dataset CSVs exist._\n"
+        )
+    else:
+        sorted_fvs = sorted(fvs, key=lambda r: -(r.get("case_count_multiday") or 0))
+        best = sorted_fvs[0]
+        lines += [
+            "### Family Validation Snapshot\n",
+            "| Family | N Multi | Days | Med F1h | Bucket | Stability |",
+            "|---|---|---|---|---|---|",
+        ]
+        for row in sorted_fvs:
+            lines.append(
+                f"| {row.get('display_family', '—')} "
+                f"| {row.get('case_count_multiday', '—')} "
+                f"| {row.get('family_days_count', '—')} "
+                f"| {row.get('median_f1h', '—')} "
+                f"| {row.get('bucket_ready_status', '—')} "
+                f"| {row.get('stability_flag', '—')} |"
+            )
+        lines += [
+            "",
+            f"_{best.get('statistical_readiness_note', '')}_",
+            "",
+        ]
+
+    if not fac:
+        lines.append("_No Phase 2D answer contracts yet._\n")
+    else:
+        lines += [
+            "### Answer Contracts\n",
+            "| Question Family | State | Blocking Reason |",
+            "|---|---|---|",
+        ]
+        for c in fac:
+            blocking = str(c.get("blocking_reason", "—"))[:80]
+            lines.append(
+                f"| {c.get('family_name', '—')} "
+                f"| {c.get('recommendation_state', '—')} "
+                f"| {blocking} |"
+            )
+        lines += [""]
+
+    lines += [
+        "> Phase 2D does not write live-rule instructions. "
+        "See family_validation_stats and family_answer_contracts sheets in xlsx bundle.",
+        "",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
+def _section_phase2e_note_md(
+    controlled_validation_state: Optional[List[Dict]] = None,
+    unseen_day_summary: Optional[List[Dict]] = None,
+) -> str:
+    """
+    Compact Phase 2E note for the markdown fallback report.
+    Renderer only: consumes producer outputs, does not invent gate logic.
+    """
+    cvs = controlled_validation_state or []
+    uds = unseen_day_summary or []
+
+    lines = [
+        "## Phase 2E — Controlled Validation Gate\n",
+        "_Gate-building phase. Expected result: conservative for all families. "
+        "PREPARE_HYPOTHESIS / READY_FOR_CONTROLLED_VALIDATION require all hard gates._\n",
+    ]
+
+    if not cvs:
+        lines.append(
+            "_No Phase 2E controlled validation state yet. "
+            "Run after Phase 2C history + Phase 2D stats exist._\n"
+        )
+    else:
+        lines += [
+            "### Controlled Validation State\n",
+            "| Family | State | N Multi | Anchor Gate | Promoted |",
+            "|---|---|---|---|---|",
+        ]
+        for row in cvs:
+            lines.append(
+                f"| {row.get('display_family', '—')} "
+                f"| {row.get('controlled_validation_state', '—')} "
+                f"| {row.get('case_count_multiday', '—')} "
+                f"| {row.get('anchor_qa_gate', '—')} "
+                f"| {'N' if row.get('promotion_blocked', True) else 'Y'} |"
+            )
+        lines += [""]
+
+    if uds:
+        first_status = uds[0].get("unseen_validation_status", "—")
+        lines += [
+            "### Unseen-Day Validation\n",
+            f"_Status (first family): `{first_status}`. "
+            f"All families: see unseen_day_validation sheet in xlsx bundle._\n",
+        ]
+    else:
+        lines.append("_No unseen-day validation summary available._\n")
+
+    lines += [
+        "> Phase 2E does not write live-rule instructions. "
+        "Promotion is blocked until all gates pass.",
+        "",
+    ]
+    return "\n".join(lines) + "\n"
+
 
 def build_report(
     research_day: str,
@@ -478,6 +773,11 @@ def build_report(
     images_created: int = 0,
     sig_candidates: Optional[List[Dict]] = None,
     normalized_ledger_rows: Optional[List[Dict]] = None,
+    family_history_snapshot: Optional[Dict] = None,
+    p2d_family_validation_stats: Optional[List[Dict]] = None,
+    p2d_family_answer_contracts: Optional[List[Dict]] = None,
+    p2e_controlled_validation_state: Optional[List[Dict]] = None,
+    p2e_unseen_day_summary: Optional[List[Dict]] = None,
 ) -> str:
     """Build the full markdown research report.
 
@@ -531,6 +831,16 @@ def build_report(
     sections.append(_section_semantic_warning_md(_lr))
     sections.append(_section_decision_card_md(cases, sig_candidates or [], _lr))
     sections.append(_section_trusted_weak_deferred_md(cases, sig_candidates or [], selection_context))
+    sections.append(_section_phase2b_validation_md(cases, research_day, normalized_ledger_rows or []))
+    sections.append(_section_phase2c_note_md(family_history_snapshot))
+    sections.append(_section_phase2d_note_md(
+        p2d_family_validation_stats,
+        p2d_family_answer_contracts,
+    ))
+    sections.append(_section_phase2e_note_md(
+        p2e_controlled_validation_state,
+        p2e_unseen_day_summary,
+    ))
     # Minimal markdown sync for new decision-bridge sections
     if sig_candidates is not None and hasattr(build_report, '_ledger_rows'):
         _lr = getattr(build_report, '_ledger_rows', [])

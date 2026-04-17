@@ -1,0 +1,22 @@
+--- research/top_movers/report_builder.py
++++ research/top_movers/report_builder.py
+@@ -631,6 +705,8 @@
+     sig_candidates: Optional[List[Dict]] = None,
+     normalized_ledger_rows: Optional[List[Dict]] = None,
+     family_history_snapshot: Optional[Dict] = None,
++    p2d_family_validation_stats: Optional[List[Dict]] = None,
++    p2d_family_answer_contracts: Optional[List[Dict]] = None,
+ ) -> str:
+     """Build the full markdown research report.
+ 
+@@ -686,6 +762,10 @@
+     sections.append(_section_trusted_weak_deferred_md(cases, sig_candidates or [], selection_context))
+     sections.append(_section_phase2b_validation_md(cases, research_day, normalized_ledger_rows or []))
+     sections.append(_section_phase2c_note_md(family_history_snapshot))
++    sections.append(_section_phase2d_note_md(
++        p2d_family_validation_stats,
++        p2d_family_answer_contracts,
++    ))
+     # Minimal markdown sync for new decision-bridge sections
+     if sig_candidates is not None and hasattr(build_report, '_ledger_rows'):
+         _lr = getattr(build_report, '_ledger_rows', [])

@@ -1,0 +1,54 @@
+{
+  "case_id": "EDGEUSDT-SHORT-EXH-1776078900000",
+  "symbol": "EDGEUSDT",
+  "side": "SHORT",
+  "strategy": "short_exhaustion_retest",
+  "case_day": "2026-04-13",
+  "signal_time_local": "2026-04-13 18:15:00",
+  "created_time_local": "2026-04-13 18:31:59",
+  "confirmed_time_local": "2026-04-13 19:02:12",
+  "sent_time_local": "",
+  "close_time_local": "",
+  "fallback_close_due_time_local": "2026-04-13 22:31:59",
+  "status_final": "CONFIRMED",
+  "close_reason": "",
+  "is_confirmed": "Y",
+  "is_sent_signal": "N",
+  "case_close_type": "not_due_yet",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "full",
+  "lifecycle_complete": "N",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "N",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260413/EDGEUSDT_SHORT_short_exhaustion_retest_EDGEUSDT-SHORT-EXH-1776078900000_pre_pending_1776078000000.png",
+      "note": "pre_pending context"
+    },
+    "pending_open": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260413/EDGEUSDT_SHORT_short_exhaustion_retest_EDGEUSDT-SHORT-EXH-1776078900000_pending_1776079919829.png",
+      "note": "pending_open | created_ts_ms=1776079919829"
+    },
+    "entry_or_confirm": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260413/EDGEUSDT_SHORT_short_exhaustion_retest_confirmed_1776081732803.png",
+      "note": "signal confirmed"
+    },
+    "case_close": {
+      "stage_status": "not_reached_yet",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": "",
+      "case_close_type": "not_due_yet"
+    }
+  }
+}

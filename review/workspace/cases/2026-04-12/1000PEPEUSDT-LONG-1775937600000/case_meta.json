@@ -1,0 +1,54 @@
+{
+  "case_id": "1000PEPEUSDT-LONG-1775937600000",
+  "symbol": "1000PEPEUSDT",
+  "side": "LONG",
+  "strategy": "long_breakout_retest",
+  "case_day": "2026-04-12",
+  "signal_time_local": "2026-04-12 03:00:00",
+  "created_time_local": "2026-04-12 03:08:59",
+  "confirmed_time_local": "",
+  "sent_time_local": "",
+  "close_time_local": "2026-04-12 03:31:13",
+  "fallback_close_due_time_local": "2026-04-12 07:08:59",
+  "status_final": "INVALIDATED",
+  "close_reason": "retest invalidated",
+  "is_confirmed": "N",
+  "is_sent_signal": "N",
+  "case_close_type": "true_close",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "full",
+  "lifecycle_complete": "Y",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "Y",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260411/1000PEPEUSDT_LONG_long_breakout_retest_1000PEPEUSDT-LONG-1775937600000_pre_pending_1775937300000.png",
+      "note": "pre_pending context"
+    },
+    "pending_open": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260411/1000PEPEUSDT_LONG_long_breakout_retest_1000PEPEUSDT-LONG-1775937600000_pending_1775938139447.png",
+      "note": "pending_open | created_ts_ms=1775938139447"
+    },
+    "entry_or_confirm": {
+      "stage_status": "not_applicable",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "case_close": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260411/1000PEPEUSDT_LONG_long_breakout_retest_closed_1775939473537.png",
+      "note": "retest invalidated",
+      "case_close_type": "true_close"
+    }
+  }
+}

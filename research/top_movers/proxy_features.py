@@ -638,3 +638,84 @@ def compute_flow_composite(
     pos_sum = sum(w * v for w, v in pos_available)
     neg_sum = sum(w * v for w, v in neg_available)
     return pos_sum - neg_sum
+
+
+# ---------------------------------------------------------------------------
+# BTC context fields (for Context / Layer 7 answer contract)
+# ---------------------------------------------------------------------------
+
+def compute_btc_context_fields(
+    p2_ts_ms: int,
+    btc_bars_15m: List[Dict],
+    btc_bars_1h: List[Dict],
+) -> Dict:
+    """
+    Compute three BTC context fields at the moment of P2 (break bar).
+
+    btc_change_15m_pct
+        % change of BTC close in the 15m bar containing p2_ts_ms
+        vs the immediately preceding 15m bar.
+        Null if bar not found or no previous bar.
+
+    btc_change_1h_pct
+        Same logic for 1h bars.
+
+    market_volatility_proxy
+        mean((high / low) - 1.0) across all BTC 1h bars provided.
+        Represents intraday BTC volatility for the research session.
+        Null if no 1h bars available.
+
+    Null policy: conservative. Never invent defaults.
+    """
+    result: Dict = {
+        "btc_change_15m_pct": None,
+        "btc_change_1h_pct": None,
+        "market_volatility_proxy": None,
+    }
+
+    def _find_bar_idx(bars: List[Dict], ts_ms: int) -> Optional[int]:
+        """Index of bar whose [open_time, close_time] interval contains ts_ms."""
+        for i, b in enumerate(bars):
+            open_t  = b.get("open_time", 0)
+            close_t = b.get("close_time", open_t)
+            if open_t <= ts_ms <= close_t:
+                return i
+        return None
+
+    def _pct_change(curr: Optional[float], prev: Optional[float]) -> Optional[float]:
+        if curr is None or prev is None or abs(prev) < _EPS:
+            return None
+        return round((curr - prev) / prev * 100.0, 4)
+
+    # btc_change_15m_pct
+    if btc_bars_15m and p2_ts_ms:
+        idx = _find_bar_idx(btc_bars_15m, p2_ts_ms)
+        if idx is not None and idx > 0:
+            result["btc_change_15m_pct"] = _pct_change(
+                btc_bars_15m[idx].get("close"),
+                btc_bars_15m[idx - 1].get("close"),
+            )
+
+    # btc_change_1h_pct
+    if btc_bars_1h and p2_ts_ms:
+        idx = _find_bar_idx(btc_bars_1h, p2_ts_ms)
+        if idx is not None and idx > 0:
+            result["btc_change_1h_pct"] = _pct_change(
+                btc_bars_1h[idx].get("close"),
+                btc_bars_1h[idx - 1].get("close"),
+            )
+
+    # market_volatility_proxy: mean((high/low) - 1) across provided 1h bars
+    if btc_bars_1h:
+        hl_ratios = []
+        for b in btc_bars_1h:
+            h = b.get("high")
+            lo = b.get("low")
+            if h is not None and lo is not None and lo > _EPS:
+                hl_ratios.append(h / lo - 1.0)
+        if hl_ratios:
+            result["market_volatility_proxy"] = round(
+                sum(hl_ratios) / len(hl_ratios), 6
+            )
+
+    return result

@@ -1,0 +1,54 @@
+{
+  "case_id": "ONTUSDT-LONG-1775880900000",
+  "symbol": "ONTUSDT",
+  "side": "LONG",
+  "strategy": "long_breakout_retest",
+  "case_day": "2026-04-11",
+  "signal_time_local": "2026-04-11 11:15:00",
+  "created_time_local": "2026-04-11 11:23:34",
+  "confirmed_time_local": "",
+  "sent_time_local": "",
+  "close_time_local": "2026-04-11 12:02:06",
+  "fallback_close_due_time_local": "2026-04-11 15:23:34",
+  "status_final": "EXPIRED_WAIT",
+  "close_reason": "retest wait expired",
+  "is_confirmed": "N",
+  "is_sent_signal": "N",
+  "case_close_type": "true_close",
+  "slot_bundle_complete": "Y",
+  "evidence_ready_for_review": "full",
+  "lifecycle_complete": "Y",
+  "human_review_status": "PENDING",
+  "verdict_code": "",
+  "root_cause_code": "",
+  "action_candidate_code": "",
+  "review_notes_short": "",
+  "has_case_close_image": "Y",
+  "stages": {
+    "pre_pending": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260411/ONTUSDT_LONG_long_breakout_retest_ONTUSDT-LONG-1775880900000_pre_pending_1775880600000.png",
+      "note": "pre_pending context"
+    },
+    "pending_open": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260411/ONTUSDT_LONG_long_breakout_retest_ONTUSDT-LONG-1775880900000_pending_1775881414175.png",
+      "note": "pending_open | created_ts_ms=1775881414175"
+    },
+    "entry_or_confirm": {
+      "stage_status": "not_applicable",
+      "stage_content_type": "none",
+      "image_path": "",
+      "note": ""
+    },
+    "case_close": {
+      "stage_status": "captured",
+      "stage_content_type": "chart_snapshot",
+      "image_path": "/root/binance_bot_signals/review_snapshots/20260411/ONTUSDT_LONG_long_breakout_retest_closed_1775883726109.png",
+      "note": "retest wait expired",
+      "case_close_type": "true_close"
+    }
+  }
+}

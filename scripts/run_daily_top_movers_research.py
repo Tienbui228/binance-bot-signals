@@ -28,7 +28,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from research.top_movers.research_binance_client import ResearchBinanceClient
 from research.top_movers.io import (
     ensure_output_dirs, day_window_ms, lookback_start_ms,
-    load_or_fetch, write_csv, write_markdown, csv_path, dated_csv_path, report_path,
+    load_or_fetch, load_cache, save_cache,
+    write_csv, write_markdown, csv_path, dated_csv_path, report_path,
 )
 from research.top_movers.daily_selector import (
     select_daily_top_movers, selection_to_movers_list_rows,
@@ -49,6 +50,18 @@ from research.top_movers.signature_ledger import (
     build_daily_research_summary,
     build_daily_journal_row,
     CANDIDATE_SCHEMA,
+    build_anchor_qa_summary,
+    # Phase 2C
+    load_historical_case_rows,
+    build_layer_field_coverage_audit,
+    build_short_family_case_history,
+    build_family_history_snapshot,
+    # Phase 2D
+    build_family_validation_stats,
+    build_family_answer_contracts,
+    # Phase 2E
+    build_controlled_validation_state,
+    build_unseen_day_validation_summary,
 )
 
 DOCX_FILENAME = "daily_top_mover_research_pack.docx"
@@ -94,7 +107,8 @@ def fetch_token_raw_data(client, symbol, research_day, day_start_ms, day_end_ms,
 
 
 def process_token(client, token_bar, side, rank, research_day, day_start_ms, day_end_ms,
-                  lb_start_ms, selection_context):
+                  lb_start_ms, selection_context,
+                  btc_bars_15m=None, btc_bars_1h=None):
     symbol = token_bar.symbol
     bucket = "top_gainers" if side == "LONG" else "top_losers"
     print(f"\n[{symbol}] {side} rank={rank}")
@@ -129,6 +143,8 @@ def process_token(client, token_bar, side, rank, research_day, day_start_ms, day
             btc_24h=selection_context.get("btc_24h_change_pct", 0.0),
             alt_breadth_pct=selection_context.get("alt_breadth_pct", 0.0),
             top_mover_rank=rank, top_mover_bucket=bucket, image_results=image_results,
+            btc_bars_15m=btc_bars_15m or [],
+            btc_bars_1h=btc_bars_1h or [],
         )
 
         anchor_rows = build_anchor_snapshot_rows(case_id, research_day, symbol, anchors, proxy)
@@ -174,6 +190,25 @@ def main():
         "positive_alts": selection.positive_alts,
     }
 
+    # === Step 1.5: Fetch BTC reference klines (once, shared across all tokens) ===
+    # Cache-poisoning-safe: load_or_fetch caches [] on API failure; re-fetch if empty.
+    _btc = "BTCUSDT"
+    def _fetch_btc_safe(key, interval, limit):
+        bars = load_cache(research_day, key)
+        if bars:
+            return bars
+        bars = client.get_klines(_btc, interval, lb_start_ms, day_end_ms, limit=limit)
+        if bars:
+            save_cache(research_day, key, bars)
+        return bars or []
+    try:
+        btc_bars_15m = _fetch_btc_safe(f"{_btc}_klines_15m", "15m", 200)
+        btc_bars_1h  = _fetch_btc_safe(f"{_btc}_klines_1h",  "1h",  60)
+        print(f"  BTC 15m bars: {len(btc_bars_15m)} | BTC 1h bars: {len(btc_bars_1h)}")
+    except Exception as _btc_err:
+        print(f"  BTC reference fetch failed: {_btc_err}. Context fields will be null.")
+        btc_bars_15m, btc_bars_1h = [], []
+
     # === Step 2: Process each token ===
     print(f"\n=== Step 2: Processing {len(selection.all_tokens)} tokens ===")
     all_case_rows: List[Dict] = []
@@ -186,6 +221,7 @@ def main():
             client=client, token_bar=token_bar, side=side, rank=rank,
             research_day=research_day, day_start_ms=day_start_ms, day_end_ms=day_end_ms,
             lb_start_ms=lb_start_ms, selection_context=selection_context,
+            btc_bars_15m=btc_bars_15m, btc_bars_1h=btc_bars_1h,
         )
         if case_row is not None:
             all_case_rows.append(case_row)
@@ -228,7 +264,82 @@ def main():
     journal_row = build_daily_journal_row(research_day, all_case_rows, sig_candidates)
     write_csv(csv_path(research_day, "research_daily_journal.csv"), [journal_row])
 
-    # === Step 5: Build DOCX pack ===
+    # === Step 4.5: Phase 2C — Family History Foundation + Layer Field Coverage Audit ===
+    print(f"\n=== Step 4.5: Phase 2C Foundation ===")
+    _P2C_WINDOW_DAYS = 30
+    try:
+        p2c_historical_rows  = load_historical_case_rows(research_day, window_days=_P2C_WINDOW_DAYS)
+        p2c_layer_audit      = build_layer_field_coverage_audit(all_case_rows)
+        p2c_family_history   = build_short_family_case_history(p2c_historical_rows, research_day)
+        p2c_history_snapshot = build_family_history_snapshot(
+            cases=all_case_rows,
+            report_day=research_day,
+            family_case_history=p2c_family_history,
+            historical_case_rows=p2c_historical_rows,
+            window_days=_P2C_WINDOW_DAYS,
+        )
+        _hist_days = p2c_history_snapshot.get("historical_case_days_loaded", 0)
+        _fam_status = p2c_history_snapshot.get("family_history_status", "not_available_yet")
+        _top_fam = p2c_history_snapshot.get("top_candidate_family", "—")
+        print(f"  Historical days loaded: {_hist_days} | Top SHORT family: {_top_fam} | Status: {_fam_status}")
+        print(f"  Blocking layers: {p2c_layer_audit.get('blocking_layers', [])}")
+    except Exception as e:
+        print(f"  Phase 2C foundation failed: {e}"); traceback.print_exc()
+        p2c_historical_rows  = []
+        p2c_layer_audit      = {}
+        p2c_family_history   = []
+        p2c_history_snapshot = {}
+
+    # === Step 4.6: Phase 2D — Statistical Validation + Family Answer Contracts ===
+    print(f"\n=== Step 4.6: Phase 2D Statistical Validation ===")
+    try:
+        p2d_family_validation_stats = build_family_validation_stats(
+            p2c_historical_rows, p2c_family_history
+        )
+        p2d_family_answer_contracts = build_family_answer_contracts(
+            p2c_historical_rows, p2c_family_history, p2d_family_validation_stats
+        )
+        print(
+            f"  Family validation rows: {len(p2d_family_validation_stats)} | "
+            f"Answer contracts: {len(p2d_family_answer_contracts)}"
+        )
+    except Exception as e:
+        print(f"  Phase 2D failed: {e}"); traceback.print_exc()
+        p2d_family_validation_stats = []
+        p2d_family_answer_contracts = []
+    # === Step 4.7: Phase 2E — Controlled Validation State + Unseen-Day Summary ===
+    print(f"\n=== Step 4.7: Phase 2E Controlled Validation Gate ===")
+    try:
+        _p2e_anchor_qa = build_anchor_qa_summary(all_case_rows, all_anchor_rows)
+        p2e_controlled_validation_state = build_controlled_validation_state(
+            family_history_rows=p2c_family_history,
+            family_validation_stats=p2d_family_validation_stats,
+            family_answer_contracts=p2d_family_answer_contracts,
+            anchor_qa_summary=_p2e_anchor_qa,
+        )
+        p2e_unseen_day_summary = build_unseen_day_validation_summary(
+            family_history_rows=p2c_family_history,
+            holdout_case_rows=None,  # first pass: no holdout data available
+        )
+        _promoted = [
+            r for r in p2e_controlled_validation_state
+            if r.get("controlled_validation_state") in
+               ("PREPARE_HYPOTHESIS", "READY_FOR_CONTROLLED_VALIDATION")
+        ]
+        print(
+            f"  Controlled validation rows: {len(p2e_controlled_validation_state)} | "
+            f"Promoted: {len(_promoted)} | "
+            f"Anchor gate: {_p2e_anchor_qa.get('anchor_measurement_readiness', '—')}"
+        )
+        print(
+            f"  Unseen-day summary rows: {len(p2e_unseen_day_summary)} | "
+            f"Status: {p2e_unseen_day_summary[0].get('unseen_validation_status', '—') if p2e_unseen_day_summary else '—'}"
+        )
+    except Exception as e:
+        print(f"  Phase 2E failed: {e}"); traceback.print_exc()
+        p2e_controlled_validation_state = []
+        p2e_unseen_day_summary = []
+
     print(f"\n=== Step 5: Building DOCX research pack ===")
     docx_out = os.path.join("data/research_output/top_movers", research_day, "report", DOCX_FILENAME)
     try:
@@ -237,6 +348,12 @@ def main():
             cases=all_case_rows, anchor_rows=all_anchor_rows,
             signature_candidates=sig_candidates, output_path=docx_out,
             image_results_all=all_image_results,
+            layer_audit=p2c_layer_audit,
+            family_history_snapshot=p2c_history_snapshot,
+            p2d_family_validation_stats=p2d_family_validation_stats,
+            p2d_family_answer_contracts=p2d_family_answer_contracts,
+            p2e_controlled_validation_state=p2e_controlled_validation_state,
+            p2e_unseen_day_summary=p2e_unseen_day_summary,
         )
         print(f"  Saved: {DOCX_FILENAME}")
     except Exception as e:
@@ -251,6 +368,11 @@ def main():
         research_day=research_day, selection_context=selection_context,
         cases=all_case_rows, anchor_rows=all_anchor_rows, images_created=images_created,
         sig_candidates=sig_candidates,
+        family_history_snapshot=p2c_history_snapshot,
+        p2d_family_validation_stats=p2d_family_validation_stats,
+        p2d_family_answer_contracts=p2d_family_answer_contracts,
+        p2e_controlled_validation_state=p2e_controlled_validation_state,
+        p2e_unseen_day_summary=p2e_unseen_day_summary,
     )
     write_markdown(report_path(research_day), report_md)
 
@@ -269,11 +391,16 @@ def main():
             daily_summary=daily_summary,
             output_path=unified_out,
             window_days=7,
+            layer_audit=p2c_layer_audit,
+            family_history_snapshot=p2c_history_snapshot,
+            p2d_family_validation_stats=p2d_family_validation_stats,
+            p2d_family_answer_contracts=p2d_family_answer_contracts,
+            p2e_controlled_validation_state=p2e_controlled_validation_state,
+            p2e_unseen_day_summary=p2e_unseen_day_summary,
         )
         print(f"  Saved: R1_unified_analysis_pack_{research_day}.docx")
     except Exception as e:
         print(f"  Unified pack build failed: {e}"); traceback.print_exc()
-
 
     # === Step 8: Analysis bundle (manifest + xlsx) ===
     print(f'\n=== Step 8: Analysis bundle ===')
@@ -285,6 +412,12 @@ def main():
             research_day=research_day, cases=all_case_rows,
             sig_candidates=sig_candidates, daily_summary=daily_summary,
             output_path=_manifest_out,
+            layer_audit=p2c_layer_audit,
+            family_history_snapshot=p2c_history_snapshot,
+            p2d_family_validation_stats=p2d_family_validation_stats,
+            p2d_family_answer_contracts=p2d_family_answer_contracts,
+            p2e_controlled_validation_state=p2e_controlled_validation_state,
+            p2e_unseen_day_summary=p2e_unseen_day_summary,
         )
         print(f'  Saved: analysis_bundle_manifest_{research_day}.md')
     except Exception as e:
@@ -295,6 +428,12 @@ def main():
             research_day=research_day, cases=all_case_rows,
             sig_candidates=sig_candidates, daily_summary=daily_summary,
             output_path=_xlsx_out, window_days=7,
+            layer_audit=p2c_layer_audit,
+            family_case_history=p2c_family_history,
+            p2d_family_validation_stats=p2d_family_validation_stats,
+            p2d_family_answer_contracts=p2d_family_answer_contracts,
+            p2e_controlled_validation_state=p2e_controlled_validation_state,
+            p2e_unseen_day_summary=p2e_unseen_day_summary,
         )
         print(f'  Saved: R1_analysis_bundle_{research_day}.xlsx')
     except Exception as e:
