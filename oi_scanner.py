@@ -1640,23 +1640,43 @@ class BinanceScanner:
         dispatch_reason_line = f"Dispatch note: {s.dispatch_reason}\n" if getattr(s, "dispatch_reason", "") not in ("", "not_evaluated") else ""
 
         if getattr(s, "strategy", "") == "long_accumulation_continuation":
+            _tags = (s.reason_tags or "").split(";")
             participation = next(
-                (t.split("=", 1)[1] for t in (s.reason_tags or "").split(";")
-                 if t.startswith("participation=")), "n/a"
+                (t.split("=", 1)[1] for t in _tags if t.startswith("participation=")), "n/a"
             )
-            metrics = (
-                f"OI vs EMA20: {s.oi_jump_pct:+.2f}%\n"
-                f"Vol 1h vs EMA20: {s.vol_ratio:.2f}x\n"
+            oi_vs_baseline_str = next(
+                (t.split("=", 1)[1] for t in _tags if t.startswith("oi_vs_baseline=")), None
+            )
+            oi_line = (f"OI vs EMA20: +{oi_vs_baseline_str}" if oi_vs_baseline_str
+                       else f"OI vs EMA20 (weak): {s.oi_jump_pct:+.2f}%")
+            vol_1h = next(
+                (t.split("=", 1)[1] for t in _tags if t.startswith("vol_vs_baseline=")), "n/a"
+            )
+            struct = next(
+                (t.split("=", 1)[1] for t in _tags if t.startswith("structure_score=")), "n/a"
+            )
+            return (
+                f"{side_icon} #{s.symbol} | ${s.price:.6g} | Score {s.score/10:.1f}/10\n\n"
+                f"Entry: {s.entry_ref:.6g}\n"
+                f"Stop: {s.stop:.6g} ({s.sl_distance_pct:.2f}%)\n"
+                f"TP1: {s.tp1:.6g} ({s.tp1_distance_pct:.2f}%)\n"
+                f"TP2: {s.tp2:.6g} ({s.tp2_distance_pct:.2f}%)\n\n"
+                f"{oi_line}\n"
+                f"Vol 1h vs EMA20: {vol_1h}x\n"
                 f"Participation: {participation}\n"
-            )
-        else:
-            metrics = (
-                f"OI(5m): {s.oi_jump_pct:+.2f}%\n"
-                f"Vol: {s.vol_ratio:.2f}x\n"
-                f"Funding: {s.funding_pct:+.4f}%\n"
-                f"Retest waited: {s.retest_bars_waited} bars\n"
+                f"Structure: {struct} | Breakout vol: {s.vol_ratio:.2f}x\n"
+                f"BTC 24h: {s.btc_24h_change_pct:+.2f}% ({s.btc_regime})\n"
+                f"{dispatch_line}"
+                f"Reason: {s.reason}\n\n"
+                f"{side_tag} #{s.symbol} #BINANCE"
             )
 
+        metrics = (
+            f"OI(5m): {s.oi_jump_pct:+.2f}%\n"
+            f"Vol: {s.vol_ratio:.2f}x\n"
+            f"Funding: {s.funding_pct:+.4f}%\n"
+            f"Retest waited: {s.retest_bars_waited} bars\n"
+        )
         return (
             f"{side_icon} #{s.symbol} | ${s.price:.6g} | Score {s.score/10:.1f}/10\n\n"
             f"Entry: {s.entry_ref:.6g}\n"
