@@ -132,17 +132,17 @@ long_accumulation_continuation:
   structure_window_bars_1h: 18
   min_structure_quality_score: 4
 
-  # OI participation — EMA20 baseline, 1.50x ratio, not below 12h ago
-  oi_ema_baseline: 20
+  # OI participation — MA20 baseline, 1.50x ratio, not below 12h ago
+  oi_ma_period: 20
   oi_support_ratio: 1.50
 
   # Liquidity gate (4h quote volume proxy — separate from 1h participation)
   min_quote_volume_4h_usd: 2000000
   volume_gate_mode: "SOFT_TAG"
 
-  # 1h volume participation — EMA20 baseline, 1.50x ratio, not below 12h ago
-  vol_participation_ema_period: 20
-  vol_participation_ratio: 1.50
+  # 1h volume participation (futures quote_volume) — MA20 baseline, 2.00x ratio, not below 12h ago
+  vol_participation_ma_period: 20
+  vol_participation_ratio: 2.00
 
   # 5m breakout-continuation trigger
   breakout_lookback_bars_5m: 12

@@ -232,26 +232,26 @@ def _compute_1h_context(scanner, symbol: str, cfg: dict) -> dict:
     except Exception:
         tags.append("volume_gate=unavailable")
 
-    # OI participation (1h history) — EMA20 baseline, 1.50x ratio, not below 12h ago
-    oi_ema_baseline = int(cfg.get("oi_ema_baseline", 20))
+    # OI participation (1h history) — MA20 baseline, 1.50x ratio, not below 12h ago
+    oi_ma_period = int(cfg.get("oi_ma_period", 20))
     oi_support_ratio = float(cfg.get("oi_support_ratio", 1.50))
     oi_support = False
     oi_distance_pct = 0.0
     try:
         oi_hist = scanner.oi_hist(symbol, period="1h", limit=32)
-        if len(oi_hist) >= oi_ema_baseline + 2:
+        if len(oi_hist) >= oi_ma_period:
             oi_vals = [r["oi_value"] for r in oi_hist]
-            oi_baseline_ema20 = _ema(oi_vals, oi_ema_baseline)[-1]
+            oi_baseline_ma20 = sum(oi_vals[-oi_ma_period:]) / oi_ma_period
             oi_now = oi_vals[-1]
             oi_12h_ago = oi_vals[-13] if len(oi_vals) >= 13 else oi_vals[0]
-            if oi_baseline_ema20 > 0 and oi_now > 0:
-                oi_distance_pct = oi_now / oi_baseline_ema20 - 1
-                if (oi_now >= oi_baseline_ema20 * oi_support_ratio
+            if oi_baseline_ma20 > 0 and oi_now > 0:
+                oi_distance_pct = oi_now / oi_baseline_ma20 - 1
+                if (oi_now >= oi_baseline_ma20 * oi_support_ratio
                         and oi_now >= oi_12h_ago):
                     oi_support = True
                     tags += ["oi_support_strong",
                              f"oi_now={oi_now:.0f}",
-                             f"oi_baseline={oi_baseline_ema20:.0f}",
+                             f"oi_baseline={oi_baseline_ma20:.0f}",
                              f"oi_vs_baseline={oi_distance_pct:.3f}"]
                 else:
                     tags.append(f"oi_weak_ratio={oi_distance_pct:.3f}")
@@ -260,15 +260,15 @@ def _compute_1h_context(scanner, symbol: str, cfg: dict) -> dict:
     except Exception as exc:
         tags.append(f"oi_fetch_error={type(exc).__name__}")
 
-    # Volume participation (1h quote_volume — EMA20 baseline, 1.50x ratio, not below 12h ago)
-    vol_participation_ema_period = int(cfg.get("vol_participation_ema_period", 20))
-    vol_participation_ratio = float(cfg.get("vol_participation_ratio", 1.50))
+    # Volume participation (1h futures quote_volume — MA20 baseline, 2.00x ratio, not below 12h ago)
+    vol_participation_ma_period = int(cfg.get("vol_participation_ma_period", 20))
+    vol_participation_ratio = float(cfg.get("vol_participation_ratio", 2.00))
     vol_support = False
     vol_ratio_1h = 0.0
     try:
         vol_vals = [b["quote_volume"] for b in completed_1h]
-        if len(vol_vals) >= vol_participation_ema_period + 2:
-            vol_baseline = _ema(vol_vals, vol_participation_ema_period)[-1]
+        if len(vol_vals) >= vol_participation_ma_period:
+            vol_baseline = sum(vol_vals[-vol_participation_ma_period:]) / vol_participation_ma_period
             vol_now = vol_vals[-1]
             vol_12h_ago = vol_vals[-13] if len(vol_vals) >= 13 else vol_vals[0]
             if vol_baseline > 0 and vol_now > 0:

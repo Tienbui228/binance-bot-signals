@@ -1647,8 +1647,8 @@ class BinanceScanner:
             oi_vs_baseline_str = next(
                 (t.split("=", 1)[1] for t in _tags if t.startswith("oi_vs_baseline=")), None
             )
-            oi_line = (f"OI vs EMA20: +{oi_vs_baseline_str}" if oi_vs_baseline_str
-                       else f"OI vs EMA20 (weak): {s.oi_jump_pct:+.2f}%")
+            oi_line = (f"OI vs MA20: +{oi_vs_baseline_str}" if oi_vs_baseline_str
+                       else f"OI vs MA20 (weak): {s.oi_jump_pct:+.2f}%")
             vol_1h = next(
                 (t.split("=", 1)[1] for t in _tags if t.startswith("vol_vs_baseline=")), "n/a"
             )
@@ -1662,7 +1662,7 @@ class BinanceScanner:
                 f"TP1: {s.tp1:.6g} ({s.tp1_distance_pct:.2f}%)\n"
                 f"TP2: {s.tp2:.6g} ({s.tp2_distance_pct:.2f}%)\n\n"
                 f"{oi_line}\n"
-                f"Vol 1h vs EMA20: {vol_1h}x\n"
+                f"Vol 1h vs MA20: {vol_1h}x\n"
                 f"Participation: {participation}\n"
                 f"Structure: {struct} | Breakout vol: {s.vol_ratio:.2f}x\n"
                 f"BTC 24h: {s.btc_24h_change_pct:+.2f}% ({s.btc_regime})\n"
@@ -2432,7 +2432,7 @@ class BinanceScanner:
         max_pending_bars = int(acc_cfg.get("max_pending_bars_5m", 3))
         tp1_r = float(risk_cfg.get("tp1_r_multiple", 2.0))
         tp2_r = float(risk_cfg.get("tp2_r_multiple", 3.0))
-        min_risk_pct = float(acc_cfg.get("min_risk_pct", 10.0)) / 100.0
+        min_risk_pct = float(acc_cfg.get("min_risk_pct", 10.0))  # percent, not fraction
 
         now_ms    = int(time.time() * 1000)
         expiry_ms = max_pending_bars * 5 * 60 * 1000
@@ -2463,6 +2463,10 @@ class BinanceScanner:
 
         if risk_pct_real < min_risk_pct:
             self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_risk_too_small")
+            return []
+
+        if tp1_distance_pct < min_risk_pct:
+            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_tp1_too_small")
             return []
 
         btc_ctx      = self.get_btc_context()
