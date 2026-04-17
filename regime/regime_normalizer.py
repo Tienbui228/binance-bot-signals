@@ -79,9 +79,10 @@ _FIT_MAP: Dict[tuple, str] = {
 
 # Strategy family -> long/short key
 _FAMILY_SIDE_KEY: Dict[str, str] = {
-    "long_breakout_retest":   "long",
-    "legacy_5m_retest":       "long",
-    "short_exhaustion_retest": "short",
+    "long_breakout_retest":           "long",
+    "legacy_5m_retest":               "long",
+    "long_accumulation_continuation": "long",
+    "short_exhaustion_retest":        "short",
 }
 
 

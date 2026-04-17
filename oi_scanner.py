@@ -15,6 +15,7 @@ import subprocess
 
 from scanner.strategies.long_breakout_retest import build_pending_long_setup as strategy_build_pending_long_setup
 from scanner.strategies.short_exhaustion_retest import build_pending_short_exhaustion_setup as strategy_build_pending_short_exhaustion_setup
+from scanner.strategies.long_accumulation_continuation import build_pending_long_accumulation_continuation_setup as strategy_build_pending_acc_cont_setup
 from scanner.dispatch.router import route_dispatch_v1
 from scanner.regime.classifier import classify_regime
 from scanner import lifecycle as lifecycle_mod
@@ -2012,6 +2013,7 @@ class BinanceScanner:
         self._round_detect_funnel = {
             "long_breakout_retest": {},
             "short_exhaustion_retest": {},
+            "long_accumulation_continuation": {},
         }
 
     def _funnel_hit(self, strategy: str, key: str, n: int = 1):
@@ -2053,6 +2055,23 @@ class BinanceScanner:
                 "fail_exhaustion",
                 "fail_breakdown",
             ],
+            "long_accumulation_continuation": [
+                "symbols_seen",
+                "market_cap_gate_pass",
+                "market_cap_gate_blocked",
+                "data_ok",
+                "context_pass",
+                "context_fail",
+                "fail_data",
+                "trigger_pass",
+                "trigger_fail",
+                "fail_trigger_data",
+                "fail_trigger_breakout",
+                "fail_trigger_candle",
+                "fail_trigger_vol",
+                "new_pending",
+                "blocked_duplicate",
+            ],
         }
         for strategy, keys in order.items():
             bucket = funnel.get(strategy, {})
@@ -2065,6 +2084,25 @@ class BinanceScanner:
     def build_pending_short_exhaustion_setup(self, symbol: str) -> Optional[PendingSetup]:
         return strategy_build_pending_short_exhaustion_setup(self, symbol, PendingSetup)
 
+    def _already_pending_for_strategy(self, symbol: str, side: str, strategy: str) -> bool:
+        rows = self.read_csv(self.pending_file)
+        for row in rows:
+            if (row.get("symbol") == symbol
+                    and row.get("side") == side
+                    and row.get("strategy") == strategy
+                    and row.get("status") == "PENDING"):
+                return True
+        return False
+
+    def build_pending_long_acc_cont_setup(self, symbol: str) -> Optional[PendingSetup]:
+        if self.already_open_signal(symbol, "LONG"):
+            self._funnel_hit("long_accumulation_continuation", "blocked_duplicate")
+            return None
+        if self._already_pending_for_strategy(symbol, "LONG", "long_accumulation_continuation"):
+            self._funnel_hit("long_accumulation_continuation", "blocked_duplicate")
+            return None
+        return strategy_build_pending_acc_cont_setup(self, symbol, PendingSetup)
+
     def build_pending_setups_for_symbol(self, symbol: str) -> List[PendingSetup]:
         setups: List[PendingSetup] = []
         long_setup = self.build_pending_long_setup(symbol)
@@ -2073,6 +2111,9 @@ class BinanceScanner:
         short_setup = self.build_pending_short_exhaustion_setup(symbol)
         if short_setup is not None:
             setups.append(short_setup)
+        acc_cont_setup = self.build_pending_long_acc_cont_setup(symbol)
+        if acc_cont_setup is not None:
+            setups.append(acc_cont_setup)
         return setups
 
     def process_pending_setups(self) -> List[Signal]:
@@ -2105,6 +2146,13 @@ class BinanceScanner:
             score_breakout = float(row.get("score_breakout") or 0.0)
             score_retest = float(row.get("score_retest") or 0.0)
             reason_tags = row.get("reason_tags", "") or ""
+
+            # ── No-retest path: long_accumulation_continuation ───────────────────
+            if strategy == "long_accumulation_continuation":
+                acc_signals = self._process_acc_cont_pending(row, risk_cfg)
+                confirmed.extend(acc_signals)
+                continue
+            # ────────────────────────────────────────────────────────────────────
 
             try:
                 if strategy == "short_exhaustion_retest":
@@ -2330,6 +2378,118 @@ class BinanceScanner:
                 print(f"[pending warn] {row.get('pending_id')}: {e}")
 
         return confirmed
+
+    def _process_acc_cont_pending(self, row: dict, risk_cfg: dict) -> list:
+        """No-retest confirmation path for long_accumulation_continuation.
+
+        Immediately confirms the pending setup using data stored at detection time.
+        Expiry check prevents stale setups from firing.
+        """
+        pending_id   = row.get("pending_id", "")
+        symbol       = row.get("symbol", "")
+        created_ms   = int(row.get("created_ts_ms") or 0)
+        signal_price = float(row.get("signal_price") or 0)
+        signal_low   = float(row.get("signal_low") or 0)
+        breakout_lvl = float(row.get("breakout_level") or 0)
+
+        acc_cfg          = self.cfg.get("long_accumulation_continuation", {})
+        stop_buffer_pct  = float(acc_cfg.get("stop_buffer_pct", 0.0015))
+        max_pending_bars = int(acc_cfg.get("max_pending_bars_5m", 3))
+        tp1_r = float(risk_cfg.get("tp1_r_multiple", 2.0))
+        tp2_r = float(risk_cfg.get("tp2_r_multiple", 3.0))
+        min_risk_pct = float(risk_cfg.get("min_risk_pct", 1.0)) / 100.0
+
+        now_ms    = int(time.time() * 1000)
+        expiry_ms = max_pending_bars * 5 * 60 * 1000
+
+        if (now_ms - created_ms) > expiry_ms:
+            self.close_pending(pending_id, "EXPIRED_WAIT", "acc_cont_expired", max_pending_bars)
+            return []
+
+        base  = signal_low if signal_low > 0 else breakout_lvl
+        stop  = base * (1.0 - stop_buffer_pct)
+        risk  = signal_price - stop
+        if risk <= 0 or signal_price <= 0:
+            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_bad_risk")
+            return []
+
+        tp1 = signal_price + risk * tp1_r
+        tp2 = signal_price + risk * tp2_r
+
+        if self.already_open_signal(symbol, "LONG"):
+            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_open_collision")
+            return []
+
+        sl_distance_pct   = abs(signal_price - stop) / max(signal_price, 1e-12) * 100.0
+        tp1_distance_pct  = abs(tp1 - signal_price) / max(signal_price, 1e-12) * 100.0
+        tp2_distance_pct  = abs(tp2 - signal_price) / max(signal_price, 1e-12) * 100.0
+        break_distance_pct = abs(signal_price - breakout_lvl) / max(breakout_lvl, 1e-12) * 100.0
+        risk_pct_real     = sl_distance_pct
+
+        btc_ctx      = self.get_btc_context()
+        manual_eval  = self.evaluate_manual_tradable("LONG", signal_price, stop, tp1)
+        signal_open_time = int(row.get("signal_open_time") or 0)
+        signal_id    = f"{symbol}-LONG-acc_cont-{signal_open_time}"
+
+        signal = Signal(
+            signal_id=signal_id,
+            timestamp_ms=signal_open_time,
+            symbol=symbol,
+            side="LONG",
+            score=float(row.get("score") or 0),
+            confidence=float(row.get("confidence") or 0),
+            reason=row.get("reason", ""),
+            breakout_level=breakout_lvl,
+            entry_low=signal_price,
+            entry_high=signal_price,
+            entry_ref=signal_price,
+            stop=stop,
+            tp1=tp1,
+            tp2=tp2,
+            price=signal_price,
+            oi_jump_pct=float(row.get("oi_jump_pct") or 0),
+            funding_pct=float(row.get("funding_pct") or 0),
+            vol_ratio=float(row.get("vol_ratio") or 0),
+            retest_bars_waited=0,
+            config_version=str(self.cfg.get("config_version", "")),
+            strategy="long_accumulation_continuation",
+            market_regime=btc_ctx["market_regime"],
+            btc_price=btc_ctx["btc_price"],
+            btc_24h_change_pct=btc_ctx["btc_24h_change_pct"],
+            btc_4h_change_pct=btc_ctx["btc_4h_change_pct"],
+            btc_1h_change_pct=btc_ctx["btc_1h_change_pct"],
+            btc_24h_range_pct=btc_ctx["btc_24h_range_pct"],
+            btc_4h_range_pct=btc_ctx["btc_4h_range_pct"],
+            alt_market_breadth_pct=btc_ctx["alt_market_breadth_pct"],
+            btc_regime=btc_ctx["btc_regime"],
+            risk_pct_real=risk_pct_real,
+            sl_distance_pct=sl_distance_pct,
+            tp1_distance_pct=tp1_distance_pct,
+            tp2_distance_pct=tp2_distance_pct,
+            break_distance_pct=break_distance_pct,
+            retest_depth_pct=0.0,
+            score_oi=float(row.get("score_oi") or 0),
+            score_exhaustion=0.0,
+            score_breakout=float(row.get("score_breakout") or 0),
+            score_retest=0.0,
+            reason_tags=row.get("reason_tags", "") or "",
+            stop_was_forced_min_risk="no",
+            manual_tradable=manual_eval["manual_tradable"],
+            manual_trade_note=manual_eval["manual_trade_note"],
+            regime_label=self._normalize_regime_label_value(
+                row.get("regime_label", ""), row.get("market_regime", ""), row.get("btc_regime", "")
+            ),
+            regime_fit_for_strategy=self._derive_regime_fit_for_strategy(
+                "long_accumulation_continuation", "LONG",
+                row.get("regime_label") or row.get("market_regime") or row.get("btc_regime") or "unclear_mixed"
+            ),
+            dispatch_action=row.get("dispatch_action") or "not_evaluated",
+            dispatch_confidence_band="not_evaluated",
+            dispatch_reason="not_evaluated",
+            status="OPEN",
+        )
+        self.close_pending(pending_id, "CONFIRMED", "acc_cont_immediate_confirm", bars_waited=0)
+        return [signal]
 
     def evaluate_open_signals(self):
         tracking_cfg = self.cfg["tracking"]
@@ -3118,6 +3278,7 @@ class BinanceScanner:
         print(f"[startup] tracking.max_bars_after_entry={self.cfg['tracking']['max_bars_after_entry']}")
         print(f"[startup] strategy.long_breakout_retest.enabled={self.cfg.get('strategy', {}).get('long_breakout_retest', {}).get('enabled', True)}")
         print(f"[startup] strategy.short_exhaustion_retest.enabled={self.cfg.get('strategy', {}).get('short_exhaustion_retest', {}).get('enabled', False)}")
+        print(f"[startup] strategy.long_accumulation_continuation.enabled={self.cfg.get('strategy', {}).get('long_accumulation_continuation', {}).get('enabled', False)}")
         print(f"[startup] short_exhaustion_retest.retest_15m_max_bars={self.cfg.get('short_exhaustion_retest', {}).get('retest_15m_max_bars', 3)}")
         print(f"[startup] short_exhaustion_retest.score_min_send={self.cfg.get('short_exhaustion_retest', {}).get('score_min_send', 70)}")
         print(f"[startup] btc_sentiment.bullish_threshold_pct={self.cfg.get('btc_sentiment', {}).get('bullish_threshold_pct', 1.0)}")

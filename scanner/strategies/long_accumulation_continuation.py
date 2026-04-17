@@ -277,7 +277,10 @@ def _compute_1h_context(scanner, symbol: str, cfg: dict) -> dict:
         tags.append("funding_mode=simple_current_value")
         tags.append("funding_crowding_cap_checked")
         if abs(funding_now) > max_fund_cap:
-            tags.append("funding_crowded_long")
+            return _fail("funding_over_hard_cap",
+                         tags + [f"funding_now={funding_now:.4f}",
+                                 f"max_cap={max_fund_cap:.4f}",
+                                 "fail=funding_over_hard_cap"])
         elif funding_now > 0 and abs(funding_now) <= max_fund_support:
             funding_support = True
             tags.append("funding_support_simple")
@@ -528,7 +531,7 @@ def build_pending_long_accumulation_continuation_setup(
         scanner._funnel_hit("long_accumulation_continuation", "market_cap_gate_pass")
 
     # Duplicate check (same pattern as long_breakout_retest)
-    if scanner.already_open_signal(symbol, "LONG") or scanner.already_pending_setup(symbol, "LONG"):
+    if scanner.already_open_signal(symbol, "LONG"):
         scanner._funnel_hit("long_accumulation_continuation", "blocked_duplicate")
         return None
 
