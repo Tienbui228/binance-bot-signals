@@ -19,7 +19,7 @@ strategy:
   long_breakout_retest:
     enabled: true
   short_exhaustion_retest:
-    enabled: true
+    enabled: false
   long_accumulation_continuation:
     enabled: true
 thresholds:
@@ -124,13 +124,6 @@ long_breakout_retest:
 
 # Long accumulation continuation — no-retest breakout-continuation family
 long_accumulation_continuation:
-  # Small-cap proxy gate (runtime has no real market_cap_usd)
-  # BLOCK_ALL = block all symbols unless explicitly allowlisted (safe default)
-  # PASS_ALL   = allow all symbols (only if explicitly opted in)
-  # DISABLE_STRATEGY = treat empty list as strategy-disabled
-  smallcap_symbol_allowlist: []
-  empty_allowlist_behavior: "PASS_ALL"
-
   # 1h trend context
   price_ema_fast: 20
   price_ema_slow: 50
@@ -139,21 +132,17 @@ long_accumulation_continuation:
   structure_window_bars_1h: 18
   min_structure_quality_score: 4
 
-  # OI context
-  oi_ema_fast: 8
-  oi_ema_slow: 24
-  min_oi_distance_pct: 0.03
-  min_oi_change_12h_pct: 0.00
+  # OI participation — EMA20 baseline, 1.50x ratio, not below 12h ago
+  oi_ema_baseline: 20
+  oi_support_ratio: 1.50
 
-  # Volume gate
+  # Liquidity gate (4h quote volume proxy — separate from 1h participation)
   min_quote_volume_4h_usd: 2000000
   volume_gate_mode: "SOFT_TAG"
 
-  # Funding — values in % (scanner.funding() returns raw * 100)
-  # max_funding_abs_support: upper bound for "funding supports long" condition
-  # max_funding_abs_cap: hard reject if abs(funding) exceeds this
-  max_funding_abs_support: 0.05
-  max_funding_abs_cap: 0.08
+  # 1h volume participation — EMA20 baseline, 1.50x ratio, not below 12h ago
+  vol_participation_ema_period: 20
+  vol_participation_ratio: 1.50
 
   # 5m breakout-continuation trigger
   breakout_lookback_bars_5m: 12
@@ -165,6 +154,9 @@ long_accumulation_continuation:
 
   # Stop calculation (applied at confirmation, not at trigger)
   stop_buffer_pct: 0.0015
+
+  # Risk floor: reject if natural SL distance < this (%)
+  min_risk_pct: 10.0
 
   # Pending expiry: max bars (5m cadence) before setup is expired
   max_pending_bars_5m: 3

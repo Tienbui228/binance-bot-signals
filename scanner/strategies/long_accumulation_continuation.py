@@ -145,7 +145,7 @@ def _compute_structure_score(bars_1h_completed: list, ema50_series: list,
 # ── 1h context ────────────────────────────────────────────────────────────────
 
 def _compute_1h_context(scanner, symbol: str, cfg: dict) -> dict:
-    """Evaluate 1h price trend, OI/funding participation, structure, and volume gate."""
+    """Evaluate 1h price trend, OI/volume participation, structure, and volume gate."""
 
     def _fail(reason: str, extra_tags: list = None) -> dict:
         return {
@@ -153,9 +153,9 @@ def _compute_1h_context(scanner, symbol: str, cfg: dict) -> dict:
             "reason_tags": (extra_tags or []),
             "participation_label": "NO_SUPPORT",
             "structure_quality_score": 0, "structure_quality_band": "MESSY",
-            "oi_distance_pct": 0.0, "oi_change_12h_pct": 0.0,
-            "compression_ratio": 1.0, "funding_now": 0.0,
-            "funding_mode": "simple_current_value",
+            "oi_distance_pct": 0.0,
+            "vol_ratio_1h": 0.0,
+            "compression_ratio": 1.0,
         }
 
     tags: list = []
@@ -232,73 +232,71 @@ def _compute_1h_context(scanner, symbol: str, cfg: dict) -> dict:
     except Exception:
         tags.append("volume_gate=unavailable")
 
-    # OI participation (1h history)
-    oi_ema_fast = int(cfg.get("oi_ema_fast", 8))
-    oi_ema_slow = int(cfg.get("oi_ema_slow", 24))
-    min_oi_dist = float(cfg.get("min_oi_distance_pct", 0.03))
-    min_oi_chg12 = float(cfg.get("min_oi_change_12h_pct", 0.00))
+    # OI participation (1h history) — EMA20 baseline, 1.50x ratio, not below 12h ago
+    oi_ema_baseline = int(cfg.get("oi_ema_baseline", 20))
+    oi_support_ratio = float(cfg.get("oi_support_ratio", 1.50))
     oi_support = False
     oi_distance_pct = 0.0
-    oi_change_12h_pct = 0.0
     try:
-        oi_hist = scanner.oi_hist(symbol, period="1h", limit=30)
-        if len(oi_hist) >= max(oi_ema_slow + 2, 14):
+        oi_hist = scanner.oi_hist(symbol, period="1h", limit=32)
+        if len(oi_hist) >= oi_ema_baseline + 2:
             oi_vals = [r["oi_value"] for r in oi_hist]
-            oi_e8 = _ema(oi_vals, oi_ema_fast)
-            oi_e24 = _ema(oi_vals, oi_ema_slow)
-            oi_e8_now = oi_e8[-1]
-            oi_e24_now = oi_e24[-1]
+            oi_baseline_ema20 = _ema(oi_vals, oi_ema_baseline)[-1]
             oi_now = oi_vals[-1]
-            if oi_e8_now is not None and oi_e24_now is not None and oi_e24_now > 0 and oi_now > 0:
-                oi_distance_pct = oi_now / oi_e24_now - 1
-                ref12 = oi_vals[-13] if len(oi_vals) >= 13 else oi_vals[0]
-                oi_change_12h_pct = oi_now / ref12 - 1 if ref12 > 0 else 0.0
-                if (oi_e8_now > oi_e24_now
-                        and oi_distance_pct >= min_oi_dist
-                        and oi_change_12h_pct > min_oi_chg12):
+            oi_12h_ago = oi_vals[-13] if len(oi_vals) >= 13 else oi_vals[0]
+            if oi_baseline_ema20 > 0 and oi_now > 0:
+                oi_distance_pct = oi_now / oi_baseline_ema20 - 1
+                if (oi_now >= oi_baseline_ema20 * oi_support_ratio
+                        and oi_now >= oi_12h_ago):
                     oi_support = True
-                    tags += ["oi_accumulation",
-                             f"oi_distance_pct={oi_distance_pct:.4f}",
-                             f"oi_change_12h={oi_change_12h_pct:.4f}"]
+                    tags += ["oi_support_strong",
+                             f"oi_now={oi_now:.0f}",
+                             f"oi_baseline={oi_baseline_ema20:.0f}",
+                             f"oi_vs_baseline={oi_distance_pct:.3f}"]
                 else:
-                    tags.append(f"oi_weak_dist={oi_distance_pct:.4f}")
+                    tags.append(f"oi_weak_ratio={oi_distance_pct:.3f}")
         else:
             tags.append("oi_data_insufficient")
     except Exception as exc:
         tags.append(f"oi_fetch_error={type(exc).__name__}")
 
-    # Funding participation (V1 simplified — current value only, no historical series)
-    max_fund_support = float(cfg.get("max_funding_abs_support", 0.05))
-    max_fund_cap = float(cfg.get("max_funding_abs_cap", 0.08))
-    funding_support = False
-    funding_now = 0.0
+    # Volume participation (1h quote_volume — EMA20 baseline, 1.50x ratio, not below 12h ago)
+    vol_participation_ema_period = int(cfg.get("vol_participation_ema_period", 20))
+    vol_participation_ratio = float(cfg.get("vol_participation_ratio", 1.50))
+    vol_support = False
+    vol_ratio_1h = 0.0
     try:
-        funding_now = scanner.funding(symbol)
-        tags.append("funding_mode=simple_current_value")
-        tags.append("funding_crowding_cap_checked")
-        if abs(funding_now) > max_fund_cap:
-            return _fail("funding_over_hard_cap",
-                         tags + [f"funding_now={funding_now:.4f}",
-                                 f"max_cap={max_fund_cap:.4f}",
-                                 "fail=funding_over_hard_cap"])
-        elif funding_now > 0 and abs(funding_now) <= max_fund_support:
-            funding_support = True
-            tags.append("funding_support_simple")
+        vol_vals = [b["quote_volume"] for b in completed_1h]
+        if len(vol_vals) >= vol_participation_ema_period + 2:
+            vol_baseline = _ema(vol_vals, vol_participation_ema_period)[-1]
+            vol_now = vol_vals[-1]
+            vol_12h_ago = vol_vals[-13] if len(vol_vals) >= 13 else vol_vals[0]
+            if vol_baseline > 0 and vol_now > 0:
+                vol_ratio_1h = vol_now / vol_baseline
+                if (vol_now >= vol_baseline * vol_participation_ratio
+                        and vol_now >= vol_12h_ago):
+                    vol_support = True
+                    tags += ["vol_support_strong",
+                             f"vol_now={vol_now:.0f}",
+                             f"vol_baseline={vol_baseline:.0f}",
+                             f"vol_vs_baseline={vol_ratio_1h:.3f}"]
+                else:
+                    tags.append(f"vol_weak_ratio={vol_ratio_1h:.3f}")
         else:
-            tags.append(f"funding_not_supportive={funding_now:.4f}")
+            tags.append("vol_data_insufficient")
     except Exception as exc:
-        tags.append(f"funding_fetch_error={type(exc).__name__}")
+        tags.append(f"vol_fetch_error={type(exc).__name__}")
 
     # Participation label
-    if oi_support and funding_support:
+    if oi_support and vol_support:
         participation_label = "DUAL_SUPPORT"
         tags.append("participation=DUAL_SUPPORT")
     elif oi_support:
-        participation_label = "OI_SUPPORT"
-        tags.append("participation=OI_SUPPORT")
-    elif funding_support:
-        participation_label = "FUNDING_SUPPORT_SIMPLE"
-        tags.append("participation=FUNDING_SUPPORT_SIMPLE")
+        participation_label = "OI_SUPPORT_STRONG"
+        tags.append("participation=OI_SUPPORT_STRONG")
+    elif vol_support:
+        participation_label = "VOLUME_SUPPORT_STRONG"
+        tags.append("participation=VOLUME_SUPPORT_STRONG")
     else:
         tags.append("participation=NO_SUPPORT")
         return _fail("no_participation_support", tags)
@@ -307,12 +305,6 @@ def _compute_1h_context(scanner, symbol: str, cfg: dict) -> dict:
     atr18 = _atr(completed_1h[-19:], 18) if len(completed_1h) >= 19 else 0.0
     struct = _compute_structure_score(completed_1h, ema50_series, atr18, cfg)
     min_struct = int(cfg.get("min_structure_quality_score", 4))
-
-    # Funding-only penalty: require CLEAN structure (score >= 5) if OI path failed
-    if participation_label == "FUNDING_SUPPORT_SIMPLE" and struct["score"] < 5:
-        return _fail("funding_only_structure_insufficient",
-                     tags + [f"structure_score={struct['score']}",
-                             "fail=funding_only_requires_clean_structure"])
 
     if struct["score"] < min_struct:
         return _fail("structure_quality_too_low",
@@ -337,10 +329,8 @@ def _compute_1h_context(scanner, symbol: str, cfg: dict) -> dict:
         "structure_quality_score": struct["score"],
         "structure_quality_band": struct["band"],
         "oi_distance_pct": oi_distance_pct,
-        "oi_change_12h_pct": oi_change_12h_pct,
+        "vol_ratio_1h": vol_ratio_1h,
         "compression_ratio": struct["compression_ratio"],
-        "funding_now": funding_now,
-        "funding_mode": "simple_current_value",
     }
 
 
@@ -493,7 +483,7 @@ def build_pending_long_accumulation_continuation_setup(
     """Detect a long_accumulation_continuation breakout-continuation setup.
 
     Identity: long_accumulation_continuation / LONG
-    Thesis:   1h trend + OI/funding support + controlled base → clean 5m breakout bar
+    Thesis:   1h trend + OI/volume participation + controlled base → clean 5m breakout bar
     Entry:    breakout bar close (no retest wait — distinct from long_breakout_retest)
     Stop:     min(breakout bar low, micro base low) * (1 - stop_buffer_pct)
     """
@@ -507,30 +497,7 @@ def build_pending_long_accumulation_continuation_setup(
 
     cfg = scanner.cfg.get("long_accumulation_continuation", {})
 
-    # Market-cap allowlist gate.
-    # No real market_cap_usd exists in the live runtime.
-    # Default: BLOCK_ALL when allowlist is empty, to prevent semantic drift into
-    # a generic accumulation strategy. Operator must populate smallcap_symbol_allowlist
-    # or explicitly set empty_allowlist_behavior: PASS_ALL to activate.
-    allowlist = cfg.get("smallcap_symbol_allowlist", [])
-    empty_behavior = cfg.get("empty_allowlist_behavior", "BLOCK_ALL").upper()
-    market_cap_tag = "market_cap_gate=allowlist_proxy"
-
-    if not allowlist:
-        if empty_behavior == "PASS_ALL":
-            market_cap_tag = "market_cap_gate=allowlist_proxy_pass_all"
-        elif empty_behavior == "DISABLE_STRATEGY":
-            return None
-        else:  # BLOCK_ALL (default)
-            scanner._funnel_hit("long_accumulation_continuation", "market_cap_gate_blocked")
-            return None
-    elif symbol not in allowlist:
-        scanner._funnel_hit("long_accumulation_continuation", "market_cap_gate_blocked")
-        return None
-    else:
-        scanner._funnel_hit("long_accumulation_continuation", "market_cap_gate_pass")
-
-    # Duplicate check (same pattern as long_breakout_retest)
+    # Duplicate check
     if scanner.already_open_signal(symbol, "LONG"):
         scanner._funnel_hit("long_accumulation_continuation", "blocked_duplicate")
         return None
@@ -566,7 +533,7 @@ def build_pending_long_accumulation_continuation_setup(
     confidence = {"A": 0.80, "B": 0.65, "C": 0.50}.get(band, 0.50)
 
     # Assemble reason_tags
-    all_tags = [market_cap_tag, "family=long_accumulation_continuation"]
+    all_tags = ["family=long_accumulation_continuation"]
     all_tags += context["reason_tags"]
     all_tags += trigger["reason_tags"]
     all_tags.append(f"setup_quality_band={band}")
@@ -585,9 +552,8 @@ def build_pending_long_accumulation_continuation_setup(
     scanner._funnel_hit("long_accumulation_continuation", "new_pending")
 
     # NOTE on proxy field reuse:
-    #   oi_jump_pct → carries oi_distance_pct (how far current OI is above EMA24 baseline).
-    #                 This is NOT a 5m OI jump delta. Downstream code reading oi_jump_pct
-    #                 for this strategy family must account for the semantic difference.
+    #   oi_jump_pct → carries oi_distance_pct (OI now / EMA20 baseline - 1).
+    #                 This is NOT a 5m OI jump delta. Displayed as "OI vs EMA20" in formatter.
     #   score_oi    → carries oi_distance_pct * 100 for display consistency.
     #   score_retest → always 0.0 (no retest logic in this family).
     return pending_cls(
@@ -604,7 +570,7 @@ def build_pending_long_accumulation_continuation_setup(
         signal_high=trigger["signal_bar_high"],
         signal_low=trigger["signal_bar_low"],
         oi_jump_pct=round(context["oi_distance_pct"], 6),  # proxy: oi_distance_pct
-        funding_pct=round(context["funding_now"], 6),
+        funding_pct=0.0,
         vol_ratio=round(trigger["breakout_vol_ratio"], 4),
         strategy="long_accumulation_continuation",
         market_regime=btc_ctx["market_regime"],

@@ -1639,16 +1639,31 @@ class BinanceScanner:
         dispatch_line = f"Dispatch: {s.dispatch_action} [{s.dispatch_confidence_band}]\n" if getattr(s, "dispatch_action", "") not in ("", "not_evaluated") else ""
         dispatch_reason_line = f"Dispatch note: {s.dispatch_reason}\n" if getattr(s, "dispatch_reason", "") not in ("", "not_evaluated") else ""
 
+        if getattr(s, "strategy", "") == "long_accumulation_continuation":
+            participation = next(
+                (t.split("=", 1)[1] for t in (s.reason_tags or "").split(";")
+                 if t.startswith("participation=")), "n/a"
+            )
+            metrics = (
+                f"OI vs EMA20: {s.oi_jump_pct:+.2f}%\n"
+                f"Vol 1h vs EMA20: {s.vol_ratio:.2f}x\n"
+                f"Participation: {participation}\n"
+            )
+        else:
+            metrics = (
+                f"OI(5m): {s.oi_jump_pct:+.2f}%\n"
+                f"Vol: {s.vol_ratio:.2f}x\n"
+                f"Funding: {s.funding_pct:+.4f}%\n"
+                f"Retest waited: {s.retest_bars_waited} bars\n"
+            )
+
         return (
             f"{side_icon} #{s.symbol} | ${s.price:.6g} | Score {s.score/10:.1f}/10\n\n"
             f"Entry: {s.entry_ref:.6g}\n"
             f"Stop: {s.stop:.6g} ({s.sl_distance_pct:.2f}%)\n"
             f"TP1: {s.tp1:.6g} ({s.tp1_distance_pct:.2f}%)\n"
             f"TP2: {s.tp2:.6g} ({s.tp2_distance_pct:.2f}%)\n\n"
-            f"OI(5m): {s.oi_jump_pct:+.2f}%\n"
-            f"Vol: {s.vol_ratio:.2f}x\n"
-            f"Funding: {s.funding_pct:+.4f}%\n"
-            f"Retest waited: {s.retest_bars_waited} bars\n"
+            f"{metrics}"
             f"BTC 24h: {s.btc_24h_change_pct:+.2f}% ({s.btc_regime})\n"
             f"Manual: {s.manual_tradable} [{s.manual_trade_note}]\n"
             f"{dispatch_line}"
@@ -2397,7 +2412,7 @@ class BinanceScanner:
         max_pending_bars = int(acc_cfg.get("max_pending_bars_5m", 3))
         tp1_r = float(risk_cfg.get("tp1_r_multiple", 2.0))
         tp2_r = float(risk_cfg.get("tp2_r_multiple", 3.0))
-        min_risk_pct = float(risk_cfg.get("min_risk_pct", 1.0)) / 100.0
+        min_risk_pct = float(acc_cfg.get("min_risk_pct", 10.0)) / 100.0
 
         now_ms    = int(time.time() * 1000)
         expiry_ms = max_pending_bars * 5 * 60 * 1000
@@ -2425,6 +2440,10 @@ class BinanceScanner:
         tp2_distance_pct  = abs(tp2 - signal_price) / max(signal_price, 1e-12) * 100.0
         break_distance_pct = abs(signal_price - breakout_lvl) / max(breakout_lvl, 1e-12) * 100.0
         risk_pct_real     = sl_distance_pct
+
+        if risk_pct_real < min_risk_pct:
+            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_risk_too_small")
+            return []
 
         btc_ctx      = self.get_btc_context()
         manual_eval  = self.evaluate_manual_tradable("LONG", signal_price, stop, tp1)
