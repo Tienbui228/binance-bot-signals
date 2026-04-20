@@ -22,6 +22,8 @@ strategy:
     enabled: false
   long_accumulation_continuation:
     enabled: true
+  oi_range_breakout:
+    enabled: true
 thresholds:
   oi_jump_pct_5m: 2.0
   breakout_lookback_bars: 20
@@ -157,3 +159,32 @@ long_accumulation_continuation:
 
   # Pending expiry: max bars (5m cadence) before setup is expired
   max_pending_bars_5m: 3
+oi_range_breakout:
+  # Signal trigger
+  oi_spike_min_pct: 10.0          # OI delta % minimum
+  vol_ema_period: 20              # EMA period for volume
+  vol_ema_multiplier: 2.0         # volume >= X × EMA20
+
+  # Range detection
+  range_lookback_bars_1h: 20      # N bars 1h to detect range
+  min_range_width_pct: 0.5        # range too narrow → skip
+  max_range_width_pct: 5.0        # range too wide → skip
+
+  # Range detection — ATR filter
+  range_atr_period: 14            # ATR lookback
+  range_atr_ratio_max: 0.8        # ATR_current / ATR_avg < 0.8 = consolidation
+
+  # Exit
+  stop_buffer_pct: 0.2            # buffer below midpoint
+  tp1_range_multiplier: 1.0       # TP1 = entry + 1.0× range_height
+  tp2_range_multiplier: 1.5       # TP2 = entry + 1.5× range_height
+  min_risk_pct: 0.5               # skip if risk too small
+  max_risk_pct: 8.0               # skip if risk too large
+
+  # Score gates
+  score_min_send: 20
+  score_strong_signal: 50
+  score_high_conviction: 70
+
+  # Ops
+  max_pending_bars_5m: 48         # timeout before confirm (4h = 48×5m)

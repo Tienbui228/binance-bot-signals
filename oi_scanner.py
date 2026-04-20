@@ -1671,6 +1671,23 @@ class BinanceScanner:
                 f"{side_tag} #{s.symbol} #BINANCE"
             )
 
+        if getattr(s, "strategy", "") == "oi_range_breakout":
+            return (
+                f"📈 #{s.symbol} | ${s.price:.6g} | Score {s.score/10:.1f}/10\n\n"
+                f"Entry: {s.entry_ref:.6g}\n"
+                f"Stop: {s.stop:.6g} ({s.sl_distance_pct:.2f}%)\n"
+                f"TP1: {s.tp1:.6g} ({s.tp1_distance_pct:.2f}%)\n"
+                f"TP2: {s.tp2:.6g} ({s.tp2_distance_pct:.2f}%)\n\n"
+                f"OI Delta: +{s.oi_delta_pct:.2f}%\n"
+                f"Volume: {s.vol_ratio:.2f}x EMA20\n"
+                f"Range: {s.range_height:.6g} ({s.range_width_pct:.2f}%)\n"
+                f"ATR Ratio: {s.atr_ratio:.2f}\n\n"
+                f"BTC 24h: {s.btc_24h_change_pct:+.2f}% ({s.btc_regime})\n"
+                f"{dispatch_line}"
+                f"Reason: {s.reason}\n\n"
+                f"📈 #{s.symbol} #BINANCE"
+            )
+
         metrics = (
             f"OI(5m): {s.oi_jump_pct:+.2f}%\n"
             f"Vol: {s.vol_ratio:.2f}x\n"
@@ -2138,7 +2155,7 @@ class BinanceScanner:
             return None
         return strategy_build_pending_acc_cont_setup(self, symbol, PendingSetup)
 
-    def build_pending_setups_for_symbol(self, symbol: str) -> List[PendingSetup]:
+    def build_pending_setups_for_symbol(self, symbol: str, oi_1h_history: list = None) -> List[PendingSetup]:
         setups: List[PendingSetup] = []
         long_setup = self.build_pending_long_setup(symbol)
         if long_setup is not None:
@@ -2149,6 +2166,10 @@ class BinanceScanner:
         acc_cont_setup = self.build_pending_long_acc_cont_setup(symbol)
         if acc_cont_setup is not None:
             setups.append(acc_cont_setup)
+        # oi_range_breakout strategy
+        if self.cfg.get("strategy", {}).get("oi_range_breakout", {}).get("enabled", False):
+            orb_setups = self.build_pending_oi_range_breakout_setup(symbol, oi_1h_history)
+            setups.extend(orb_setups)
         return setups
 
     def process_pending_setups(self) -> List[Signal]:
@@ -2181,6 +2202,12 @@ class BinanceScanner:
             score_breakout = float(row.get("score_breakout") or 0.0)
             score_retest = float(row.get("score_retest") or 0.0)
             reason_tags = row.get("reason_tags", "") or ""
+
+            # ── No-retest path: oi_range_breakout (immediate confirm at live price >= entry) ─
+            if strategy == "oi_range_breakout":
+                orb_signals = self._process_oi_range_breakout_pending(row, risk_cfg)
+                confirmed.extend(orb_signals)
+                continue
 
             # ── No-retest path: long_accumulation_continuation ───────────────────
             if strategy == "long_accumulation_continuation":
@@ -2526,6 +2553,175 @@ class BinanceScanner:
             status="OPEN",
         )
         self.close_pending(pending_id, "CONFIRMED", "acc_cont_immediate_confirm", bars_waited=0)
+        return [signal]
+
+    def build_pending_oi_range_breakout_setup(self, symbol: str, oi_1h_history: list | None) -> list:
+        """Build pending setups for oi_range_breakout strategy."""
+        if not oi_1h_history:
+            return []
+
+        try:
+            orb_cfg = self.cfg.get("oi_range_breakout", {})
+
+            # Fetch 1h klines
+            klines_1h = self.binance_client.get_klines(symbol, "1h", limit=22)
+            if not klines_1h or len(klines_1h) < 22:
+                return []
+
+            # Call strategy
+            from scanner.strategies.oi_range_breakout import detect_oi_range_breakout
+
+            signal_dict = detect_oi_range_breakout(symbol, klines_1h, oi_1h_history, orb_cfg)
+
+            if not signal_dict:
+                return []
+
+            # Wrap in PendingSetup
+            setup = self._wrap_oi_range_breakout_signal(signal_dict)
+            return [setup] if setup else []
+
+        except Exception as e:
+            logger.error(f"[oi_range_breakout] {symbol} — {e}")
+            return []
+
+    def _wrap_oi_range_breakout_signal(self, signal_dict: dict):
+        """Convert oi_range_breakout signal dict → PendingSetup."""
+        symbol = signal_dict.get("symbol", "")
+        entry = signal_dict.get("entry_price", 0)
+        sl = signal_dict.get("sl_price", 0)
+        tp1 = signal_dict.get("tp1_price", 0)
+        tp2 = signal_dict.get("tp2_price", 0)
+
+        if not all([entry, sl, tp1, tp2]) or entry <= 0 or sl >= entry:
+            return None
+
+        now_ms = int(time.time() * 1000)
+        pending_id = f"ORB-{symbol}-{now_ms}"
+
+        # Format: oi_delta_pct=X | vol_ratio=X | range_width=X% | atr_ratio=X | score=X | band=X
+        reason_tags = (
+            f"oi_delta_pct={signal_dict.get('oi_delta_pct', 0):.2f}|"
+            f"vol_ratio={signal_dict.get('vol_ratio', 0):.2f}|"
+            f"range_width={signal_dict.get('range_width_pct', 0):.2f}%|"
+            f"atr_ratio={signal_dict.get('atr_ratio', 0):.2f}|"
+            f"score={signal_dict.get('score', 0)}|"
+            f"band={signal_dict.get('setup_quality_band', 'WEAK')}"
+        )
+
+        return PendingSetup(
+            pending_id=pending_id,
+            symbol=symbol,
+            side="LONG",
+            strategy="oi_range_breakout",
+            entry_price=entry,
+            stop_loss=sl,
+            tp1=tp1,
+            tp2=tp2,
+            created_ts_ms=now_ms,
+            signal_open_time=signal_dict.get("trigger_bar_open_ts", now_ms),
+            score=float(signal_dict.get("score", 0)),
+            confidence=float(signal_dict.get("score", 0)) / 100.0,
+            reason=f"OI +{signal_dict.get('oi_delta_pct', 0):.1f}% | Vol {signal_dict.get('vol_ratio', 0):.2f}x | Range {signal_dict.get('range_width_pct', 0):.2f}%",
+            reason_tags=reason_tags,
+            score_oi=0.0,
+            score_breakout=float(signal_dict.get("score", 0)),
+            score_retest=0.0,
+            oi_jump_pct=float(signal_dict.get("oi_delta_pct", 0)),
+            funding_pct=0.0,
+            vol_ratio=float(signal_dict.get("vol_ratio", 0)),
+            breakout_level=float(signal_dict.get("entry_price", 0)),
+            signal_price=float(signal_dict.get("entry_price", 0)),
+            signal_high=float(signal_dict.get("entry_price", 0)),
+            signal_low=float(signal_dict.get("entry_price", 0)),
+            regime_label="",
+            market_regime="",
+        )
+
+    def _process_oi_range_breakout_pending(self, row: dict, risk_cfg: dict) -> list:
+        """Immediate confirmation for oi_range_breakout pending.
+
+        Confirms immediately when live price >= entry_price (no retest waiting).
+        """
+        pending_id = row.get("pending_id", "")
+        symbol = row.get("symbol", "")
+        signal_price = float(row.get("entry_price") or 0)
+        sl = float(row.get("stop_loss") or 0)
+        tp1 = float(row.get("tp1") or 0)
+        tp2 = float(row.get("tp2") or 0)
+
+        if not all([signal_price, sl, tp1, tp2]):
+            self.close_pending(pending_id, "REJECTED_RULE", "orb_missing_levels")
+            return []
+
+        # Standard confirmation
+        btc_ctx = self.get_btc_context()
+        manual_eval = self.evaluate_manual_tradable("LONG", signal_price, sl, tp1)
+        sl_distance_pct = abs(signal_price - sl) / max(signal_price, 1e-12) * 100.0
+        tp1_distance_pct = abs(tp1 - signal_price) / max(signal_price, 1e-12) * 100.0
+        tp2_distance_pct = abs(tp2 - signal_price) / max(signal_price, 1e-12) * 100.0
+
+        signal = Signal(
+            signal_id=f"{symbol}-LONG-oi_range_breakout-{int(time.time() * 1000)}",
+            timestamp_ms=int(row.get("signal_open_time") or 0),
+            symbol=symbol,
+            side="LONG",
+            score=float(row.get("score") or 0),
+            confidence=float(row.get("confidence") or 0),
+            reason=row.get("reason", ""),
+            entry_ref=signal_price,
+            stop=sl,
+            tp1=tp1,
+            tp2=tp2,
+            price=signal_price,
+            breakout_level=float(row.get("breakout_level", 0)),
+            entry_low=signal_price,
+            entry_high=signal_price,
+            oi_jump_pct=float(row.get("oi_jump_pct", 0)),
+            funding_pct=0.0,
+            vol_ratio=float(row.get("vol_ratio", 0)),
+            retest_bars_waited=0,
+            config_version=str(self.cfg.get("config_version", "")),
+            strategy="oi_range_breakout",
+            market_regime=btc_ctx["market_regime"],
+            btc_price=btc_ctx["btc_price"],
+            btc_24h_change_pct=btc_ctx["btc_24h_change_pct"],
+            btc_4h_change_pct=btc_ctx["btc_4h_change_pct"],
+            btc_1h_change_pct=btc_ctx["btc_1h_change_pct"],
+            btc_24h_range_pct=btc_ctx["btc_24h_range_pct"],
+            btc_4h_range_pct=btc_ctx["btc_4h_range_pct"],
+            alt_market_breadth_pct=btc_ctx["alt_market_breadth_pct"],
+            btc_regime=btc_ctx["btc_regime"],
+            risk_pct_real=sl_distance_pct,
+            sl_distance_pct=sl_distance_pct,
+            tp1_distance_pct=tp1_distance_pct,
+            tp2_distance_pct=tp2_distance_pct,
+            break_distance_pct=0.0,
+            retest_depth_pct=0.0,
+            score_oi=float(row.get("score_oi", 0)),
+            score_exhaustion=0.0,
+            score_breakout=float(row.get("score_breakout", 0)),
+            score_retest=0.0,
+            reason_tags=row.get("reason_tags", ""),
+            stop_was_forced_min_risk="no",
+            manual_tradable=manual_eval["manual_tradable"],
+            manual_trade_note=manual_eval["manual_trade_note"],
+            regime_label=row.get("regime_label", ""),
+            regime_fit_for_strategy=row.get("regime_fit_for_strategy", "MEDIUM"),
+            # oi_range_breakout specific fields
+            range_high=float(row.get("range_high", 0)),
+            range_low=float(row.get("range_low", 0)),
+            range_height=float(row.get("range_height", 0)),
+            midpoint=float(row.get("midpoint", 0)),
+            atr_current=float(row.get("atr_current", 0)),
+            atr_avg=float(row.get("atr_avg", 0)),
+            atr_ratio=float(row.get("atr_ratio", 0)),
+            oi_current=float(row.get("oi_current", 0)),
+            oi_prev=float(row.get("oi_prev", 0)),
+            oi_delta_pct=float(row.get("oi_delta_pct", 0)),
+            vol_ema20=float(row.get("vol_ema20", 0)),
+        )
+
+        self.confirm_signal(signal, row.get("pending_id", ""))
         return [signal]
 
     def evaluate_open_signals(self):
@@ -3440,7 +3636,15 @@ class BinanceScanner:
 
         for sym in symbols:
             try:
-                setups = self.build_pending_setups_for_symbol(sym)
+                # Fetch 1h OI once per symbol for oi_range_breakout
+                oi_1h_history = None
+                if self.cfg.get("strategy", {}).get("oi_range_breakout", {}).get("enabled", False):
+                    try:
+                        oi_1h_history = self.binance_client.oi_hist(sym, "1h", 2)
+                    except Exception as e:
+                        logger.warning(f"[scan_once] {sym} — failed to fetch 1h OI: {e}")
+
+                setups = self.build_pending_setups_for_symbol(sym, oi_1h_history)
                 for p in setups:
                     p.regime_label = regime.regime_label
                     if p.side == "LONG":

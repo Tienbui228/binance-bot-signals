@@ -135,6 +135,18 @@ class Signal:
     dispatch_action: str = "not_evaluated"
     dispatch_confidence_band: str = "not_evaluated"
     dispatch_reason: str = "not_evaluated"
+    # oi_range_breakout fields
+    range_high: float = 0.0
+    range_low: float = 0.0
+    range_height: float = 0.0
+    midpoint: float = 0.0
+    atr_current: float = 0.0
+    atr_avg: float = 0.0
+    atr_ratio: float = 0.0
+    oi_current: float = 0.0
+    oi_prev: float = 0.0
+    oi_delta_pct: float = 0.0
+    vol_ema20: float = 0.0
     status: str = "OPEN"
 
 
