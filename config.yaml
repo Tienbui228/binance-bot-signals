@@ -155,8 +155,5 @@ long_accumulation_continuation:
   # Stop calculation (applied at confirmation, not at trigger)
   stop_buffer_pct: 0.0015
 
-  # Risk floor: reject if natural SL distance < this (%)
-  min_risk_pct: 10.0
-
   # Pending expiry: max bars (5m cadence) before setup is expired
   max_pending_bars_5m: 3

@@ -2432,7 +2432,6 @@ class BinanceScanner:
         max_pending_bars = int(acc_cfg.get("max_pending_bars_5m", 3))
         tp1_r = float(risk_cfg.get("tp1_r_multiple", 2.0))
         tp2_r = float(risk_cfg.get("tp2_r_multiple", 3.0))
-        min_risk_pct = float(acc_cfg.get("min_risk_pct", 10.0))  # percent, not fraction
 
         now_ms    = int(time.time() * 1000)
         expiry_ms = max_pending_bars * 5 * 60 * 1000
@@ -2441,33 +2440,28 @@ class BinanceScanner:
             self.close_pending(pending_id, "EXPIRED_WAIT", "acc_cont_expired", max_pending_bars)
             return []
 
-        base  = signal_low if signal_low > 0 else breakout_lvl
-        stop  = base * (1.0 - stop_buffer_pct)
-        risk  = signal_price - stop
-        if risk <= 0 or signal_price <= 0:
+        base     = signal_low if signal_low > 0 else breakout_lvl
+        stop_raw = base * (1.0 - stop_buffer_pct)
+        risk_raw = signal_price - stop_raw
+        if risk_raw <= 0 or signal_price <= 0:
             self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_bad_risk")
             return []
 
-        tp1 = signal_price + risk * tp1_r
-        tp2 = signal_price + risk * tp2_r
+        # Widen natural stop by 1.30× so TP/SL have meaningful room
+        risk = risk_raw * 1.30
+        stop = signal_price - risk
+        tp1  = signal_price + risk * tp1_r
+        tp2  = signal_price + risk * tp2_r
 
         if self.already_open_signal(symbol, "LONG"):
             self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_open_collision")
             return []
 
-        sl_distance_pct   = abs(signal_price - stop) / max(signal_price, 1e-12) * 100.0
-        tp1_distance_pct  = abs(tp1 - signal_price) / max(signal_price, 1e-12) * 100.0
-        tp2_distance_pct  = abs(tp2 - signal_price) / max(signal_price, 1e-12) * 100.0
+        sl_distance_pct    = abs(signal_price - stop) / max(signal_price, 1e-12) * 100.0
+        tp1_distance_pct   = abs(tp1 - signal_price) / max(signal_price, 1e-12) * 100.0
+        tp2_distance_pct   = abs(tp2 - signal_price) / max(signal_price, 1e-12) * 100.0
         break_distance_pct = abs(signal_price - breakout_lvl) / max(breakout_lvl, 1e-12) * 100.0
-        risk_pct_real     = sl_distance_pct
-
-        if risk_pct_real < min_risk_pct:
-            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_risk_too_small")
-            return []
-
-        if tp1_distance_pct < min_risk_pct:
-            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_tp1_too_small")
-            return []
+        risk_pct_real      = sl_distance_pct
 
         btc_ctx      = self.get_btc_context()
         manual_eval  = self.evaluate_manual_tradable("LONG", signal_price, stop, tp1)
