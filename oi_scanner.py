@@ -2564,7 +2564,7 @@ class BinanceScanner:
             orb_cfg = self.cfg.get("oi_range_breakout", {})
 
             # Fetch 1h klines
-            klines_1h = self.binance_client.get_klines(symbol, "1h", limit=22)
+            klines_1h = self.klines(symbol, "1h", limit=22)
             if not klines_1h or len(klines_1h) < 22:
                 return []
 
@@ -3640,7 +3640,7 @@ class BinanceScanner:
                 oi_1h_history = None
                 if self.cfg.get("strategy", {}).get("oi_range_breakout", {}).get("enabled", False):
                     try:
-                        oi_1h_history = self.binance_client.oi_hist(sym, "1h", 2)
+                        oi_1h_history = self.oi_hist(sym, "1h", 2)
                     except Exception as e:
                         print(f"[scan_once] {sym} — failed to fetch 1h OI: {e}")
 
