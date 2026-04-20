@@ -30,7 +30,7 @@ except Exception:
 BASE_FAPI = "https://fapi.binance.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "oi-15m-rolling-fix-2026-04-20"
+CODE_BUILD_ID = "strategy-enabled-flag-fix-2026-04-20"
 CODE_BUILD_SOURCE = "version-marker-fix-on-live-file"
 CODE_BUILD_NOTE = "Adds trustworthy runtime build marker and startup build logs so live code version is explicit."
 
@@ -2157,19 +2157,27 @@ class BinanceScanner:
 
     def build_pending_setups_for_symbol(self, symbol: str, oi_1h_history: list = None) -> List[PendingSetup]:
         setups: List[PendingSetup] = []
-        long_setup = self.build_pending_long_setup(symbol)
-        if long_setup is not None:
-            setups.append(long_setup)
-        short_setup = self.build_pending_short_exhaustion_setup(symbol)
-        if short_setup is not None:
-            setups.append(short_setup)
-        acc_cont_setup = self.build_pending_long_acc_cont_setup(symbol)
-        if acc_cont_setup is not None:
-            setups.append(acc_cont_setup)
-        # oi_range_breakout strategy
-        if self.cfg.get("strategy", {}).get("oi_range_breakout", {}).get("enabled", False):
+        strategy_cfg = self.cfg.get("strategy", {})
+
+        if strategy_cfg.get("long_breakout_retest", {}).get("enabled", True):
+            long_setup = self.build_pending_long_setup(symbol)
+            if long_setup is not None:
+                setups.append(long_setup)
+
+        if strategy_cfg.get("short_exhaustion_retest", {}).get("enabled", True):
+            short_setup = self.build_pending_short_exhaustion_setup(symbol)
+            if short_setup is not None:
+                setups.append(short_setup)
+
+        if strategy_cfg.get("long_accumulation_continuation", {}).get("enabled", True):
+            acc_cont_setup = self.build_pending_long_acc_cont_setup(symbol)
+            if acc_cont_setup is not None:
+                setups.append(acc_cont_setup)
+
+        if strategy_cfg.get("oi_range_breakout", {}).get("enabled", False):
             orb_setups = self.build_pending_oi_range_breakout_setup(symbol, oi_1h_history)
             setups.extend(orb_setups)
+
         return setups
 
     def process_pending_setups(self) -> List[Signal]:
