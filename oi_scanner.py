@@ -2581,7 +2581,7 @@ class BinanceScanner:
             return [setup] if setup else []
 
         except Exception as e:
-            logger.error(f"[oi_range_breakout] {symbol} — {e}")
+            print(f"[oi_range_breakout] {symbol} — {e}")
             return []
 
     def _wrap_oi_range_breakout_signal(self, signal_dict: dict):
@@ -3642,7 +3642,7 @@ class BinanceScanner:
                     try:
                         oi_1h_history = self.binance_client.oi_hist(sym, "1h", 2)
                     except Exception as e:
-                        logger.warning(f"[scan_once] {sym} — failed to fetch 1h OI: {e}")
+                        print(f"[scan_once] {sym} — failed to fetch 1h OI: {e}")
 
                 setups = self.build_pending_setups_for_symbol(sym, oi_1h_history)
                 for p in setups:
