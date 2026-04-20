@@ -12,7 +12,32 @@ SL/TP calculated from detected range height.
 
 import logging
 
+import requests
+
 logger = logging.getLogger(__name__)
+
+
+def fetch_market_cap(symbol: str) -> float | None:
+    base = symbol.lower().removesuffix("usdt")
+    try:
+        search = requests.get(
+            "https://api.coingecko.com/api/v3/search",
+            params={"query": base},
+            timeout=5,
+        ).json()
+        coins = search.get("coins", [])
+        if not coins:
+            return None
+        exact = [c for c in coins if c.get("symbol", "").lower() == base]
+        cg_id = exact[0]["id"] if exact else coins[0]["id"]
+        price = requests.get(
+            "https://api.coingecko.com/api/v3/simple/price",
+            params={"ids": cg_id, "vs_currencies": "usd", "include_market_cap": "true"},
+            timeout=5,
+        ).json()
+        return float(price.get(cg_id, {}).get("usd_market_cap", 0)) or None
+    except Exception:
+        return None
 
 
 def calc_oi_delta_pct(oi_current: float, oi_prev: float) -> float:
@@ -257,7 +282,7 @@ def quality_band(score: int) -> str:
 def detect_oi_range_breakout(
     symbol: str,
     klines_1h: list[dict],
-    oi_history_1h: list[dict],
+    oi_history_15m: list[dict],
     config: dict,
 ) -> dict | None:
     """
@@ -266,7 +291,7 @@ def detect_oi_range_breakout(
     Args:
         symbol: trading pair (e.g., "BTCUSDT")
         klines_1h: list of 1h klines, ≥22 bars, sorted ascending
-        oi_history_1h: list of 1h OI history, exactly 2 bars [prev, current]
+        oi_history_15m: list of 15m OI history, exactly 5 bars sorted ascending
         config: strategy config dict
 
     Returns:
@@ -300,14 +325,15 @@ def detect_oi_range_breakout(
         logger.warning(f"[oi_range_breakout] {symbol} — insufficient klines (<22)")
         return None
 
-    if not oi_history_1h or len(oi_history_1h) < 2:
-        logger.warning(f"[oi_range_breakout] {symbol} — insufficient OI history (<2)")
+    if not oi_history_15m or len(oi_history_15m) < 5:
+        logger.warning(f"[oi_range_breakout] {symbol} — insufficient OI history (<5 bars)")
         return None
 
-    # ── Step 1: OI delta ──
-    oi_prev = float(oi_history_1h[-2].get("sumOpenInterest", 0))
-    oi_current = float(oi_history_1h[-1].get("sumOpenInterest", 0))
-    oi_delta_pct = calc_oi_delta_pct(oi_current, oi_prev)
+    # ── Step 1: OI delta (snapshot now vs snapshot 1h ago) ──
+    # OI is a stock variable — compare bar[-1] (now) vs bar[-5] (60 min ago)
+    oi_now    = float(oi_history_15m[-1].get("oi_value", 0))
+    oi_1h_ago = float(oi_history_15m[-5].get("oi_value", 0))
+    oi_delta_pct = calc_oi_delta_pct(oi_now, oi_1h_ago)
 
     if oi_delta_pct < oi_spike_min_pct:
         logger.debug(
@@ -329,6 +355,15 @@ def detect_oi_range_breakout(
     if vol_ratio < vol_ema_multiplier:
         logger.debug(
             f"[oi_range_breakout] {symbol} — volume spike insufficient: {vol_ratio:.2f}x < {vol_ema_multiplier}x"
+        )
+        return None
+
+    # ── Step 2.5: Market cap filter ──
+    max_market_cap_usd = float(config.get("max_market_cap_usd", 150_000_000))
+    market_cap = fetch_market_cap(symbol)
+    if market_cap is not None and market_cap >= max_market_cap_usd:
+        logger.debug(
+            f"[oi_range_breakout] {symbol} — market cap too large: ${market_cap:,.0f} >= ${max_market_cap_usd:,.0f}"
         )
         return None
 
@@ -395,8 +430,8 @@ def detect_oi_range_breakout(
         "strategy_family": "oi_range_breakout",
         "side": "long",
         "symbol": symbol,
-        "oi_current": oi_current,
-        "oi_prev": oi_prev,
+        "oi_current": oi_now,
+        "oi_prev": oi_1h_ago,
         "oi_delta_pct": oi_delta_pct,
         "volume_1h": volume_1h,
         "vol_ema20": vol_ema20,

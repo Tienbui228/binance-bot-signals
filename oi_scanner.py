@@ -30,7 +30,7 @@ except Exception:
 BASE_FAPI = "https://fapi.binance.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "long-acceptance-unlock-2026-04-06"
+CODE_BUILD_ID = "oi-15m-rolling-fix-2026-04-20"
 CODE_BUILD_SOURCE = "version-marker-fix-on-live-file"
 CODE_BUILD_NOTE = "Adds trustworthy runtime build marker and startup build logs so live code version is explicit."
 
@@ -3636,13 +3636,13 @@ class BinanceScanner:
 
         for sym in symbols:
             try:
-                # Fetch 1h OI once per symbol for oi_range_breakout
+                # Fetch 15m OI (5 bars = 1h span) for oi_range_breakout
                 oi_1h_history = None
                 if self.cfg.get("strategy", {}).get("oi_range_breakout", {}).get("enabled", False):
                     try:
-                        oi_1h_history = self.oi_hist(sym, "1h", 2)
+                        oi_1h_history = self.oi_hist(sym, "15m", 5)
                     except Exception as e:
-                        print(f"[scan_once] {sym} — failed to fetch 1h OI: {e}")
+                        print(f"[scan_once] {sym} — failed to fetch 15m OI: {e}")
 
                 setups = self.build_pending_setups_for_symbol(sym, oi_1h_history)
                 for p in setups:

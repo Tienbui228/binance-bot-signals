@@ -164,6 +164,7 @@ oi_range_breakout:
   oi_spike_min_pct: 10.0          # OI delta % minimum
   vol_ema_period: 20              # EMA period for volume
   vol_ema_multiplier: 2.0         # volume >= X × EMA20
+  max_market_cap_usd: 150_000_000 # skip if market cap >= $150M
 
   # Range detection
   range_lookback_bars_1h: 20      # N bars 1h to detect range
