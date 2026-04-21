@@ -243,6 +243,8 @@ def calc_score(
         score += 20
     elif oi_delta_pct >= 10:
         score += 10
+    elif oi_delta_pct >= 5:
+        score += 5
 
     # Volume component (40 pts)
     if vol_ratio >= 4.0:
@@ -291,7 +293,7 @@ def detect_oi_range_breakout(
     Args:
         symbol: trading pair (e.g., "BTCUSDT")
         klines_1h: list of 1h klines, ≥22 bars, sorted ascending
-        oi_history_15m: list of 15m OI history, exactly 5 bars sorted ascending
+        oi_history_15m: list of 15m OI history, ≥2 bars sorted ascending
         config: strategy config dict
 
     Returns:
@@ -325,15 +327,15 @@ def detect_oi_range_breakout(
         logger.warning(f"[oi_range_breakout] {symbol} — insufficient klines (<22)")
         return None
 
-    if not oi_history_15m or len(oi_history_15m) < 5:
-        logger.warning(f"[oi_range_breakout] {symbol} — insufficient OI history (<5 bars)")
+    if not oi_history_15m or len(oi_history_15m) < 2:
+        logger.warning(f"[oi_range_breakout] {symbol} — insufficient OI history (<2 bars)")
         return None
 
-    # ── Step 1: OI delta (snapshot now vs snapshot 1h ago) ──
-    # OI is a stock variable — compare bar[-1] (now) vs bar[-5] (60 min ago)
-    oi_now    = float(oi_history_15m[-1].get("oi_value", 0))
-    oi_1h_ago = float(oi_history_15m[-5].get("oi_value", 0))
-    oi_delta_pct = calc_oi_delta_pct(oi_now, oi_1h_ago)
+    # ── Step 1: OI delta (snapshot now vs snapshot 15 min ago) ──
+    # OI is a stock variable — compare bar[-1] (now) vs bar[-2] (15 min ago)
+    oi_now      = float(oi_history_15m[-1].get("oi_value", 0))
+    oi_15m_ago  = float(oi_history_15m[-2].get("oi_value", 0))
+    oi_delta_pct = calc_oi_delta_pct(oi_now, oi_15m_ago)
 
     if oi_delta_pct < oi_spike_min_pct:
         logger.debug(
@@ -431,7 +433,7 @@ def detect_oi_range_breakout(
         "side": "long",
         "symbol": symbol,
         "oi_current": oi_now,
-        "oi_prev": oi_1h_ago,
+        "oi_prev": oi_15m_ago,
         "oi_delta_pct": oi_delta_pct,
         "volume_1h": volume_1h,
         "vol_ema20": vol_ema20,

@@ -3648,7 +3648,7 @@ class BinanceScanner:
                 oi_1h_history = None
                 if self.cfg.get("strategy", {}).get("oi_range_breakout", {}).get("enabled", False):
                     try:
-                        oi_1h_history = self.oi_hist(sym, "15m", 5)
+                        oi_1h_history = self.oi_hist(sym, "15m", 2)
                     except Exception as e:
                         print(f"[scan_once] {sym} — failed to fetch 15m OI: {e}")
 
