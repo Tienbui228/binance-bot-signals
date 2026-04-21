@@ -160,30 +160,28 @@ long_accumulation_continuation:
   # Pending expiry: max bars (5m cadence) before setup is expired
   max_pending_bars_5m: 3
 oi_range_breakout:
-  # Signal trigger
-  oi_spike_min_pct: 5.0           # OI delta % minimum
-  vol_ema_period: 20              # EMA period for volume
-  vol_ema_multiplier: 2.0         # volume >= X × EMA20
-  max_market_cap_usd: 150_000_000 # skip if market cap >= $150M
+  # Signal trigger — OI is the ONLY hard gate
+  oi_spike_min_pct: 5.0           # OI delta % minimum (1h window: bar[-1] vs bar[-5])
+  vol_ema_period: 20              # logged only, not a gate
+  vol_ema_multiplier: 0.0         # disabled
+  max_market_cap_usd: 999999999999 # disabled
 
-  # Range detection
-  range_lookback_bars_1h: 20      # N bars 1h to detect range
-  min_range_width_pct: 0.5        # range too narrow → skip
-  max_range_width_pct: 5.0        # range too wide → skip
-
-  # Range detection — ATR filter
-  range_atr_period: 14            # ATR lookback
-  range_atr_ratio_max: 2.0        # ATR_current / ATR_avg < 2.0 = consolidation
+  # Range detection — very loose
+  range_lookback_bars_1h: 20
+  min_range_width_pct: 0.0        # disabled
+  max_range_width_pct: 50.0       # disabled
+  range_atr_period: 14
+  range_atr_ratio_max: 100.0      # disabled
 
   # Exit
-  stop_buffer_pct: 0.2            # buffer below midpoint
-  tp1_range_multiplier: 1.0       # TP1 = entry + 1.0× range_height
-  tp2_range_multiplier: 1.5       # TP2 = entry + 1.5× range_height
-  min_risk_pct: 0.5               # skip if risk too small
-  max_risk_pct: 8.0               # skip if risk too large
+  stop_buffer_pct: 0.2
+  tp1_range_multiplier: 1.0
+  tp2_range_multiplier: 1.5
+  min_risk_pct: 0.0               # disabled
+  max_risk_pct: 100.0             # disabled
 
-  # Score gates
-  score_min_send: 20
+  # Score gates — disabled
+  score_min_send: 0
   score_strong_signal: 50
   score_high_conviction: 70
 
