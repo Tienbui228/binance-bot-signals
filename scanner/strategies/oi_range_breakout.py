@@ -197,15 +197,15 @@ def calc_sl_tp(
 
     Returns dict or None if invalid.
     """
-    midpoint = range_dict["midpoint"]
+    range_low = range_dict["range_low"]
     range_height = range_dict["range_height"]
 
-    # SL below midpoint with buffer
-    sl_price = midpoint * (1.0 - stop_buffer_pct / 100.0)
+    # SL below range_low with buffer — valid regardless of entry position
+    sl_price = range_low * (1.0 - stop_buffer_pct / 100.0)
     sl_dist = entry_price - sl_price
 
     if sl_dist <= 0:
-        return None  # entry already below midpoint
+        return None  # entry already below range_low (breakdown)
 
     tp1_price = entry_price + tp1_multiplier * range_height
     tp2_price = entry_price + tp2_multiplier * range_height
