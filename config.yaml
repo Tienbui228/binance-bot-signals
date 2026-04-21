@@ -7,7 +7,7 @@ scanner:
   interval_5m: 5m
   interval_15m: 15m
   interval_1h: 1h
-  loop_seconds: 120
+  loop_seconds: 300
   top_n: 2
   max_symbols: 80
   min_quote_volume_usdt_24h: 5000000

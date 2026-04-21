@@ -327,14 +327,14 @@ def detect_oi_range_breakout(
         logger.warning(f"[oi_range_breakout] {symbol} — insufficient klines (<22)")
         return None
 
-    if not oi_history_15m or len(oi_history_15m) < 5:
-        logger.warning(f"[oi_range_breakout] {symbol} — insufficient OI history (<5 bars)")
+    if not oi_history_15m or len(oi_history_15m) < 2:
+        logger.warning(f"[oi_range_breakout] {symbol} — insufficient OI history (<2 bars)")
         return None
 
-    # ── Step 1: OI delta (snapshot now vs snapshot 1h ago) ──
-    # OI is a stock variable — compare bar[-1] (now) vs bar[-5] (60 min ago)
-    oi_now     = float(oi_history_15m[-1].get("oi_value", 0))
-    oi_1h_ago  = float(oi_history_15m[-5].get("oi_value", 0))
+    # ── Step 1: OI delta (1h bar[-1] vs bar[-2]) ──
+    # OI is a stock variable — compare current 1h bar vs previous 1h bar
+    oi_now    = float(oi_history_15m[-1].get("oi_value", 0))
+    oi_1h_ago = float(oi_history_15m[-2].get("oi_value", 0))
     oi_delta_pct = calc_oi_delta_pct(oi_now, oi_1h_ago)
 
     if oi_delta_pct < oi_spike_min_pct:
