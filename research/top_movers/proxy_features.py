@@ -641,6 +641,40 @@ def compute_flow_composite(
 
 
 # ---------------------------------------------------------------------------
+# Wave 2 — retest volume decay ratio (L5 volume field)
+# ---------------------------------------------------------------------------
+
+def compute_retest_volume_decay_ratio(
+    bars_5m: List[Dict],
+    break_bar_idx: Optional[int],
+    retest_start_idx: Optional[int],
+    retest_extreme_idx: Optional[int],
+) -> Optional[float]:
+    """Volume decay during retest zone vs. break bar volume.
+
+    Ratio = mean(volume in retest zone) / volume(break bar).
+    < 1.0 → volume decaying during retest (healthy pullback).
+    >= 1.0 → volume not decaying (risky — retest may not hold).
+
+    Returns None if indices are invalid or break bar volume is zero.
+    """
+    if break_bar_idx is None or retest_start_idx is None or retest_extreme_idx is None:
+        return None
+    if break_bar_idx < 0 or break_bar_idx >= len(bars_5m):
+        return None
+    break_vol = bars_5m[break_bar_idx].get("volume")
+    if not break_vol or break_vol <= _EPS:
+        return None
+    start = min(retest_start_idx, retest_extreme_idx)
+    end = max(retest_start_idx, retest_extreme_idx) + 1
+    retest_bars = bars_5m[start:end]
+    if not retest_bars:
+        return None
+    mean_vol = sum(b["volume"] for b in retest_bars if b.get("volume") is not None) / len(retest_bars)
+    return round(mean_vol / break_vol, 4)
+
+
+# ---------------------------------------------------------------------------
 # BTC context fields (for Context / Layer 7 answer contract)
 # ---------------------------------------------------------------------------
 

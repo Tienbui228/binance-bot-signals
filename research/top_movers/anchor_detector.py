@@ -25,6 +25,23 @@ from research.top_movers.proxy_features import (
 )
 from research.top_movers.canonical_move import CanonicalMove
 
+try:
+    from scanner.market_math import upper_wick_ratio, lower_wick_ratio, candle_body_ratio
+except ImportError:
+    def upper_wick_ratio(bar):
+        total = max(bar["high"] - bar["low"], 1e-12)
+        body_high = max(bar["open"], bar["close"])
+        return max(bar["high"] - body_high, 0.0) / total
+
+    def lower_wick_ratio(bar):
+        total = max(bar["high"] - bar["low"], 1e-12)
+        body_low = min(bar["open"], bar["close"])
+        return max(body_low - bar["low"], 0.0) / total
+
+    def candle_body_ratio(bar):
+        total = max(bar["high"] - bar["low"], 1e-12)
+        return abs(bar["close"] - bar["open"]) / total
+
 
 _P3_LOOKFORWARD_BARS = 12         # 12 x 5m = 60 min after P2
 _COMPRESSION_SEARCH_WINDOW = 18   # search 18 bars back from break candidate
@@ -65,6 +82,48 @@ class AnchorSet:
     p4: Optional[AnchorPoint]
     detection_ok: bool = True
     detection_note: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Wave 2 — L4 Breakdown pack
+# ---------------------------------------------------------------------------
+
+@dataclass
+class BreakdownPack:
+    """L4 fields measured at and immediately after the P2 break bar."""
+    break_distance_pct: Optional[float]              # close_p2 vs break_level, pct
+    break_close_strength: Optional[float]            # PROVISIONAL: body_quality from bq_components
+    break_bar_body_ratio: Optional[float]            # PROVEN: candle_body_ratio(p2_bar)
+    break_volume_ratio: Optional[float]              # PROVISIONAL: volume_ratio_3bar at p2_idx
+    support_test_count_before_break: int             # bars testing break_level in P0→P2 zone
+    break_cleanliness_score: Optional[float]         # PROVEN: = break_quality_score
+    immediate_followthrough_pct_1bar: Optional[float]
+    immediate_followthrough_pct_3bar: Optional[float]
+    false_break_reclaim_fast_flag: str               # Y/N
+
+
+# ---------------------------------------------------------------------------
+# Wave 2 — L5 Retest fail / reclaim pack
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RetestFailPack:
+    """L5 fields measuring retest geometry in P3→P4 zone (dual-direction)."""
+    pack_available: bool                              # False when P3 or P4 is None
+    reclaim_pct: Optional[float]                     # pullback from P3 toward break_level, pct
+    retest_depth_vs_break_pct: Optional[float]       # retest_extreme distance from break_level, pct
+    retest_duration_bars: Optional[int]              # bars from P3 to retest_extreme
+    retest_reject_wick_ratio: Optional[float]        # wick at retest_extreme bar (direction-aware)
+    retest_close_back_above_break_flag: str          # Y/N: close at retest_extreme vs break_level
+    fail_strength: Optional[float]                   # 0–1 normalized: adverse move after retest_extreme
+    fail_confirmation_bar_count: Optional[int]       # bars closing through break_level after retest
+    max_reclaim_before_resolution_pct: Optional[float]  # max recovery from retest_extreme to P4
+    second_rejection_present_flag: str               # Y/N: second touch of break_level after retest
+    bars_to_retest: Optional[int]                    # same as retest_duration_bars (L6 alias)
+    bars_to_fail: Optional[int]                      # bars from retest_extreme to fail confirmation
+    # internal: used by proxy_features.compute_retest_volume_decay_ratio
+    retest_start_bar_idx: Optional[int]
+    retest_extreme_bar_idx: Optional[int]
 
 
 # ---------------------------------------------------------------------------
@@ -485,6 +544,308 @@ def _find_p4(
     # If no 15m bar found (P3 is near end of day)
     # Return None — report builder should handle not_reached_yet
     return None
+
+
+# ---------------------------------------------------------------------------
+# Wave 2 — L4: compute_support_test_count + compute_breakdown_pack
+# ---------------------------------------------------------------------------
+
+def compute_support_test_count(
+    bars_5m: List[Dict],
+    p0_start_idx: int,
+    p2_idx: int,
+    range_high: float,
+    range_low: float,
+    side: str,
+    tol_pct: float = 0.003,
+) -> int:
+    """Count bars between P0 and P2 that touched the break level.
+
+    LONG: bar.high >= range_high - tolerance (tested resistance)
+    SHORT: bar.low <= range_low + tolerance (tested support)
+    Tolerance defaults to 0.3% of the level price.
+    """
+    level = range_high if side == "LONG" else range_low
+    tol = abs(level) * tol_pct
+    count = 0
+    for i in range(p0_start_idx, p2_idx):
+        if i >= len(bars_5m):
+            break
+        bar = bars_5m[i]
+        if side == "LONG" and bar["high"] >= level - tol:
+            count += 1
+        elif side == "SHORT" and bar["low"] <= level + tol:
+            count += 1
+    return count
+
+
+def compute_breakdown_pack(
+    bars_5m: List[Dict],
+    anchors: "AnchorSet",
+    volume_ratio_series: List[Optional[float]],
+) -> BreakdownPack:
+    """Compute L4 breakdown fields from bars and existing AnchorSet data.
+
+    All bar-local computations live here, not in case_builder.
+    Provisional aliases are documented inline.
+    """
+    p2 = anchors.p2
+    p2_bar = p2.bar if p2 else None
+    p2_idx = p2.bar_idx if p2 else 0
+    side = anchors.side
+    rh, rl = anchors.range_high, anchors.range_low
+    break_level = rh if side == "LONG" else rl
+    p2_close = p2_bar["close"] if p2_bar else None
+
+    # break_distance_pct: how far past break_level the close landed
+    dist_pct: Optional[float] = None
+    if p2_close is not None and abs(break_level) > 1e-12:
+        if side == "LONG":
+            dist_pct = round((p2_close - rh) / rh * 100.0, 4)
+        else:
+            dist_pct = round((rl - p2_close) / rl * 100.0, 4)
+
+    # bq_components — already computed in _find_p2, surfaced here
+    bq_comps = (p2.bq_components or {}) if p2 else {}
+    body_q = bq_comps.get("body_quality")  # PROVEN for break_bar_body_ratio
+
+    # break_volume_ratio — PROVISIONAL: rolling 3-bar ratio ending at P2
+    vol_ratio: Optional[float] = None
+    if volume_ratio_series and 0 <= p2_idx < len(volume_ratio_series):
+        v = volume_ratio_series[p2_idx]
+        vol_ratio = round(v, 4) if v is not None else None
+
+    # support_test_count_before_break
+    test_count = compute_support_test_count(
+        bars_5m,
+        anchors.compression_window_start_idx,
+        p2_idx,
+        rh, rl, side,
+    )
+
+    # break_cleanliness_score — PROVEN: = break_quality_score
+    cleanliness: Optional[float] = None
+    if p2 and p2.break_quality_score is not None:
+        cleanliness = round(p2.break_quality_score, 4)
+
+    # immediate_followthrough_pct_1bar: favorable move in bar immediately after P2
+    ft_1bar: Optional[float] = None
+    if p2_close is not None and p2_idx + 1 < len(bars_5m):
+        b1 = bars_5m[p2_idx + 1]
+        if side == "LONG":
+            ft_1bar = round((b1["high"] - p2_close) / p2_close * 100.0, 4)
+        else:
+            ft_1bar = round((p2_close - b1["low"]) / p2_close * 100.0, 4)
+
+    # immediate_followthrough_pct_3bar: max favorable move in bars P2+1..+3
+    ft_3bar: Optional[float] = None
+    if p2_close is not None:
+        favs = []
+        for j in range(p2_idx + 1, min(p2_idx + 4, len(bars_5m))):
+            b = bars_5m[j]
+            if side == "LONG":
+                favs.append((b["high"] - p2_close) / p2_close * 100.0)
+            else:
+                favs.append((p2_close - b["low"]) / p2_close * 100.0)
+        ft_3bar = round(max(favs), 4) if favs else None
+
+    # false_break_reclaim_fast_flag: Y if price closes back through break_level within 5 bars
+    fbr_flag = "N"
+    for j in range(p2_idx + 1, min(p2_idx + 6, len(bars_5m))):
+        b = bars_5m[j]
+        if side == "LONG" and b["close"] < break_level:
+            fbr_flag = "Y"
+            break
+        elif side == "SHORT" and b["close"] > break_level:
+            fbr_flag = "Y"
+            break
+
+    return BreakdownPack(
+        break_distance_pct=dist_pct,
+        break_close_strength=round(body_q, 4) if body_q is not None else None,  # PROVISIONAL
+        break_bar_body_ratio=round(body_q, 4) if body_q is not None else None,  # PROVEN
+        break_volume_ratio=vol_ratio,                                            # PROVISIONAL
+        support_test_count_before_break=test_count,
+        break_cleanliness_score=cleanliness,
+        immediate_followthrough_pct_1bar=ft_1bar,
+        immediate_followthrough_pct_3bar=ft_3bar,
+        false_break_reclaim_fast_flag=fbr_flag,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Wave 2 — L5: compute_retest_fail_pack (dual-direction)
+# ---------------------------------------------------------------------------
+
+_RETEST_FAIL_PACK_UNAVAILABLE = RetestFailPack(
+    pack_available=False,
+    reclaim_pct=None,
+    retest_depth_vs_break_pct=None,
+    retest_duration_bars=None,
+    retest_reject_wick_ratio=None,
+    retest_close_back_above_break_flag="N",
+    fail_strength=None,
+    fail_confirmation_bar_count=None,
+    max_reclaim_before_resolution_pct=None,
+    second_rejection_present_flag="N",
+    bars_to_retest=None,
+    bars_to_fail=None,
+    retest_start_bar_idx=None,
+    retest_extreme_bar_idx=None,
+)
+
+
+def compute_retest_fail_pack(
+    bars_5m: List[Dict],
+    p2: Optional[AnchorPoint],
+    p3: Optional[AnchorPoint],
+    p4: Optional[AnchorPoint],
+    side: str,
+    range_high: float,
+    range_low: float,
+) -> RetestFailPack:
+    """Compute L5 retest geometry in P3→P4 zone (dual-direction).
+
+    LONG: P3 = price peak; retest = pullback DOWN; retest_extreme = lowest bar.
+    SHORT: P3 = price trough; retest = bounce UP; retest_extreme = highest bar.
+
+    Returns pack_available=False (all null) when P3 or P4 is missing.
+    Searches bars_5m by timestamp range [P3.ts_ms, P4.ts_ms).
+    """
+    if p2 is None or p3 is None or p4 is None:
+        return _RETEST_FAIL_PACK_UNAVAILABLE
+
+    break_level = range_high if side == "LONG" else range_low
+    p3_ts = p3.ts_ms
+    p4_ts = p4.ts_ms
+
+    # Collect bars strictly between P3 and P4 on the 5m timeline
+    zone_bars: List[Dict] = []
+    zone_indices: List[int] = []
+    for i, bar in enumerate(bars_5m):
+        ts = bar["open_time"]
+        if ts > p3_ts and ts < p4_ts:
+            zone_bars.append(bar)
+            zone_indices.append(i)
+
+    if not zone_bars:
+        return _RETEST_FAIL_PACK_UNAVAILABLE
+
+    # Find retest_extreme: worst adverse bar in zone (pullback for LONG, bounce for SHORT)
+    if side == "LONG":
+        ext_offset = min(range(len(zone_bars)), key=lambda j: zone_bars[j]["low"])
+        ext_price = zone_bars[ext_offset]["low"]
+    else:
+        ext_offset = max(range(len(zone_bars)), key=lambda j: zone_bars[j]["high"])
+        ext_price = zone_bars[ext_offset]["high"]
+
+    ext_bar = zone_bars[ext_offset]
+    ext_bar_idx = zone_indices[ext_offset]
+    retest_duration = ext_offset + 1  # bars from P3 to retest_extreme (1-indexed)
+
+    # retest_depth_vs_break_pct: how close to break_level the retest got
+    if abs(break_level) > 1e-12:
+        if side == "LONG":
+            depth_pct = round((break_level - ext_price) / break_level * 100.0, 4)
+        else:
+            depth_pct = round((ext_price - break_level) / break_level * 100.0, 4)
+    else:
+        depth_pct = None
+
+    # reclaim_pct: pullback from P3 as pct of P3 price
+    p3_price = p3.bar["high"] if side == "LONG" else p3.bar["low"] if p3.bar else None
+    if p3_price and abs(p3_price) > 1e-12:
+        if side == "LONG":
+            reclaim_pct = round((p3_price - ext_price) / p3_price * 100.0, 4)
+        else:
+            reclaim_pct = round((ext_price - p3_price) / p3_price * 100.0, 4)
+    else:
+        reclaim_pct = None
+
+    # retest_reject_wick_ratio: direction-aware wick at retest_extreme bar
+    if side == "LONG":
+        rej_wick = round(lower_wick_ratio(ext_bar), 4)
+    else:
+        rej_wick = round(upper_wick_ratio(ext_bar), 4)
+
+    # retest_close_back_above_break_flag
+    ext_close = ext_bar.get("close")
+    if ext_close is not None:
+        if side == "LONG":
+            # Close above break level = price didn't actually lose break
+            rcb_flag = "Y" if ext_close > break_level else "N"
+        else:
+            # Close below break level = bounce failed to reclaim break
+            rcb_flag = "Y" if ext_close < break_level else "N"
+    else:
+        rcb_flag = "N"
+
+    # fail_strength: max adverse move in 3 bars after retest_extreme (normalized by break_level)
+    post_ext_bars = zone_bars[ext_offset + 1: ext_offset + 4]
+    fail_strength: Optional[float] = None
+    if post_ext_bars and abs(break_level) > 1e-12:
+        if side == "LONG":
+            worst = max((break_level - b["low"]) / break_level for b in post_ext_bars)
+        else:
+            worst = max((b["high"] - break_level) / break_level for b in post_ext_bars)
+        fail_strength = round(min(max(worst, 0.0), 1.0), 4)
+
+    # fail_confirmation_bar_count: bars closing beyond break_level after retest_extreme
+    fail_count = 0
+    fail_bar_offset: Optional[int] = None
+    for j in range(ext_offset + 1, len(zone_bars)):
+        b = zone_bars[j]
+        c = b.get("close")
+        if c is None:
+            continue
+        if side == "LONG" and c < break_level:
+            fail_count += 1
+            if fail_bar_offset is None:
+                fail_bar_offset = j
+        elif side == "SHORT" and c > break_level:
+            fail_count += 1
+            if fail_bar_offset is None:
+                fail_bar_offset = j
+
+    bars_to_fail = (fail_bar_offset - ext_offset) if fail_bar_offset is not None else None
+
+    # max_reclaim_before_resolution_pct: best recovery from retest_extreme back toward break_level
+    post_ext = zone_bars[ext_offset + 1:]
+    max_rec: Optional[float] = None
+    if post_ext and abs(break_level) > 1e-12:
+        if side == "LONG":
+            best = max(b["high"] for b in post_ext)
+            max_rec = round((best - ext_price) / break_level * 100.0, 4)
+        else:
+            best = min(b["low"] for b in post_ext)
+            max_rec = round((ext_price - best) / break_level * 100.0, 4)
+
+    # second_rejection_present_flag: >=2 bars touching break_level from wrong side after retest_extreme
+    touch_count = 0
+    tol = abs(break_level) * 0.003
+    for b in zone_bars[ext_offset + 1:]:
+        if side == "LONG" and b["high"] >= break_level - tol:
+            touch_count += 1
+        elif side == "SHORT" and b["low"] <= break_level + tol:
+            touch_count += 1
+    sec_rej_flag = "Y" if touch_count >= 2 else "N"
+
+    return RetestFailPack(
+        pack_available=True,
+        reclaim_pct=reclaim_pct,
+        retest_depth_vs_break_pct=depth_pct,
+        retest_duration_bars=retest_duration,
+        retest_reject_wick_ratio=rej_wick,
+        retest_close_back_above_break_flag=rcb_flag,
+        fail_strength=fail_strength,
+        fail_confirmation_bar_count=fail_count if fail_count > 0 else None,
+        max_reclaim_before_resolution_pct=max_rec,
+        second_rejection_present_flag=sec_rej_flag,
+        bars_to_retest=retest_duration,
+        bars_to_fail=bars_to_fail,
+        retest_start_bar_idx=zone_indices[0] if zone_indices else None,
+        retest_extreme_bar_idx=ext_bar_idx,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -418,6 +418,44 @@ def generate_case_takeaways(flow_phase_code, resolution_label, move_class, strat
 
 
 # ---------------------------------------------------------------------------
+# Wave 2 — L6 timing / staleness flags (classify_timing_flags)
+# ---------------------------------------------------------------------------
+
+def classify_timing_flags(
+    bars_to_retest: Optional[int],
+    bars_to_fail: Optional[int],
+    p2_ts_ms: Optional[int],
+    p4_ts_ms: Optional[int],
+) -> Dict:
+    """Classify late_retest_flag and stale_setup_flag from timing data.
+
+    PROVISIONAL thresholds (first-pass, not grounded in backtest):
+      late_retest_flag: Y if bars_to_retest > 24  (= 2h on 5m bars)
+      stale_setup_flag: Y if P2→P4 elapsed > 72 bars (= 6h on 5m bars)
+
+    Both flags default to "N" when input data is unavailable.
+    """
+    _5M_MS = 5 * 60 * 1000
+
+    # late_retest_flag — PROVISIONAL threshold: 24 bars = 2h
+    late_retest = "N"
+    if bars_to_retest is not None and bars_to_retest > 24:
+        late_retest = "Y"
+
+    # stale_setup_flag — PROVISIONAL threshold: 72 bars = 6h from P2 to resolution
+    stale = "N"
+    if p2_ts_ms is not None and p4_ts_ms is not None and _5M_MS > 0:
+        elapsed_bars = (p4_ts_ms - p2_ts_ms) / _5M_MS
+        if elapsed_bars > 72:
+            stale = "Y"
+
+    return {
+        "late_retest_flag": late_retest,
+        "stale_setup_flag": stale,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Range expansion ratio
 # ---------------------------------------------------------------------------
 

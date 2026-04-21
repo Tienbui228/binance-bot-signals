@@ -20,13 +20,19 @@ v2 eligibility fields:
 v2 caution_flag: narrow, evidence-based only.
 """
 
+from datetime import datetime, timezone as _utc
 from typing import Dict, List, Optional
 
-from research.top_movers.anchor_detector import AnchorSet
+from research.top_movers.anchor_detector import (
+    AnchorSet,
+    compute_breakdown_pack,
+    compute_retest_fail_pack,
+)
 from research.top_movers.canonical_move import CanonicalMove
 from research.top_movers.decision_mapping import (
     classify_flow_phase_code,
     classify_resolution_label,
+    classify_timing_flags,
     compute_post_p2_outcomes,
     compute_confidence_fields,
     compute_eligibility_fields,
@@ -37,7 +43,12 @@ from research.top_movers.decision_mapping import (
     generate_case_takeaways,
     map_to_existing_strategy,
 )
-from research.top_movers.proxy_features import build_proxy_features, compute_flow_composite, compute_btc_context_fields
+from research.top_movers.proxy_features import (
+    build_proxy_features,
+    compute_flow_composite,
+    compute_btc_context_fields,
+    compute_retest_volume_decay_ratio,
+)
 from research.top_movers.io import image_path, safe_round
 
 # Image key per anchor (v2 standard set)
@@ -142,6 +153,57 @@ def _classify_move_class_v2(side: str, structural_quality: str, flow_phase_code:
         return "noisy_unstructured_move"
 
     return "noisy_unstructured_move"
+
+
+# ---------------------------------------------------------------------------
+# Wave 2 — L6 timing helpers (case_builder owns these: pure timestamp arithmetic)
+# ---------------------------------------------------------------------------
+
+# PROVISIONAL bucket labels — not grounded in backtest analysis
+_TOD_BUCKETS = [
+    (0,  5,  "asia_late"),
+    (6,  9,  "london_open"),
+    (10, 13, "ny_morning"),
+    (14, 17, "ny_afternoon"),
+    (18, 23, "asia_early"),
+]
+
+
+def _compute_time_of_day_bucket(ts_ms: Optional[int]) -> Optional[str]:
+    """UTC hour of P2 → provisional time-of-day bucket label."""
+    if ts_ms is None:
+        return None
+    hour = datetime.fromtimestamp(ts_ms / 1000.0, tz=_utc.utc).hour
+    for lo, hi, label in _TOD_BUCKETS:
+        if lo <= hour <= hi:
+            return label
+    return "unknown"
+
+
+def _compute_time_since_day_high(
+    bars_5m: List[Dict],
+    p2_idx: int,
+    day_start_idx: int,
+    side: str,
+) -> Optional[float]:
+    """Minutes from the day extreme (high for LONG, low for SHORT) to P2.
+
+    Scans bars from day_start_idx to p2_idx to locate the extreme bar.
+    Returns positive value: how long before P2 the extreme was formed.
+    Returns None if insufficient bars.
+    """
+    window = bars_5m[day_start_idx:p2_idx]
+    if not window:
+        return None
+    if side == "LONG":
+        ext_bar = max(window, key=lambda b: b["high"])
+    else:
+        ext_bar = min(window, key=lambda b: b["low"])
+    p2_bar = bars_5m[p2_idx] if p2_idx < len(bars_5m) else None
+    if p2_bar is None:
+        return None
+    delta_ms = p2_bar["open_time"] - ext_bar["open_time"]
+    return round(delta_ms / 60000.0, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -283,6 +345,54 @@ def build_case_row(
         improvement_layer=strat["improvement_target_layer"],
     )
 
+    # --- Wave 2: L4 Breakdown pack ---
+    vol_series = proxy.volume_ratio_3bar if proxy else []
+    bdp = compute_breakdown_pack(bars_5m_extended, anchors, vol_series)
+
+    # --- Wave 2: L5 Retest fail / reclaim pack ---
+    rfp = compute_retest_fail_pack(
+        bars_5m_extended,
+        anchors.p2, anchors.p3, anchors.p4,
+        move.side, anchors.range_high, anchors.range_low,
+    )
+    # retest_volume_decay_ratio lives in proxy_features (volume-based field)
+    rfp_vol_decay = compute_retest_volume_decay_ratio(
+        bars_5m_extended,
+        anchors.p2.bar_idx if anchors.p2 else None,
+        rfp.retest_start_bar_idx,
+        rfp.retest_extreme_bar_idx,
+    )
+
+    # --- Wave 2: L6 Timing / staleness ---
+    timing_flags = classify_timing_flags(
+        bars_to_retest=rfp.bars_to_retest,
+        bars_to_fail=rfp.bars_to_fail,
+        p2_ts_ms=anchors.p2.ts_ms if anchors.p2 else None,
+        p4_ts_ms=anchors.p4.ts_ms if anchors.p4 else None,
+    )
+    time_bucket = _compute_time_of_day_bucket(anchors.p2.ts_ms if anchors.p2 else None)
+    # day_start_idx: find first bar with open_time >= UTC day start
+    try:
+        _day_start_ms = int(datetime.strptime(move.research_day, "%Y-%m-%d")
+                            .replace(tzinfo=_utc.utc).timestamp() * 1000)
+    except Exception:
+        _day_start_ms = 0
+    _day_start_idx = 0
+    for _i, _b in enumerate(bars_5m_extended):
+        if _b["open_time"] >= _day_start_ms:
+            _day_start_idx = _i
+            break
+    time_since_high = _compute_time_since_day_high(
+        bars_5m_extended,
+        anchors.p2.bar_idx if anchors.p2 else 0,
+        _day_start_idx,
+        move.side,
+    )
+    time_since_break = (
+        round((anchors.p3.ts_ms - anchors.p2.ts_ms) / 60000.0, 1)
+        if anchors.p3 and anchors.p2 else None
+    )
+
     def ts_or(a): return a.ts_ms if a else None
     def pr_or(a): return a.bar.get("close") if a and a.bar else None
 
@@ -380,6 +490,37 @@ def build_case_row(
         "p4_resolution_trigger":   p4_trigger,
         "data_confidence":         data_conf,
         "intervention_confidence": interv_conf,
+        # Wave 2 — L4 Breakdown pack
+        "break_distance_pct":               bdp.break_distance_pct,
+        "break_close_strength":             bdp.break_close_strength,        # PROVISIONAL
+        "break_bar_body_ratio":             bdp.break_bar_body_ratio,        # PROVEN
+        "break_volume_ratio":               bdp.break_volume_ratio,          # PROVISIONAL
+        "support_test_count_before_break":  bdp.support_test_count_before_break,
+        "break_cleanliness_score":          bdp.break_cleanliness_score,     # PROVEN
+        "immediate_followthrough_pct_1bar": bdp.immediate_followthrough_pct_1bar,
+        "immediate_followthrough_pct_3bar": bdp.immediate_followthrough_pct_3bar,
+        "false_break_reclaim_fast_flag":    bdp.false_break_reclaim_fast_flag,
+        # Wave 2 — L5 Retest fail / reclaim pack
+        "retest_pack_available":                rfp.pack_available,
+        "reclaim_pct":                          rfp.reclaim_pct,
+        "retest_depth_vs_break_pct":            rfp.retest_depth_vs_break_pct,
+        "retest_duration_bars":                 rfp.retest_duration_bars,
+        "retest_volume_decay_ratio":            rfp_vol_decay,
+        "retest_reject_wick_ratio":             rfp.retest_reject_wick_ratio,
+        "retest_close_back_above_break_flag":   rfp.retest_close_back_above_break_flag,
+        "fail_strength":                        rfp.fail_strength,
+        "fail_confirmation_bar_count":          rfp.fail_confirmation_bar_count,
+        "max_reclaim_before_resolution_pct":    rfp.max_reclaim_before_resolution_pct,
+        "second_rejection_present_flag":        rfp.second_rejection_present_flag,
+        # Wave 2 — L6 Timing / staleness pack
+        "bars_to_retest":               rfp.bars_to_retest,
+        "bars_to_fail":                 rfp.bars_to_fail,
+        "bars_fail_to_acceleration":    None,           # DEFERRED — definition unclear
+        "late_retest_flag":             timing_flags["late_retest_flag"],   # PROVISIONAL threshold
+        "stale_setup_flag":             timing_flags["stale_setup_flag"],   # PROVISIONAL threshold
+        "time_of_day_bucket":           time_bucket,    # PROVISIONAL labels
+        "time_since_day_high_minutes":  time_since_high,
+        "time_since_break_minutes":     time_since_break,
     }
     return row
 
