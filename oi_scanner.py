@@ -99,6 +99,19 @@ class Signal:
     dispatch_confidence_band: str = "not_evaluated"
     dispatch_reason: str = "not_evaluated"
     status: str = "OPEN"
+    # oi_range_breakout specific fields (optional, default 0.0)
+    range_high: float = 0.0
+    range_low: float = 0.0
+    range_height: float = 0.0
+    range_width_pct: float = 0.0
+    midpoint: float = 0.0
+    atr_current: float = 0.0
+    atr_avg: float = 0.0
+    atr_ratio: float = 0.0
+    oi_current: float = 0.0
+    oi_prev: float = 0.0
+    oi_delta_pct: float = 0.0
+    vol_ema20: float = 0.0
 
 
 
@@ -2692,6 +2705,7 @@ class BinanceScanner:
             oi_prev=float(row.get("oi_prev") or 0),
             oi_delta_pct=float(row.get("oi_delta_pct") or 0),
             vol_ema20=float(row.get("vol_ema20") or 0),
+            range_width_pct=float(row.get("range_height") or 0) / max(float(row.get("midpoint") or 1e-12), 1e-12) * 100.0,
         )
 
         self.close_pending(row.get("pending_id", ""), "CONFIRMED", "orb_immediate_confirm", bars_waited=0)
