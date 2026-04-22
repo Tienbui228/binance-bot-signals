@@ -553,7 +553,11 @@ def collect_due_case_close_fallbacks(scanner):
         if processed >= max_per_round:
             break
         status = str(row.get("status", "") or "").upper()
-        created_ms = int(float(row.get("created_ts_ms") or 0)) if row.get("created_ts_ms") not in (None, "") else 0
+        try:
+            _ts = row.get("created_ts_ms")
+            created_ms = int(float(_ts)) if _ts not in (None, "") else 0
+        except (ValueError, TypeError):
+            created_ms = 0
         if not created_ms:
             continue
         due_ms = created_ms + scanner.review_case_fallback_close_hours * 3600 * 1000
@@ -572,7 +576,11 @@ def collect_due_case_close_fallbacks(scanner):
             _capture_and_register_case_stage(scanner, row, "case_close", now_ms, note=note)
             processed += 1
         elif status not in {"PENDING", "CONFIRMED"} and str(row.get("close_capture_basis", "") or "") == "true_close":
-            close_ts = int(float(row.get("closed_ts_ms") or now_ms)) if row.get("closed_ts_ms") not in (None, "") else now_ms
+            try:
+                _cts = row.get("closed_ts_ms")
+                close_ts = int(float(_cts)) if _cts not in (None, "") else now_ms
+            except (ValueError, TypeError):
+                close_ts = now_ms
             note = f"{row.get('close_reason', status)} | closed_ts_ms={close_ts}"
             _capture_and_register_case_stage(scanner, row, "case_close", close_ts, note=note)
             processed += 1
