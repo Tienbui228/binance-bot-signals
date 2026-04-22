@@ -1512,8 +1512,14 @@ class BinanceScanner:
     def close_signal(self, signal_row: Dict, outcome: str, r_multiple: float, bars_checked: int, close_reason: str, mfe_pct: float = 0.0, mae_pct: float = 0.0):
         results = self.read_csv(self.results_file)
         sig_id = signal_row.get("signal_id", "")
-        if sig_id and any(r.get("signal_id") == sig_id for r in results):
-            print(f"[close_signal] skip duplicate: {sig_id} already in results")
+        sym = signal_row.get("symbol", "")
+        ts = signal_row.get("timestamp_ms", "")
+        already_closed = (
+            any(r.get("signal_id") == sig_id for r in results) if sig_id
+            else any(r.get("symbol") == sym and r.get("timestamp_ms") == ts for r in results)
+        )
+        if already_closed:
+            print(f"[close_signal] skip duplicate: {sig_id or sym+':'+str(ts)} already in results")
             return
         result_row = {
             "signal_id": signal_row.get("signal_id", ""),
