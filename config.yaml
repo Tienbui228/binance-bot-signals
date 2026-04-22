@@ -111,6 +111,9 @@ review_case_system:
   daily_exports_dir: review_exports
   builder_script: build_daily_review_pack.py
 
+dispatch:
+  dispatch_floor_score: 0           # 0 = no score gate at dispatch (ORB scores 5-45, floor must be 0)
+
 oi_range_breakout:
   # Signal trigger — OI is the ONLY hard gate
   oi_spike_min_pct: 5.0           # OI delta % minimum (1h window: bar[-1] vs bar[-5])

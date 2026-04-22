@@ -245,7 +245,12 @@ class BinanceScanner:
             "close_trigger_detail", "confirm_fail_detail", "invalidation_detail",
             "regret_valid_YN", "regret_filter_reason",
             "regime_label", "regime_fit_for_strategy", "setup_quality_band",
-            "delivery_band", "veto_reason_code", "dispatch_action", "dispatch_confidence_band", "dispatch_reason"
+            "delivery_band", "veto_reason_code", "dispatch_action", "dispatch_confidence_band", "dispatch_reason",
+            # oi_range_breakout specific fields
+            "entry_price", "stop_loss", "tp1", "tp2",
+            "range_high", "range_low", "range_height", "midpoint",
+            "atr_current", "atr_avg", "atr_ratio",
+            "oi_current", "oi_prev", "oi_delta_pct", "vol_ema20"
         ]
         self.snapshot_fields = [
             "snapshot_ts_ms", "stage", "symbol", "side", "strategy", "signal_id", "pending_id",
