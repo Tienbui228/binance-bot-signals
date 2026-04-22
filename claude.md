@@ -1,7 +1,7 @@
 # CLAUDE.md — Binance Bot Signals Project
 
 > Read this file fully before touching any code. It exists to prevent wrong-file patches,
-> broken semantics, and architecture drift. Updated: 2026-04-20.
+> broken semantics, and architecture drift. Updated: 2026-04-22.
 
 ---
 
@@ -298,3 +298,58 @@ Located in `docs/` or project root:
 | `POST_PATCH_CHECKLIST.md` | Mandatory checklist after any runtime patch |
 | `WORKED_EXAMPLES_V1_1.md` | Concrete semantic examples for Report V2 |
 | `measurement_summary_template_v1_5.md` | Measurement template with data quality gate |
+
+---
+
+## 13. Lesson learned — incidents (mandatory reading before any patch)
+
+### Incident 2026-04-22: "Sửa 1 dòng config → bot crash fatal loop"
+
+**Yêu cầu ban đầu:** Đổi `max_range_width_pct: 20 → 60` trong `config.yaml` — 1 dòng duy nhất.
+
+**Điều đã xảy ra:** Trong cùng session, Claude tự ý thêm code vào `oi_scanner.py` (thêm ORB detail fields vào PendingSetup, thêm logic process_pending_setups) mà user không yêu cầu. Những thay đổi này kéo theo chuỗi crash + rollback + re-crash kéo dài nhiều vòng.
+
+**Root cause thực sự của crash:** Một pending row trên VPS có `created_ts_ms = 'not_evaluated'` (dữ liệu bị corrupt từ version cũ). Code trong `scanner/review_service.py:556` dùng `float(x or 0)` — pattern này crash nếu `x` là string truthy nhưng không phải số (vd: `'not_evaluated'`). Lỗi này **tồn tại trước** mọi thay đổi trong session, nhưng bị che khuất bởi scope creep.
+
+**Fix cuối cùng:** Wrap float conversion trong try/except ở `review_service.py` — 10 dòng thay 2 dòng. `oi_scanner.py` không cần thay đổi gì.
+
+---
+
+**Lessons — Claude PHẢI tuân thủ:**
+
+#### L1. Strict scope — không tự mở rộng phạm vi
+Nếu user yêu cầu thay 1 dòng config → chỉ thay đúng 1 dòng đó. **Không bao giờ** thêm code vào file khác "vì tiện" hoặc "để hoàn thiện thêm". Mọi thay đổi ngoài yêu cầu phải được user đồng ý trước bằng văn bản rõ ràng.
+
+#### L2. CSV field parsing phải luôn defensive
+Bất kỳ field nào đọc từ CSV và cast sang `int`/`float` đều phải dùng try/except:
+```python
+# SAI — crash nếu value là 'not_evaluated', 'N/A', etc.:
+val = int(float(row.get("field") or 0))
+
+# ĐÚNG — skip row bị corrupt thay vì crash toàn bộ loop:
+try:
+    _v = row.get("field")
+    val = int(float(_v)) if _v not in (None, "") else 0
+except (ValueError, TypeError):
+    val = 0
+```
+VPS CSVs chứa rows được ghi bởi code cũ/buggy. Garbage values LUÔN tồn tại trong production data.
+
+#### L3. `float(x or 0)` là pattern nguy hiểm
+`x or 0` chỉ fallback khi `x` là falsy (`None`, `""`, `0`, `False`). Nếu `x = 'not_evaluated'` → truthy → `float('not_evaluated')` → crash. Luôn dùng try/except thay vì `or 0`.
+
+#### L4. Thêm traceback vào mọi catch-all exception handler
+`[fatal loop warn] {e}` không có traceback → mất hàng giờ debug. Pattern đúng:
+```python
+except Exception as e:
+    import traceback
+    print(f"[fatal loop warn] {e}")
+    traceback.print_exc()
+```
+Giữ traceback logging vĩnh viễn trong `run_forever()` — không tốn gì, tiết kiệm nhiều.
+
+#### L5. Trước khi rollback: xác định exact crash line trước
+Rollback mù (không biết crash ở dòng nào) → có thể rollback sai file, lỗi vẫn còn. Luôn thêm traceback → đọc line number → chỉ fix đúng file đó.
+
+#### L6. Mọi config-only request → chỉ sửa config
+Nếu task là thay đổi một giá trị trong `config.yaml`, không touch bất kỳ `.py` file nào trừ khi user nói rõ.
