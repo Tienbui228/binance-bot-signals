@@ -164,6 +164,19 @@ class PendingSetup:
     stop_loss: float = 0.0
     tp1: float = 0.0
     tp2: float = 0.0
+    # ORB-specific fields (only populated for oi_range_breakout strategy)
+    range_high: float = 0.0
+    range_low: float = 0.0
+    range_height: float = 0.0
+    range_width_pct: float = 0.0
+    midpoint: float = 0.0
+    atr_current: float = 0.0
+    atr_avg: float = 0.0
+    atr_ratio: float = 0.0
+    oi_current: float = 0.0
+    oi_prev: float = 0.0
+    oi_delta_pct: float = 0.0
+    vol_ema20: float = 0.0
 
 
 class BinanceScanner:
@@ -261,7 +274,7 @@ class BinanceScanner:
             "delivery_band", "veto_reason_code", "dispatch_action", "dispatch_confidence_band", "dispatch_reason",
             # oi_range_breakout specific fields
             "entry_price", "stop_loss", "tp1", "tp2",
-            "range_high", "range_low", "range_height", "midpoint",
+            "range_high", "range_low", "range_height", "range_width_pct", "midpoint",
             "atr_current", "atr_avg", "atr_ratio",
             "oi_current", "oi_prev", "oi_delta_pct", "vol_ema20"
         ]
@@ -944,6 +957,13 @@ class BinanceScanner:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(rows)
+
+    @staticmethod
+    def _safe_orb_float(val, default: float = 0.0) -> float:
+        try:
+            return float(val) if val not in (None, "", "not_evaluated") else default
+        except (ValueError, TypeError):
+            return default
 
     def _safe_pending_status(self, row: Dict) -> str:
         status = str(row.get("status", "") or "").strip().upper()
@@ -1701,20 +1721,22 @@ class BinanceScanner:
             )
 
         if getattr(s, "strategy", "") == "oi_range_breakout":
+            _orb_side = "📈 LONG" if s.side == "LONG" else "📉 SHORT"
+            _orb_icon = "📈" if s.side == "LONG" else "📉"
             return (
-                f"📈 #{s.symbol} | ${s.price:.6g} | Score {s.score/10:.1f}/10\n\n"
+                f"{_orb_side} #{s.symbol} | ${s.price:.6g} | Score {s.score/10:.1f}/10\n\n"
                 f"Entry: {s.entry_ref:.6g}\n"
                 f"Stop: {s.stop:.6g} ({s.sl_distance_pct:.2f}%)\n"
                 f"TP1: {s.tp1:.6g} ({s.tp1_distance_pct:.2f}%)\n"
                 f"TP2: {s.tp2:.6g} ({s.tp2_distance_pct:.2f}%)\n\n"
-                f"OI Delta: +{s.oi_delta_pct:.2f}%\n"
+                f"OI Delta: {s.oi_delta_pct:+.2f}%\n"
                 f"Volume: {s.vol_ratio:.2f}x EMA20\n"
                 f"Range: {s.range_height:.6g} ({s.range_width_pct:.2f}%)\n"
                 f"ATR Ratio: {s.atr_ratio:.2f}\n\n"
                 f"BTC 24h: {s.btc_24h_change_pct:+.2f}% ({s.btc_regime})\n"
                 f"{dispatch_line}"
                 f"Reason: {s.reason}\n\n"
-                f"📈 #{s.symbol} #BINANCE"
+                f"{_orb_icon} #{s.symbol} #BINANCE"
             )
 
         metrics = (
@@ -2136,6 +2158,25 @@ class BinanceScanner:
                 return True
         return False
 
+    def _orb_already_signaled_today(self, symbol: str) -> bool:
+        today_start_ms = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+        try:
+            rows = self.read_csv(self.pending_file)
+        except Exception:
+            return False
+        for row in rows:
+            if row.get("symbol") != symbol:
+                continue
+            if row.get("strategy") != "oi_range_breakout":
+                continue
+            try:
+                ts = int(float(row.get("created_ts_ms") or 0))
+            except (ValueError, TypeError):
+                continue
+            if ts >= today_start_ms:
+                return True
+        return False
+
     def build_pending_setups_for_symbol(self, symbol: str, oi_1h_history: list = None) -> List[PendingSetup]:
         setups: List[PendingSetup] = []
         strategy_cfg = self.cfg.get("strategy", {})
@@ -2546,6 +2587,9 @@ class BinanceScanner:
         if not oi_1h_history:
             return []
 
+        if self._orb_already_signaled_today(symbol):
+            return []
+
         try:
             orb_cfg = self.cfg.get("oi_range_breakout", {})
 
@@ -2621,6 +2665,18 @@ class BinanceScanner:
             signal_low=float(signal_dict.get("entry_price", 0)),
             regime_label="",
             market_regime="",
+            range_high=self._safe_orb_float(signal_dict.get("range_high")),
+            range_low=self._safe_orb_float(signal_dict.get("range_low")),
+            range_height=self._safe_orb_float(signal_dict.get("range_height")),
+            range_width_pct=self._safe_orb_float(signal_dict.get("range_width_pct")),
+            midpoint=self._safe_orb_float(signal_dict.get("midpoint")),
+            atr_current=self._safe_orb_float(signal_dict.get("atr_current")),
+            atr_avg=self._safe_orb_float(signal_dict.get("atr_avg")),
+            atr_ratio=self._safe_orb_float(signal_dict.get("atr_ratio")),
+            oi_current=self._safe_orb_float(signal_dict.get("oi_current")),
+            oi_prev=self._safe_orb_float(signal_dict.get("oi_prev")),
+            oi_delta_pct=self._safe_orb_float(signal_dict.get("oi_delta_pct")),
+            vol_ema20=self._safe_orb_float(signal_dict.get("vol_ema20")),
         )
 
     def _process_oi_range_breakout_pending(self, row: dict, risk_cfg: dict) -> list:
@@ -2694,18 +2750,18 @@ class BinanceScanner:
             regime_label=row.get("regime_label", ""),
             regime_fit_for_strategy=row.get("regime_fit_for_strategy", "MEDIUM"),
             # oi_range_breakout specific fields
-            range_high=float(row.get("range_high") or 0),
-            range_low=float(row.get("range_low") or 0),
-            range_height=float(row.get("range_height") or 0),
-            midpoint=float(row.get("midpoint") or 0),
-            atr_current=float(row.get("atr_current") or 0),
-            atr_avg=float(row.get("atr_avg") or 0),
-            atr_ratio=float(row.get("atr_ratio") or 0),
-            oi_current=float(row.get("oi_current") or 0),
-            oi_prev=float(row.get("oi_prev") or 0),
-            oi_delta_pct=float(row.get("oi_delta_pct") or 0),
-            vol_ema20=float(row.get("vol_ema20") or 0),
-            range_width_pct=float(row.get("range_height") or 0) / max(float(row.get("midpoint") or 1e-12), 1e-12) * 100.0,
+            range_high=self._safe_orb_float(row.get("range_high")),
+            range_low=self._safe_orb_float(row.get("range_low")),
+            range_height=self._safe_orb_float(row.get("range_height")),
+            midpoint=self._safe_orb_float(row.get("midpoint")),
+            atr_current=self._safe_orb_float(row.get("atr_current")),
+            atr_avg=self._safe_orb_float(row.get("atr_avg")),
+            atr_ratio=self._safe_orb_float(row.get("atr_ratio")),
+            oi_current=self._safe_orb_float(row.get("oi_current")),
+            oi_prev=self._safe_orb_float(row.get("oi_prev")),
+            oi_delta_pct=self._safe_orb_float(row.get("oi_delta_pct")),
+            vol_ema20=self._safe_orb_float(row.get("vol_ema20")),
+            range_width_pct=self._safe_orb_float(row.get("range_width_pct")),
         )
 
         self.close_pending(row.get("pending_id", ""), "CONFIRMED", "orb_immediate_confirm", bars_waited=0)
