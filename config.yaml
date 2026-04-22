@@ -130,7 +130,7 @@ oi_range_breakout:
   tp1_range_multiplier: 1.0
   tp2_range_multiplier: 1.5
   min_risk_pct: 0.5               # avoid setups too tight (SL vulnerable to noise)
-  max_risk_pct: 8.0               # skip if risk > 8%
+  max_risk_pct: 15.0              # skip if risk > 15%
 
   # Score gates — disabled
   score_min_send: 0
