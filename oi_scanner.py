@@ -2680,18 +2680,18 @@ class BinanceScanner:
             manual_trade_note=manual_eval["manual_trade_note"],
             regime_label=row.get("regime_label", ""),
             regime_fit_for_strategy=row.get("regime_fit_for_strategy", "MEDIUM"),
-            # oi_range_breakout specific fields — use `or 0` to handle "" from old rows
-            range_high=float(row.get("range_high") or 0),
-            range_low=float(row.get("range_low") or 0),
-            range_height=float(row.get("range_height") or 0),
-            midpoint=float(row.get("midpoint") or 0),
-            atr_current=float(row.get("atr_current") or 0),
-            atr_avg=float(row.get("atr_avg") or 0),
-            atr_ratio=float(row.get("atr_ratio") or 0),
-            oi_current=float(row.get("oi_current") or 0),
-            oi_prev=float(row.get("oi_prev") or 0),
-            oi_delta_pct=float(row.get("oi_delta_pct") or 0),
-            vol_ema20=float(row.get("vol_ema20") or 0),
+            # oi_range_breakout specific fields
+            range_high=float(row.get("range_high", 0)),
+            range_low=float(row.get("range_low", 0)),
+            range_height=float(row.get("range_height", 0)),
+            midpoint=float(row.get("midpoint", 0)),
+            atr_current=float(row.get("atr_current", 0)),
+            atr_avg=float(row.get("atr_avg", 0)),
+            atr_ratio=float(row.get("atr_ratio", 0)),
+            oi_current=float(row.get("oi_current", 0)),
+            oi_prev=float(row.get("oi_prev", 0)),
+            oi_delta_pct=float(row.get("oi_delta_pct", 0)),
+            vol_ema20=float(row.get("vol_ema20", 0)),
         )
 
         self.close_pending(row.get("pending_id", ""), "CONFIRMED", "orb_immediate_confirm", bars_waited=0)
@@ -3813,12 +3813,14 @@ class BinanceScanner:
             self.enable_snapshots = simulation_prev_snapshots
 
     def run_forever(self):
+        import traceback
         sec = int(self.cfg["scanner"]["loop_seconds"])
         while True:
             try:
                 self.scan_once()
             except Exception as e:
                 print(f"[fatal loop warn] {e}")
+                traceback.print_exc()
             time.sleep(sec)
 
 
