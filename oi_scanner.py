@@ -2142,6 +2142,8 @@ class BinanceScanner:
         rows = self.read_csv(self.pending_file)
         confirmed: List[Signal] = []
 
+        strategy_cfg = self.cfg.get("strategy", {})
+
         for row in rows:
             if row.get("status") != "PENDING":
                 continue
@@ -2158,6 +2160,11 @@ class BinanceScanner:
             vol_ratio = float(row.get("vol_ratio") or 0.0)
             price = float(row["signal_price"])
             strategy = self.infer_legacy_strategy(row)
+
+            # Skip strategies that are disabled in config
+            if strategy in ("short_exhaustion_retest", "long_breakout_retest", "long_accumulation_continuation"):
+                if not strategy_cfg.get(strategy, {}).get("enabled", True):
+                    continue
             score_oi = float(row.get("score_oi") or 0.0)
             score_exhaustion = float(row.get("score_exhaustion") or 0.0)
             score_breakout = float(row.get("score_breakout") or 0.0)
