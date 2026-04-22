@@ -151,18 +151,6 @@ class PendingSetup:
     stop_loss: float = 0.0
     tp1: float = 0.0
     tp2: float = 0.0
-    # oi_range_breakout detail fields
-    range_high: float = 0.0
-    range_low: float = 0.0
-    range_height: float = 0.0
-    midpoint: float = 0.0
-    atr_current: float = 0.0
-    atr_avg: float = 0.0
-    atr_ratio: float = 0.0
-    oi_current: float = 0.0
-    oi_prev: float = 0.0
-    oi_delta_pct: float = 0.0
-    vol_ema20: float = 0.0
 
 
 class BinanceScanner:
@@ -2190,11 +2178,8 @@ class BinanceScanner:
 
             # ── No-retest path: oi_range_breakout (immediate confirm at live price >= entry) ─
             if strategy == "oi_range_breakout":
-                try:
-                    orb_signals = self._process_oi_range_breakout_pending(row, risk_cfg)
-                    confirmed.extend(orb_signals)
-                except Exception as _orb_e:
-                    print(f"[orb pending warn] {row.get('symbol')} {row.get('pending_id')}: {_orb_e}")
+                orb_signals = self._process_oi_range_breakout_pending(row, risk_cfg)
+                confirmed.extend(orb_signals)
                 continue
 
             # ── No-retest path: long_accumulation_continuation ───────────────────
@@ -2623,18 +2608,6 @@ class BinanceScanner:
             signal_low=float(signal_dict.get("entry_price", 0)),
             regime_label="",
             market_regime="",
-            # ORB detail fields — persisted so _process_oi_range_breakout_pending can read them
-            range_high=float(signal_dict.get("range_high", 0)),
-            range_low=float(signal_dict.get("range_low", 0)),
-            range_height=float(signal_dict.get("range_height", 0)),
-            midpoint=float(signal_dict.get("midpoint", 0)),
-            atr_current=float(signal_dict.get("atr_current", 0)),
-            atr_avg=float(signal_dict.get("atr_avg", 0)),
-            atr_ratio=float(signal_dict.get("atr_ratio", 0)),
-            oi_current=float(signal_dict.get("oi_current", 0)),
-            oi_prev=float(signal_dict.get("oi_prev", 0)),
-            oi_delta_pct=float(signal_dict.get("oi_delta_pct", 0)),
-            vol_ema20=float(signal_dict.get("vol_ema20", 0)),
         )
 
     def _process_oi_range_breakout_pending(self, row: dict, risk_cfg: dict) -> list:
