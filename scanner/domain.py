@@ -195,6 +195,10 @@ class PendingSetup:
     dispatch_action: str = "not_evaluated"
     dispatch_confidence_band: str = "not_evaluated"
     dispatch_reason: str = "not_evaluated"
+    entry_price: float = 0.0
+    stop_loss: float = 0.0
+    tp1: float = 0.0
+    tp2: float = 0.0
 
 
 @dataclass

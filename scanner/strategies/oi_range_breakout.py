@@ -293,7 +293,7 @@ def detect_oi_range_breakout(
     Args:
         symbol: trading pair (e.g., "BTCUSDT")
         klines_1h: list of 1h klines, ≥22 bars, sorted ascending
-        oi_history_15m: list of 15m OI history, ≥2 bars sorted ascending
+        oi_history_15m: list of 5m OI history, ≥13 bars sorted ascending
         config: strategy config dict
 
     Returns:
