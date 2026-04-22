@@ -166,19 +166,19 @@ oi_range_breakout:
   vol_ema_multiplier: 0.0         # disabled
   max_market_cap_usd: 150000000    # skip if market cap >= $150M
 
-  # Range detection — very loose
+  # Range detection
   range_lookback_bars_1h: 20
-  min_range_width_pct: 0.0        # disabled
-  max_range_width_pct: 50.0       # disabled
+  min_range_width_pct: 0.0
+  max_range_width_pct: 20.0       # skip if range too wide (trending)
   range_atr_period: 14
-  range_atr_ratio_max: 100.0      # disabled
+  range_atr_ratio_max: 5.0        # ATR current / ATR avg < 5
 
   # Exit
   stop_buffer_pct: 0.2
   tp1_range_multiplier: 1.0
   tp2_range_multiplier: 1.5
-  min_risk_pct: 0.0               # disabled
-  max_risk_pct: 100.0             # disabled
+  min_risk_pct: 0.5               # avoid setups too tight (SL vulnerable to noise)
+  max_risk_pct: 8.0               # skip if risk > 8%
 
   # Score gates — disabled
   score_min_send: 0
