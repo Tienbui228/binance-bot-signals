@@ -10,7 +10,7 @@ scanner:
   loop_seconds: 300
   top_n: 2
   max_symbols: 80
-  min_quote_volume_usdt_24h: 5000000
+  min_quote_volume_usdt_24h: 2000000
   min_price: 0.001
   exclude_symbols:
   - BTCUSDT
