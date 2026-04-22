@@ -2694,7 +2694,7 @@ class BinanceScanner:
             vol_ema20=float(row.get("vol_ema20", 0)),
         )
 
-        self.confirm_signal(signal, row.get("pending_id", ""))
+        self.close_pending(row.get("pending_id", ""), "CONFIRMED", "orb_immediate_confirm", bars_waited=0)
         return [signal]
 
     def evaluate_open_signals(self):
@@ -2714,6 +2714,18 @@ class BinanceScanner:
                 tp1 = float(row["tp1"])
                 tp2 = float(row["tp2"])
                 strategy = self.infer_legacy_strategy(row)
+
+                # Silently expire OPEN signals of disabled strategies — no Telegram
+                _strategy_cfg = self.cfg.get("strategy", {})
+                if strategy in ("short_exhaustion_retest", "long_breakout_retest", "long_accumulation_continuation"):
+                    if not _strategy_cfg.get(strategy, {}).get("enabled", True):
+                        _sigs = self.read_csv(self.signals_file)
+                        for _s in _sigs:
+                            if _s.get("signal_id") == row.get("signal_id"):
+                                _s["status"] = "EXPIRED_DISABLED"
+                        self.write_csv(self.signals_file, _sigs, fieldnames=self.signal_fields)
+                        print(f"[eval skip] {symbol} {strategy} disabled — expired {row.get('signal_id')}")
+                        continue
 
                 interval = self.cfg["scanner"]["interval_15m"] if strategy == "short_exhaustion_retest" else self.cfg["scanner"]["interval_5m"]
                 bars = self.klines(symbol, interval, limit=max_bars_after_entry + 40)
