@@ -13,9 +13,7 @@ import yaml
 import shutil
 import subprocess
 
-from scanner.strategies.long_breakout_retest import build_pending_long_setup as strategy_build_pending_long_setup
 from scanner.strategies.short_exhaustion_retest import build_pending_short_exhaustion_setup as strategy_build_pending_short_exhaustion_setup
-from scanner.strategies.long_accumulation_continuation import build_pending_long_accumulation_continuation_setup as strategy_build_pending_acc_cont_setup
 from scanner.dispatch.router import route_dispatch_v1
 from scanner.regime.classifier import classify_regime
 from scanner import lifecycle as lifecycle_mod
@@ -2063,9 +2061,7 @@ class BinanceScanner:
 
     def _reset_round_detect_funnel(self):
         self._round_detect_funnel = {
-            "long_breakout_retest": {},
             "short_exhaustion_retest": {},
-            "long_accumulation_continuation": {},
         }
 
     def _funnel_hit(self, strategy: str, key: str, n: int = 1):
@@ -2078,23 +2074,6 @@ class BinanceScanner:
     def _print_detect_funnel_summary(self):
         funnel = getattr(self, "_round_detect_funnel", None) or {}
         order = {
-            "long_breakout_retest": [
-                "symbols_seen",
-                "data_ok",
-                "oi_ok",
-                "breakout_ok",
-                "candle_ok",
-                "regime_ok",
-                "funding_ok",
-                "new_pending",
-                "blocked_duplicate",
-                "fail_data",
-                "fail_oi",
-                "fail_breakout",
-                "fail_candle",
-                "fail_regime",
-                "fail_funding",
-            ],
             "short_exhaustion_retest": [
                 "symbols_seen",
                 "data_ok",
@@ -2107,31 +2086,11 @@ class BinanceScanner:
                 "fail_exhaustion",
                 "fail_breakdown",
             ],
-            "long_accumulation_continuation": [
-                "symbols_seen",
-                "market_cap_gate_pass",
-                "market_cap_gate_blocked",
-                "data_ok",
-                "context_pass",
-                "context_fail",
-                "fail_data",
-                "trigger_pass",
-                "trigger_fail",
-                "fail_trigger_data",
-                "fail_trigger_breakout",
-                "fail_trigger_candle",
-                "fail_trigger_vol",
-                "new_pending",
-                "blocked_duplicate",
-            ],
         }
         for strategy, keys in order.items():
             bucket = funnel.get(strategy, {})
             parts = [f"{k}={bucket.get(k, 0)}" for k in keys if bucket.get(k, 0) or k in ("symbols_seen", "new_pending")]
             print(f"[detect funnel] {strategy} | " + " | ".join(parts))
-
-    def build_pending_long_setup(self, symbol: str) -> Optional[PendingSetup]:
-        return strategy_build_pending_long_setup(self, symbol, PendingSetup)
 
     def build_pending_short_exhaustion_setup(self, symbol: str) -> Optional[PendingSetup]:
         return strategy_build_pending_short_exhaustion_setup(self, symbol, PendingSetup)
@@ -2146,33 +2105,14 @@ class BinanceScanner:
                 return True
         return False
 
-    def build_pending_long_acc_cont_setup(self, symbol: str) -> Optional[PendingSetup]:
-        if self.already_open_signal(symbol, "LONG"):
-            self._funnel_hit("long_accumulation_continuation", "blocked_duplicate")
-            return None
-        if self._already_pending_for_strategy(symbol, "LONG", "long_accumulation_continuation"):
-            self._funnel_hit("long_accumulation_continuation", "blocked_duplicate")
-            return None
-        return strategy_build_pending_acc_cont_setup(self, symbol, PendingSetup)
-
     def build_pending_setups_for_symbol(self, symbol: str, oi_1h_history: list = None) -> List[PendingSetup]:
         setups: List[PendingSetup] = []
         strategy_cfg = self.cfg.get("strategy", {})
-
-        if strategy_cfg.get("long_breakout_retest", {}).get("enabled", True):
-            long_setup = self.build_pending_long_setup(symbol)
-            if long_setup is not None:
-                setups.append(long_setup)
 
         if strategy_cfg.get("short_exhaustion_retest", {}).get("enabled", True):
             short_setup = self.build_pending_short_exhaustion_setup(symbol)
             if short_setup is not None:
                 setups.append(short_setup)
-
-        if strategy_cfg.get("long_accumulation_continuation", {}).get("enabled", True):
-            acc_cont_setup = self.build_pending_long_acc_cont_setup(symbol)
-            if acc_cont_setup is not None:
-                setups.append(acc_cont_setup)
 
         if strategy_cfg.get("oi_range_breakout", {}).get("enabled", False):
             orb_setups = self.build_pending_oi_range_breakout_setup(symbol, oi_1h_history)

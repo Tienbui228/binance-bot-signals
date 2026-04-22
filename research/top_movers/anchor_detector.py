@@ -95,7 +95,7 @@ class BreakdownPack:
     break_close_strength: Optional[float]            # PROVISIONAL: body_quality from bq_components
     break_bar_body_ratio: Optional[float]            # PROVEN: candle_body_ratio(p2_bar)
     break_volume_ratio: Optional[float]              # PROVISIONAL: volume_ratio_3bar at p2_idx
-    support_test_count_before_break: int             # bars testing break_level in P0→P2 zone
+    support_test_count: int                          # bars testing break_level in P0→P2 zone
     break_cleanliness_score: Optional[float]         # PROVEN: = break_quality_score
     immediate_followthrough_pct_1bar: Optional[float]
     immediate_followthrough_pct_3bar: Optional[float]
@@ -114,6 +114,7 @@ class RetestFailPack:
     retest_depth_vs_break_pct: Optional[float]       # retest_extreme distance from break_level, pct
     retest_duration_bars: Optional[int]              # bars from P3 to retest_extreme
     retest_reject_wick_ratio: Optional[float]        # wick at retest_extreme bar (direction-aware)
+    retest_rejection_quality: str                    # strong/clean/weak/none from wick ratio
     retest_close_back_above_break_flag: str          # Y/N: close at retest_extreme vs break_level
     fail_strength: Optional[float]                   # 0–1 normalized: adverse move after retest_extreme
     fail_confirmation_bar_count: Optional[int]       # bars closing through break_level after retest
@@ -665,7 +666,7 @@ def compute_breakdown_pack(
         break_close_strength=round(body_q, 4) if body_q is not None else None,  # PROVISIONAL
         break_bar_body_ratio=round(body_q, 4) if body_q is not None else None,  # PROVEN
         break_volume_ratio=vol_ratio,                                            # PROVISIONAL
-        support_test_count_before_break=test_count,
+        support_test_count=test_count,
         break_cleanliness_score=cleanliness,
         immediate_followthrough_pct_1bar=ft_1bar,
         immediate_followthrough_pct_3bar=ft_3bar,
@@ -683,6 +684,7 @@ _RETEST_FAIL_PACK_UNAVAILABLE = RetestFailPack(
     retest_depth_vs_break_pct=None,
     retest_duration_bars=None,
     retest_reject_wick_ratio=None,
+    retest_rejection_quality="none",
     retest_close_back_above_break_flag="N",
     fail_strength=None,
     fail_confirmation_bar_count=None,
@@ -768,6 +770,16 @@ def compute_retest_fail_pack(
     else:
         rej_wick = round(upper_wick_ratio(ext_bar), 4)
 
+    # retest_rejection_quality: qualitative band from wick ratio
+    if rej_wick >= 0.60:
+        rej_quality = "strong"
+    elif rej_wick >= 0.40:
+        rej_quality = "clean"
+    elif rej_wick >= 0.20:
+        rej_quality = "weak"
+    else:
+        rej_quality = "none"
+
     # retest_close_back_above_break_flag
     ext_close = ext_bar.get("close")
     if ext_close is not None:
@@ -802,7 +814,7 @@ def compute_retest_fail_pack(
             fail_count += 1
             if fail_bar_offset is None:
                 fail_bar_offset = j
-        elif side == "SHORT" and c > break_level:
+        elif side == "SHORT" and c < break_level:
             fail_count += 1
             if fail_bar_offset is None:
                 fail_bar_offset = j
@@ -836,6 +848,7 @@ def compute_retest_fail_pack(
         retest_depth_vs_break_pct=depth_pct,
         retest_duration_bars=retest_duration,
         retest_reject_wick_ratio=rej_wick,
+        retest_rejection_quality=rej_quality,
         retest_close_back_above_break_flag=rcb_flag,
         fail_strength=fail_strength,
         fail_confirmation_bar_count=fail_count if fail_count > 0 else None,

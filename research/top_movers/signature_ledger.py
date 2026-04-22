@@ -1437,14 +1437,14 @@ def build_short_family_boards(cases):
     ))
     b2 = _board_rows_p2(shorts, lambda c: (
         c.get("move_class", "—"), c.get("structural_quality", "—"),
-        c.get("reclaim_break_4h_YN", "—"), c.get("resolution_label", "—"),
+        c.get("retest_close_back_above_break_flag", "—"), c.get("resolution_label", "—"),
     ))
     b3 = _board_rows_p2(shorts, lambda c: (
         c.get("pre_move_signature", "—"), c.get("participation_pattern", "—"),
         c.get("move_class", "—"), c.get("resolution_label", "—"),
     ))
     b4 = _board_rows_p2(shorts, lambda c: (
-        _display_family_p2(c), _timing_band_p2(c), c.get("resolution_label", "—"),
+        _display_family_p2(c), c.get("time_of_day_bucket", "—"), c.get("resolution_label", "—"),
     ))
     b5 = _board_rows_p2(shorts, lambda c: (
         c.get("research_regime", "—"), _btc_bucket_p2(c),

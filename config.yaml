@@ -16,12 +16,8 @@ scanner:
   - BTCUSDT
   - ETHUSDT
 strategy:
-  long_breakout_retest:
-    enabled: true
   short_exhaustion_retest:
     enabled: false
-  long_accumulation_continuation:
-    enabled: true
   oi_range_breakout:
     enabled: true
 thresholds:
@@ -115,50 +111,6 @@ review_case_system:
   daily_exports_dir: review_exports
   builder_script: build_daily_review_pack.py
 
-# Long breakout retest — strategy-specific tuning
-# min_post_break_acceptance_ratio: how far into the impulse body the retest
-# can dip and still be considered acceptable.
-# Default hardcoded = 0.55 (top 45% of impulse range required)
-# Patch 1: relaxed to 0.42 to unlock acceptance_floor_lost cases
-# that already passed find_retest_long() confirmation.
-long_breakout_retest:
-  min_post_break_acceptance_ratio: 0.42
-
-# Long accumulation continuation — no-retest breakout-continuation family
-long_accumulation_continuation:
-  # 1h trend context
-  price_ema_fast: 20
-  price_ema_slow: 50
-  min_closes_above_fast_ma_12: 8
-  max_extension_from_ema50_pct: 0.12
-  structure_window_bars_1h: 18
-  min_structure_quality_score: 4
-
-  # OI participation — MA20 baseline, 1.50x ratio, not below 12h ago
-  oi_ma_period: 20
-  oi_support_ratio: 1.50
-
-  # Liquidity gate (4h quote volume proxy — separate from 1h participation)
-  min_quote_volume_4h_usd: 2000000
-  volume_gate_mode: "SOFT_TAG"
-
-  # 1h volume participation (futures quote_volume) — MA20 baseline, 2.00x ratio, not below 12h ago
-  vol_participation_ma_period: 20
-  vol_participation_ratio: 2.00
-
-  # 5m breakout-continuation trigger
-  breakout_lookback_bars_5m: 12
-  min_breakout_distance_pct: 0.0015
-  min_breakout_body_ratio: 0.45
-  min_breakout_vol_ratio: 1.20
-  min_close_location: 0.60
-  max_upper_wick_ratio: 0.30
-
-  # Stop calculation (applied at confirmation, not at trigger)
-  stop_buffer_pct: 0.0015
-
-  # Pending expiry: max bars (5m cadence) before setup is expired
-  max_pending_bars_5m: 3
 oi_range_breakout:
   # Signal trigger — OI is the ONLY hard gate
   oi_spike_min_pct: 5.0           # OI delta % minimum (1h window: bar[-1] vs bar[-5])

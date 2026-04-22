@@ -495,7 +495,7 @@ def build_case_row(
         "break_close_strength":             bdp.break_close_strength,        # PROVISIONAL
         "break_bar_body_ratio":             bdp.break_bar_body_ratio,        # PROVEN
         "break_volume_ratio":               bdp.break_volume_ratio,          # PROVISIONAL
-        "support_test_count_before_break":  bdp.support_test_count_before_break,
+        "support_test_count":               bdp.support_test_count,
         "break_cleanliness_score":          bdp.break_cleanliness_score,     # PROVEN
         "immediate_followthrough_pct_1bar": bdp.immediate_followthrough_pct_1bar,
         "immediate_followthrough_pct_3bar": bdp.immediate_followthrough_pct_3bar,
@@ -507,6 +507,7 @@ def build_case_row(
         "retest_duration_bars":                 rfp.retest_duration_bars,
         "retest_volume_decay_ratio":            rfp_vol_decay,
         "retest_reject_wick_ratio":             rfp.retest_reject_wick_ratio,
+        "retest_rejection_quality":             rfp.retest_rejection_quality,
         "retest_close_back_above_break_flag":   rfp.retest_close_back_above_break_flag,
         "fail_strength":                        rfp.fail_strength,
         "fail_confirmation_bar_count":          rfp.fail_confirmation_bar_count,
