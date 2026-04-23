@@ -215,6 +215,8 @@ class BinanceScanner:
         self.review_daily_exports_dir = self.project_dir / str(review_cfg.get("daily_exports_dir", "review_exports"))
         self.review_builder_script = self.project_dir / str(review_cfg.get("builder_script", "build_daily_review_pack.py"))
         self.review_runtime = None
+        self._top_marketcap_exclude: set = set()
+        self._top_marketcap_fetched_ts: float = 0.0
         if self.review_case_system_enabled and CaseReviewRuntime is not None:
             try:
                 self.review_runtime = CaseReviewRuntime(
@@ -438,12 +440,35 @@ class BinanceScanner:
         data = self.get("/fapi/v1/ticker/24hr")
         return {x["symbol"]: x for x in data}
 
+    @staticmethod
+    def _fetch_top_marketcap_symbols(n: int = 100) -> set:
+        try:
+            resp = requests.get(
+                "https://api.coingecko.com/api/v3/coins/markets",
+                params={"vs_currency": "usd", "order": "market_cap_desc", "per_page": n, "page": 1},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            symbols = set()
+            for coin in resp.json():
+                sym = coin.get("symbol", "").upper()
+                if sym:
+                    symbols.add(f"{sym}USDT")
+            print(f"[marketcap_filter] Top {n} market cap loaded — {len(symbols)} symbols excluded from scan")
+            return symbols
+        except Exception as e:
+            print(f"[marketcap_filter] CoinGecko fetch failed: {e} — no market cap exclusion applied")
+            return set()
+
     def filter_symbols(self, symbols: List[str], tickers: Dict[str, Dict]) -> List[str]:
         min_qv = float(self.cfg["scanner"]["min_quote_volume_usdt_24h"])
         max_qv = float(self.cfg["scanner"].get("max_quote_volume_usdt_24h", float("inf")))
         min_price = float(self.cfg["scanner"]["min_price"])
+        top_mc_exclude = self._top_marketcap_exclude
         kept = []
         for s in symbols:
+            if s in top_mc_exclude:
+                continue
             t = tickers.get(s)
             if not t:
                 continue
@@ -3592,6 +3617,12 @@ class BinanceScanner:
         self._reset_round_detect_funnel()
         now_ms = int(time.time() * 1000)
         print(f"[round start] idx={self.round_idx} time_ms={now_ms}")
+
+        # Refresh top-N market cap exclusion list once per day
+        n_exclude = int(self.cfg.get("scanner", {}).get("top_marketcap_exclude_n", 100))
+        if n_exclude > 0 and (time.time() - self._top_marketcap_fetched_ts) > 86400:
+            self._top_marketcap_exclude = self._fetch_top_marketcap_symbols(n_exclude)
+            self._top_marketcap_fetched_ts = time.time()
 
         tickers = self.load_24h_tickers()
         symbols = self.filter_symbols(self.load_symbols(), tickers)

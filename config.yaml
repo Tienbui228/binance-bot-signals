@@ -12,6 +12,7 @@ scanner:
   max_symbols: 300
   min_quote_volume_usdt_24h: 2000000
   max_quote_volume_usdt_24h: 300000000
+  top_marketcap_exclude_n: 100
   min_price: 0.001
   exclude_symbols:
   - BTCUSDT
