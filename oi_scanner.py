@@ -2185,7 +2185,7 @@ class BinanceScanner:
         return False
 
     def _orb_already_signaled_today(self, symbol: str) -> bool:
-        today_start_ms = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+        today_start_ms = int(datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
         try:
             rows = self.read_csv(self.pending_file)
         except Exception:
@@ -2226,6 +2226,7 @@ class BinanceScanner:
 
         rows = self.read_csv(self.pending_file)
         confirmed: List[Signal] = []
+        orb_confirmed_symbols: set = set()
 
         strategy_cfg = self.cfg.get("strategy", {})
 
@@ -2258,7 +2259,13 @@ class BinanceScanner:
 
             # ── No-retest path: oi_range_breakout (immediate confirm at live price >= entry) ─
             if strategy == "oi_range_breakout":
+                if symbol in orb_confirmed_symbols:
+                    self.close_pending(row.get("pending_id", ""), "REJECTED_RULE", "orb_duplicate_dedup")
+                    print(f"[orb dedup] {symbol} — duplicate PENDING in same scan, expired")
+                    continue
                 orb_signals = self._process_oi_range_breakout_pending(row, risk_cfg)
+                if orb_signals:
+                    orb_confirmed_symbols.add(symbol)
                 confirmed.extend(orb_signals)
                 continue
 
@@ -2712,10 +2719,10 @@ class BinanceScanner:
         """
         pending_id = row.get("pending_id", "")
         symbol = row.get("symbol", "")
-        signal_price = float(row.get("entry_price") or 0)
-        sl = float(row.get("stop_loss") or 0)
-        tp1 = float(row.get("tp1") or 0)
-        tp2 = float(row.get("tp2") or 0)
+        signal_price = self._safe_orb_float(row.get("entry_price"))
+        sl = self._safe_orb_float(row.get("stop_loss"))
+        tp1 = self._safe_orb_float(row.get("tp1"))
+        tp2 = self._safe_orb_float(row.get("tp2"))
 
         if not all([signal_price, sl, tp1, tp2]):
             self.close_pending(pending_id, "REJECTED_RULE", "orb_missing_levels")
@@ -2733,8 +2740,8 @@ class BinanceScanner:
             timestamp_ms=int(row.get("signal_open_time") or 0),
             symbol=symbol,
             side="LONG",
-            score=float(row.get("score") or 0),
-            confidence=float(row.get("confidence") or 0),
+            score=self._safe_orb_float(row.get("score")),
+            confidence=self._safe_orb_float(row.get("confidence")),
             reason=row.get("reason", ""),
             entry_ref=signal_price,
             stop=sl,
