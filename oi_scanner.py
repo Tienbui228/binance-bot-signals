@@ -440,6 +440,7 @@ class BinanceScanner:
 
     def filter_symbols(self, symbols: List[str], tickers: Dict[str, Dict]) -> List[str]:
         min_qv = float(self.cfg["scanner"]["min_quote_volume_usdt_24h"])
+        max_qv = float(self.cfg["scanner"].get("max_quote_volume_usdt_24h", float("inf")))
         min_price = float(self.cfg["scanner"]["min_price"])
         kept = []
         for s in symbols:
@@ -448,7 +449,7 @@ class BinanceScanner:
                 continue
             qv = float(t.get("quoteVolume", 0))
             price = float(t.get("lastPrice", 0))
-            if qv >= min_qv and price >= min_price:
+            if min_qv <= qv <= max_qv and price >= min_price:
                 kept.append(s)
         kept.sort(key=lambda sym: float(tickers[sym]["quoteVolume"]), reverse=True)
         return kept[: int(self.cfg["scanner"]["max_symbols"])]

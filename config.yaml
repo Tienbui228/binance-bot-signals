@@ -9,8 +9,9 @@ scanner:
   interval_1h: 1h
   loop_seconds: 300
   top_n: 2
-  max_symbols: 80
+  max_symbols: 300
   min_quote_volume_usdt_24h: 2000000
+  max_quote_volume_usdt_24h: 300000000
   min_price: 0.001
   exclude_symbols:
   - BTCUSDT
@@ -119,7 +120,7 @@ oi_range_breakout:
   oi_spike_min_pct: 5.0           # OI delta % minimum (1h window: bar[-1] vs bar[-5])
   vol_ema_period: 20              # logged only, not a gate
   vol_ema_multiplier: 0.0         # disabled
-  max_market_cap_usd: 150000000    # skip if market cap >= $150M
+  max_market_cap_usd: 500000000    # skip if market cap >= $500M
 
   # Range detection
   range_lookback_bars_1h: 20
@@ -133,7 +134,7 @@ oi_range_breakout:
   tp1_range_multiplier: 1.0
   tp2_range_multiplier: 1.5
   min_risk_pct: 0.5               # avoid setups too tight (SL vulnerable to noise)
-  max_risk_pct: 15.0              # skip if risk > 15%
+  max_risk_pct: 60.0              # skip if risk > 60%
 
   # Score gates — disabled
   score_min_send: 0
