@@ -353,3 +353,59 @@ Rollback mù (không biết crash ở dòng nào) → có thể rollback sai fil
 
 #### L6. Mọi config-only request → chỉ sửa config
 Nếu task là thay đổi một giá trị trong `config.yaml`, không touch bất kỳ `.py` file nào trừ khi user nói rõ.
+
+---
+
+## 14. Debug tool — ORB gate diagnostic
+
+**File:** `debug_spk.py` (repo root)
+
+Script standalone dùng để trace live tại sao 1 token **không** đi vào hệ thống ORB. Chạy local, không cần bot đang chạy.
+
+### Cách dùng
+
+```bash
+# Sửa SYMBOL ở đầu file, rồi chạy:
+python debug_spk.py
+```
+
+Đổi `SYMBOL = "AXLUSDT"` thành token cần debug.
+
+### 6 gates được trace
+
+| Gate | Điều kiện | Nguồn data |
+|------|-----------|------------|
+| 1 | Symbol có trong Binance USDT perp + 24h volume ≥ min, ≤ max + rank ≤ max_symbols | `/fapi/v1/ticker/24hr` |
+| 2 | Có ≥ 13 bars lịch sử OI (5m) | `/futures/data/openInterestHist` |
+| 3 | OI delta 1h ≥ oi_spike_min_pct (5%) | tính từ bar[-1] vs bar[-13] |
+| 4 | Market cap < max_market_cap_usd (CoinGecko) | CoinGecko API |
+| 5 | Range width trong [min, max]% + ATR ratio ≤ atr_ratio_max | 20 bars 1h klines |
+| 6 | Risk % trong [min_risk_pct, max_risk_pct] | SL = range_low × (1 - stop_buffer) |
+
+Output `[PASS]` / `[FAIL]` / `[SKIP]` cho từng gate + giá trị thực để so sánh trực tiếp.
+
+### Khi nào dùng
+
+- User báo "token X không vào bot" → đổi SYMBOL, chạy script, đọc gate nào FAIL
+- Cần biết OI thực tế hiện tại, range width, risk % của 1 token cụ thể
+- Verify config thresholds có hợp lý với market hiện tại không
+
+### Config thresholds trong script
+
+Các giá trị trong `CFG` dict ở đầu file phải khớp với `config.yaml` section `oi_range_breakout` và `scanner`. Khi thay đổi config, **cập nhật `debug_spk.py` CFG tương ứng**:
+
+```python
+CFG = {
+    "min_quote_volume_usdt_24h": 2_000_000,
+    "max_quote_volume_usdt_24h": 300_000_000,
+    "max_symbols": 300,
+    "oi_spike_min_pct": 5.0,
+    "max_market_cap_usd": 500_000_000,
+    "max_range_width_pct": 60.0,
+    "min_risk_pct": 0.5,
+    "max_risk_pct": 60.0,
+    ...
+}
+```
+
+> Script này **không** sửa CSV, không ảnh hưởng bot đang chạy — chỉ đọc data từ Binance/CoinGecko và in kết quả.
