@@ -10,14 +10,14 @@ BASE = "https://fapi.binance.com"
 
 # -- Config thresholds (from config.yaml) --
 CFG = {
-    "min_quote_volume_usdt_24h": 2_000_000,
-    "max_symbols": 80,
+    "min_quote_volume_usdt_24h": 20_000_000,
+    "max_symbols": 300,
     "oi_spike_min_pct": 5.0,
-    "max_market_cap_usd": 150_000_000,
+    "max_market_cap_usd": 500_000_000,
     "max_range_width_pct": 60.0,
     "min_range_width_pct": 0.0,
     "range_atr_period": 14,
-    "range_atr_ratio_max": 5.0,
+    "range_atr_ratio_max": 2.0,
     "range_lookback_bars_1h": 20,
     "min_risk_pct": 0.5,
     "max_risk_pct": 15.0,
@@ -220,7 +220,7 @@ else:
         print(f"  {S} Risk OK\n")
 
 # -- Volume info (not a gate, but informational) --
-print("-- Volume info (vol_ema_multiplier=0.0 -> disabled) --")
+print("-- Volume info (vol_ema_multiplier=2.0 gate active) --")
 vol_series = [k["volume"] for k in klines]
 vol_ema20 = calc_ema(vol_series[:-1], 20)
 vol_now = klines[-1]["volume"]

@@ -28,7 +28,7 @@ except Exception:
 BASE_FAPI = "https://fapi.binance.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "orb-final-tier-redesign-2026-04-23"
+CODE_BUILD_ID = "orb-vol-gate-vol20m-dispatch-clean-2026-04-23"
 CODE_BUILD_SOURCE = "orb-final-tier-redesign"
 CODE_BUILD_NOTE = "ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch."
 
@@ -112,6 +112,7 @@ class Signal:
     oi_prev: float = 0.0
     oi_delta_pct: float = 0.0
     vol_ema20: float = 0.0
+    vol_24h_usdt: float = 0.0
 
 
 
@@ -1773,11 +1774,11 @@ class BinanceScanner:
                 f"TP1: {s.tp1:.6g} ({s.tp1_distance_pct:.2f}%)\n"
                 f"TP2: {s.tp2:.6g} ({s.tp2_distance_pct:.2f}%)\n\n"
                 f"OI Delta: {s.oi_delta_pct:+.2f}%\n"
-                f"Volume: {s.vol_ratio:.2f}x EMA20\n"
+                f"Volume 1h: {s.vol_ratio:.2f}x EMA20\n"
+                f"Volume 24h: ${s.vol_24h_usdt/1_000_000:.1f}M\n"
                 f"Range: {s.range_height:.6g} ({s.range_width_pct:.2f}%)\n"
                 f"ATR Ratio: {s.atr_ratio:.2f}\n\n"
                 f"BTC 24h: {s.btc_24h_change_pct:+.2f}% ({s.btc_regime})\n"
-                f"{dispatch_line}"
                 f"Reason: {s.reason}\n\n"
                 f"{_orb_icon} #{s.symbol} #BINANCE"
             )
@@ -2752,6 +2753,12 @@ class BinanceScanner:
         tp1_distance_pct = abs(tp1 - signal_price) / max(signal_price, 1e-12) * 100.0
         tp2_distance_pct = abs(tp2 - signal_price) / max(signal_price, 1e-12) * 100.0
 
+        try:
+            _ticker = self.get("/fapi/v1/ticker/24hr", {"symbol": symbol})
+            _vol_24h_usdt = float(_ticker.get("quoteVolume", 0))
+        except Exception:
+            _vol_24h_usdt = 0.0
+
         signal = Signal(
             signal_id=f"{symbol}-LONG-oi_range_breakout-{int(time.time() * 1000)}",
             timestamp_ms=int(row.get("signal_open_time") or 0),
@@ -2812,6 +2819,7 @@ class BinanceScanner:
             oi_delta_pct=self._safe_orb_float(row.get("oi_delta_pct")),
             vol_ema20=self._safe_orb_float(row.get("vol_ema20")),
             range_width_pct=self._safe_orb_float(row.get("range_width_pct")),
+            vol_24h_usdt=_vol_24h_usdt,
         )
 
         self.close_pending(row.get("pending_id", ""), "CONFIRMED", "orb_immediate_confirm", bars_waited=0)

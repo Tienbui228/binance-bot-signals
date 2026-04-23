@@ -10,7 +10,7 @@ scanner:
   loop_seconds: 300
   top_n: 2
   max_symbols: 300
-  min_quote_volume_usdt_24h: 2000000
+  min_quote_volume_usdt_24h: 20000000
   max_quote_volume_usdt_24h: 300000000
   top_marketcap_exclude_n: 100
   min_price: 0.001
@@ -120,7 +120,7 @@ oi_range_breakout:
   # Signal trigger — OI is the ONLY hard gate
   oi_spike_min_pct: 5.0           # OI delta % minimum (1h window: bar[-1] vs bar[-5])
   vol_ema_period: 20              # logged only, not a gate
-  vol_ema_multiplier: 0.0         # disabled
+  vol_ema_multiplier: 2.0         # hard gate: volume must be ≥ 2× EMA20
   max_market_cap_usd: 500000000    # skip if market cap >= $500M
 
   # Range detection
