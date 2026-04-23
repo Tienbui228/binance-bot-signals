@@ -3649,6 +3649,19 @@ class BinanceScanner:
 
         if confirmed:
             confirmed.sort(key=lambda x: x.score, reverse=True)
+            # Final dispatch-level dedup for ORB: if 2+ ORB signals for same symbol slipped
+            # through process_pending_setups dedup, drop duplicates here before any dispatch.
+            _seen_orb: set = set()
+            _deduped: list = []
+            for _s in confirmed:
+                if getattr(_s, "strategy", "") == "oi_range_breakout":
+                    if _s.symbol in _seen_orb:
+                        print(f"[dispatch dedup] {_s.symbol} ORB — duplicate dropped at dispatch level")
+                        continue
+                    _seen_orb.add(_s.symbol)
+                _deduped.append(_s)
+            confirmed = _deduped
+
             top_n = int(self.cfg["scanner"]["top_n"])
             dispatch_floor_score = float(self.cfg.get("dispatch", {}).get("dispatch_floor_score", 70.0))
             send_watchlist = bool(self.cfg.get("telegram", {}).get("send_watchlist_signals", False))
