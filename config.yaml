@@ -128,7 +128,8 @@ oi_range_breakout:
   min_range_width_pct: 0.0
   max_range_width_pct: 60.0       # skip if range too wide (trending)
   range_atr_period: 14
-  range_atr_ratio_max: 5.0        # ATR current / ATR avg < 5
+  range_atr_ratio_max: 2.0        # ATR current / ATR avg < 2 — hard reject chaotic/trending
+  atr_bonus_threshold: 1.0        # used at dispatch layer for ATR bonus scoring
 
   # Exit
   stop_buffer_pct: 0.2

@@ -228,43 +228,42 @@ def calc_score(
     """
     Calculate signal score (0–100).
 
-    - OI strength: max 40 pts
-    - Volume strength: max 40 pts
-    - Range quality: max 20 pts
+    - OI delta:     max 55 pts  (primary signal)
+    - Volume ratio: max 25 pts  (confirmation)
+    - Range width:  max 20 pts  (quality filter)
     """
     score = 0
 
-    # OI component (40 pts)
-    if oi_delta_pct >= 30:
+    # OI delta (55 pts) — primary signal
+    # < 5% not reachable (gated by oi_spike_min_pct upstream)
+    if oi_delta_pct >= 30.0:
+        score += 55
+    elif oi_delta_pct >= 10.0:
         score += 40
-    elif oi_delta_pct >= 20:
+    elif oi_delta_pct >= 5.0:
         score += 30
-    elif oi_delta_pct >= 15:
-        score += 20
-    elif oi_delta_pct >= 10:
-        score += 10
-    elif oi_delta_pct >= 5:
-        score += 5
 
-    # Volume component (40 pts)
-    if vol_ratio >= 4.0:
-        score += 40
+    # Volume (25 pts) — confirmation signal
+    # < 2x not reachable (gated by vol_ema_multiplier upstream)
+    if vol_ratio >= 5.0:
+        score += 25
     elif vol_ratio >= 3.0:
-        score += 30
-    elif vol_ratio >= 2.5:
-        score += 20
+        score += 15
     elif vol_ratio >= 2.0:
         score += 10
 
     # Range quality (20 pts) — tighter range = better
-    if range_width_pct <= 1.0:
+    if range_width_pct <= 5.0:
         score += 20
-    elif range_width_pct <= 2.0:
-        score += 15
-    elif range_width_pct <= 3.5:
-        score += 10
-    else:
-        score += 5
+    elif range_width_pct <= 10.0:
+        score += 16
+    elif range_width_pct <= 20.0:
+        score += 12
+    elif range_width_pct <= 35.0:
+        score += 8
+    elif range_width_pct <= 50.0:
+        score += 4
+    # else: 0 pts (range > 50%)
 
     return score
 

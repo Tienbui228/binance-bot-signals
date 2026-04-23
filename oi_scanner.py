@@ -28,9 +28,9 @@ except Exception:
 BASE_FAPI = "https://fapi.binance.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "strategy-enabled-flag-fix-2026-04-20"
-CODE_BUILD_SOURCE = "version-marker-fix-on-live-file"
-CODE_BUILD_NOTE = "Adds trustworthy runtime build marker and startup build logs so live code version is explicit."
+CODE_BUILD_ID = "orb-final-tier-redesign-2026-04-23"
+CODE_BUILD_SOURCE = "orb-final-tier-redesign"
+CODE_BUILD_NOTE = "ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch."
 
 VALID_PENDING_STATUSES = {
     "PENDING",
@@ -177,6 +177,23 @@ class PendingSetup:
     oi_prev: float = 0.0
     oi_delta_pct: float = 0.0
     vol_ema20: float = 0.0
+
+
+_ORB_REGIME_MULT = {
+    "trend_continuation_friendly":  1.20,
+    "unclear_mixed":                1.00,
+    "chop_fake_breakout_heavy":     0.75,
+    "broad_weakness_sell_pressure": 0.55,
+    "post_pump_exhaustion":         0.60,
+}
+
+
+def _orb_atr_bonus(atr_ratio: float, threshold: float) -> float:
+    if atr_ratio < 0.7:
+        return 0.25
+    if atr_ratio < threshold:
+        return 0.10
+    return 0.00
 
 
 class BinanceScanner:
@@ -3678,6 +3695,42 @@ class BinanceScanner:
                     s.dispatch_action = "WATCHLIST"
                     s.dispatch_confidence_band = "MEDIUM"
                     s.dispatch_reason = f"{dispatch.dispatch_reason}|regime_downgrade_low_fit"
+
+                if getattr(s, "strategy", "") == "oi_range_breakout":
+                    _orb_cfg = self.cfg.get("oi_range_breakout", {})
+                    _atr_threshold = float(_orb_cfg.get("atr_bonus_threshold", 1.0))
+                    _regime = getattr(s, "regime_label", "unclear_mixed") or "unclear_mixed"
+                    _base_mult = _ORB_REGIME_MULT.get(_regime, 1.00)
+                    _atr_bonus = _orb_atr_bonus(float(getattr(s, "atr_ratio", 0.0)), _atr_threshold)
+                    _final_mult = _base_mult + _atr_bonus
+                    _raw = float(s.score)
+                    s.score = min(int(_raw * _final_mult), 100)
+                    print(
+                        f"[orb score adj] {s.symbol} "
+                        f"raw={_raw:.0f} × {_final_mult:.2f} "
+                        f"(regime={_base_mult} + atr={_atr_bonus}) "
+                        f"label={_regime} atr_ratio={getattr(s, 'atr_ratio', 0):.2f} "
+                        f"→ adj={s.score}"
+                    )
+                    _ORB_MIN_SCORE = 35
+                    if s.score < _ORB_MIN_SCORE:
+                        print(
+                            f"[orb score gate] {s.symbol} "
+                            f"score={s.score} < min={_ORB_MIN_SCORE} → NO_SEND"
+                        )
+                        s.dispatch_action = "NO_SEND"
+                        s.dispatch_confidence_band = "LOW"
+                        s.dispatch_reason = f"{s.dispatch_reason}|orb_score_below_min_{_ORB_MIN_SCORE}"
+                        self._update_pending_dispatch_trace(
+                            s.setup_id,
+                            dispatch_action="NO_SEND",
+                            dispatch_confidence_band="LOW",
+                            dispatch_reason=s.dispatch_reason,
+                            send_decision="NO_SEND",
+                            skip_reason=f"orb_score_below_min_{_ORB_MIN_SCORE}",
+                        )
+                        no_send_count += 1
+                        continue
 
                 if s.dispatch_action == "MAIN_SIGNAL":
                     self.save_signal(s)
