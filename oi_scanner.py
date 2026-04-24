@@ -216,6 +216,8 @@ class BinanceScanner:
         self.round_idx = 0
         self.current_market_snapshot: Dict[str, float] = {}
         self.current_regime = None
+        self._orb_sent_today: set = set()   # symbols sent to Telegram today, reset daily
+        self._orb_sent_today_date: str = ""  # "YYYY-MM-DD" of last reset
 
         self.project_dir = Path(__file__).resolve().parent
         storage_cfg = self.cfg.get("storage", {})
@@ -1931,7 +1933,7 @@ class BinanceScanner:
                 f"Stop: {s.stop:.6g} ({s.sl_distance_pct:.2f}%)\n"
                 f"TP1: {s.tp1:.6g} ({s.tp1_distance_pct:.2f}%)\n"
                 f"TP2: {s.tp2:.6g} ({s.tp2_distance_pct:.2f}%)\n\n"
-                f"OI Delta: {s.oi_delta_pct:+.2f}%\n"
+                f"OI Delta: {s.oi_delta_pct:+.2f}% (${getattr(s, 'oi_delta_abs_1h', 0)/1_000_000:.2f}M)\n"
                 f"Volume 1h: {s.vol_ratio:.2f}x EMA20\n"
                 f"Volume 24h: ${s.vol_24h_usdt/1_000_000:.1f}M\n"
                 f"Range: {s.range_height:.6g} ({s.range_width_pct:.2f}%)\n"
@@ -3866,6 +3868,25 @@ class BinanceScanner:
         now_ms = int(time.time() * 1000)
         print(f"[round start] idx={self.round_idx} time_ms={now_ms}")
 
+        # Reset daily ORB sent-today set at UTC midnight, repopulate from signals CSV
+        _today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if _today_str != self._orb_sent_today_date:
+            self._orb_sent_today.clear()
+            self._orb_sent_today_date = _today_str
+            _today_start_ms = int(datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+            try:
+                for _row in self.read_csv(self.signals_file):
+                    if _row.get("strategy") == "oi_range_breakout":
+                        try:
+                            _ts = int(float(_row.get("timestamp_ms") or 0))
+                            if _ts >= _today_start_ms:
+                                self._orb_sent_today.add(_row.get("symbol", ""))
+                        except (ValueError, TypeError):
+                            pass
+            except Exception:
+                pass
+            print(f"[orb dedup] daily sent-set reset for {_today_str}, loaded={len(self._orb_sent_today)} from signals")
+
         # Refresh top-N market cap exclusion list once per day
         n_exclude = int(self.cfg.get("scanner", {}).get("top_marketcap_exclude_n", 100))
         if n_exclude > 0 and (time.time() - self._top_marketcap_fetched_ts) > 86400:
@@ -3957,6 +3978,13 @@ class BinanceScanner:
                         continue
 
                 if s.dispatch_action == "MAIN_SIGNAL":
+                    # Belt-and-suspenders: ORB same-symbol dedup within same UTC day
+                    if getattr(s, "strategy", "") == "oi_range_breakout":
+                        if s.symbol in self._orb_sent_today:
+                            print(f"[orb dedup] {s.symbol} — already sent today, skipped")
+                            no_send_count += 1
+                            continue
+                        self._orb_sent_today.add(s.symbol)
                     self.save_signal(s)
                     self._update_pending_dispatch_trace(
                         s.setup_id,
