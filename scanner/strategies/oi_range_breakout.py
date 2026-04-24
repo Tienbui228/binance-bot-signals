@@ -336,6 +336,12 @@ def detect_oi_range_breakout(
     oi_1h_ago = float(oi_history_15m[-13].get("oi_value", 0))
     oi_delta_pct = calc_oi_delta_pct(oi_now, oi_1h_ago)
 
+    # Apply cross-exchange MAX override if scanner injected a higher delta (Bybit > Binance)
+    if "_override_oi_delta_pct" in config:
+        oi_delta_pct = float(config["_override_oi_delta_pct"])
+
+    oi_delta_abs_1h = oi_now - oi_1h_ago   # USDT absolute delta, informational only
+
     if oi_delta_pct < oi_spike_min_pct:
         logger.debug(
             f"[oi_range_breakout] {symbol} — OI spike insufficient: {oi_delta_pct:.2f}% < {oi_spike_min_pct}%"
@@ -352,12 +358,6 @@ def detect_oi_range_breakout(
 
     volume_1h = float(klines_1h[-1].get("volume", 0))
     vol_ratio = volume_1h / vol_ema20 if vol_ema20 > 0 else 0.0
-
-    if vol_ratio < vol_ema_multiplier:
-        logger.debug(
-            f"[oi_range_breakout] {symbol} — volume spike insufficient: {vol_ratio:.2f}x < {vol_ema_multiplier}x"
-        )
-        return None
 
     # ── Step 2.5: Market cap filter ──
     max_market_cap_usd = float(config.get("max_market_cap_usd", 150_000_000))
@@ -440,6 +440,7 @@ def detect_oi_range_breakout(
         "oi_current": oi_now,
         "oi_prev": oi_1h_ago,
         "oi_delta_pct": oi_delta_pct,
+        "oi_delta_abs_1h": oi_delta_abs_1h,
         "volume_1h": volume_1h,
         "vol_ema20": vol_ema20,
         "vol_ratio": vol_ratio,

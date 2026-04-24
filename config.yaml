@@ -10,7 +10,7 @@ scanner:
   loop_seconds: 300
   top_n: 2
   max_symbols: 300
-  min_quote_volume_usdt_24h: 20000000
+  min_quote_volume_usdt_24h: 10000000
   max_quote_volume_usdt_24h: 300000000
   top_marketcap_exclude_n: 100
   min_price: 0.001

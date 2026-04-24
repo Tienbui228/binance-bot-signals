@@ -116,6 +116,7 @@ class Signal:
     vol_24h_usdt: float = 0.0
     cross_exchange_confirmed: str = "N"   # "Y"/"N" — Binance + Bybit both confirmed
     bybit_vol_24h_usdt: float = 0.0
+    oi_delta_abs_1h: float = 0.0          # OI absolute USDT delta 60min, informational only
 
 
 @dataclass
@@ -272,6 +273,7 @@ class BinanceScanner:
             "atr_current", "atr_avg", "atr_ratio",
             "oi_current", "oi_prev", "oi_delta_pct", "vol_ema20", "vol_24h_usdt",
             "cross_exchange_confirmed", "bybit_vol_24h_usdt",
+            "oi_delta_abs_1h",
         ]
         self.result_fields = [
             "signal_id", "setup_id", "timestamp_ms", "symbol", "side", "entry_ref", "stop",
@@ -2830,17 +2832,27 @@ class BinanceScanner:
                     klines_1h = self._combine_klines_volume(klines_1h_binance, bybit_kl)
                     _bybit_vol_ok = True
 
-            # Compute per-exchange Bybit OI delta (BTC delta % == USDT delta % since price cancels)
+            # Compute per-exchange OI deltas; inject MAX as override for gate
             _bybit_oi_delta_pct = 0.0
             _aligned = bybit_aligned_coins or []
             if bybit_oi_ok and len(_aligned) >= 13 and _aligned[-13] > 0:
                 _bybit_oi_delta_pct = (_aligned[-1] - _aligned[-13]) / _aligned[-13] * 100.0
 
-            # Smuggle Bybit metadata into config dict so strategy can report it
+            _binance_oi_delta_pct = 0.0
+            if len(oi_1h_history) >= 13 and float(oi_1h_history[-13].get("oi_value", 0)) > 0:
+                _binance_oi_delta_pct = (
+                    float(oi_1h_history[-1]["oi_value"]) - float(oi_1h_history[-13]["oi_value"])
+                ) / float(oi_1h_history[-13]["oi_value"]) * 100.0
+
+            _max_oi_delta = max(_binance_oi_delta_pct, _bybit_oi_delta_pct) if bybit_oi_ok else _binance_oi_delta_pct
+
+            # Smuggle cross-exchange metadata into config dict so strategy can use it
             orb_cfg_ext = dict(orb_cfg)
             orb_cfg_ext["_bybit_oi_ok"] = bybit_oi_ok
             orb_cfg_ext["_bybit_vol_ok"] = _bybit_vol_ok
             orb_cfg_ext["_bybit_oi_delta_pct"] = _bybit_oi_delta_pct
+            orb_cfg_ext["_override_oi_delta_pct"] = _max_oi_delta
+            orb_cfg_ext["_binance_oi_delta_pct"] = _binance_oi_delta_pct
 
             from scanner.strategies.oi_range_breakout import detect_oi_range_breakout
 
@@ -3023,6 +3035,7 @@ class BinanceScanner:
             vol_24h_usdt=_vol_24h_usdt,
             cross_exchange_confirmed=str(row.get("cross_exchange_confirmed", "N")),
             bybit_vol_24h_usdt=_bybit_vol_24h,
+            oi_delta_abs_1h=self._safe_orb_float(row.get("oi_current", 0.0)) - self._safe_orb_float(row.get("oi_prev", 0.0)),
         )
 
         self.close_pending(row.get("pending_id", ""), "CONFIRMED", "orb_immediate_confirm", bars_waited=0)
@@ -4025,11 +4038,13 @@ class BinanceScanner:
                                 # current price from tickers dict (already loaded this round)
                                 _cur_price = float(tickers.get(sym, {}).get("lastPrice", 0) or 0)
                                 if _cur_price > 0:
-                                    oi_1h_history, _bybit_aligned_coins = self._combine_oi_histories(
+                                    # Use combine only for timestamp alignment; oi_1h_history stays Binance-only
+                                    _, _bybit_aligned_coins = self._combine_oi_histories(
                                         oi_binance, _bybit_raw, _cur_price
                                     )
+                                    oi_1h_history = oi_binance
                                     _bybit_oi_ok = True
-                                    print(f"[bybit OI] {sym} — combined OK (binance+bybit)")
+                                    print(f"[bybit OI] {sym} — MAX formula ready (bybit aligned)")
                                 else:
                                     oi_1h_history = oi_binance
                             else:

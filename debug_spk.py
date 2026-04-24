@@ -5,12 +5,12 @@ Run from repo root: python debug_spk.py
 import math
 import requests
 
-SYMBOL = "AXLUSDT"
+SYMBOL = "PUMPBTCUSDT"
 BASE = "https://fapi.binance.com"
 
 # -- Config thresholds (from config.yaml) --
 CFG = {
-    "min_quote_volume_usdt_24h": 20_000_000,
+    "min_quote_volume_usdt_24h": 10_000_000,
     "max_quote_volume_usdt_24h": 300_000_000,
     "max_symbols": 300,
     "oi_spike_min_pct": 5.0,
@@ -124,19 +124,83 @@ else:
 
 # -- Gate 2: OI history --
 print("-- Gate 2: OI history (13 bars × 5m = 1h window) --")
+# Fetch more bars to compare multiple windows
+oi_hist_raw = get("/futures/data/openInterestHist", {"symbol": SYMBOL, "period": "5m", "limit": 289})  # ~24h
 oi_hist = get("/futures/data/openInterestHist", {"symbol": SYMBOL, "period": "5m", "limit": 13})
-oi_bars = [{"ts": int(x["timestamp"]), "oi_value": float(x.get("sumOpenInterestValue", 0))} for x in oi_hist]
+oi_bars = [{"ts": int(x["timestamp"]),
+            "oi_value": float(x.get("sumOpenInterestValue", 0)),
+            "oi_coins": float(x.get("sumOpenInterest", 0))} for x in oi_hist]
 print(f"  Bars returned: {len(oi_bars)}  (need >= 13)")
 if len(oi_bars) < 13:
     print(f"  {F} Insufficient OI history -> BLOCKED\n")
     raise SystemExit
 print(f"  {S} OI history OK")
 oi_now    = oi_bars[-1]["oi_value"]
-oi_1h_ago = oi_bars[-13]["oi_value"] if len(oi_bars) >= 13 else oi_bars[0]["oi_value"]
+oi_1h_ago = oi_bars[-13]["oi_value"]
 oi_delta  = (oi_now - oi_1h_ago) / oi_1h_ago * 100.0 if oi_1h_ago > 0 else 0.0
+oi_now_coins    = oi_bars[-1]["oi_coins"]
+oi_1h_ago_coins = oi_bars[-13]["oi_coins"]
+oi_delta_coins  = (oi_now_coins - oi_1h_ago_coins) / oi_1h_ago_coins * 100.0 if oi_1h_ago_coins > 0 else 0.0
+
+print(f"  === Binance OI (USD value) ===")
 print(f"  OI now      : ${oi_now:>15,.0f}")
 print(f"  OI 1h ago   : ${oi_1h_ago:>15,.0f}")
-print(f"  OI delta    : {oi_delta:+.2f}%\n")
+print(f"  OI delta 1h : {oi_delta:+.2f}%  <- bot gate dung cai nay")
+print(f"  === Binance OI (contracts/coins) ===")
+print(f"  OI now      : {oi_now_coins:>18,.2f}")
+print(f"  OI 1h ago   : {oi_1h_ago_coins:>18,.2f}")
+print(f"  OI delta 1h : {oi_delta_coins:+.2f}%  <- Velo co the dung cai nay")
+
+# Multi-window delta (using raw 289 bars)
+all_bars = [{"ts": int(x["timestamp"]),
+             "oi_value": float(x.get("sumOpenInterestValue", 0)),
+             "oi_coins": float(x.get("sumOpenInterest", 0))} for x in oi_hist_raw]
+def delta_window(bars, n_bars_back, label):
+    if len(bars) < n_bars_back + 1:
+        return
+    now_v = bars[-1]["oi_value"]; ago_v = bars[-n_bars_back]["oi_value"]
+    now_c = bars[-1]["oi_coins"]; ago_c = bars[-n_bars_back]["oi_coins"]
+    d_v = (now_v - ago_v) / ago_v * 100 if ago_v else 0
+    d_c = (now_c - ago_c) / ago_c * 100 if ago_c else 0
+    print(f"  {label:8s}: USD {d_v:+.2f}%  |  coins {d_c:+.2f}%")
+
+print(f"  === Multi-window delta (USD | coins) ===")
+delta_window(all_bars, 6,   "30m")
+delta_window(all_bars, 12,  "1h")
+delta_window(all_bars, 24,  "2h")
+delta_window(all_bars, 48,  "4h")
+delta_window(all_bars, 288, "24h")
+
+# Print last 15 bars (75 min) to see OI shape
+import datetime as _dt
+print(f"  === Raw 5m bars (last 15) ===")
+print(f"  {'Time (UTC)':19s}  {'OI USD':>15s}  {'OI Coins':>18s}  {'Delta USD':>10s}")
+ref_v = all_bars[-16]["oi_value"] if len(all_bars) >= 16 else all_bars[0]["oi_value"]
+for b in all_bars[-15:]:
+    t = _dt.datetime.utcfromtimestamp(b["ts"] / 1000).strftime("%Y-%m-%d %H:%M")
+    dv = (b["oi_value"] - ref_v) / ref_v * 100 if ref_v else 0
+    ref_v = b["oi_value"]
+    print(f"  {t}  ${b['oi_value']:>15,.0f}  {b['oi_coins']:>18,.0f}  {dv:>+9.2f}%")
+
+# Bybit OI for comparison
+print(f"  === Bybit OI (coins) ===")
+try:
+    bybit_r = requests.get("https://api.bybit.com/v5/market/open-interest",
+        params={"category":"linear","symbol":SYMBOL,"intervalTime":"5min","limit":"13"},
+        timeout=8).json()
+    bybit_bars = bybit_r["result"]["list"]
+    if len(bybit_bars) >= 13:
+        by_now   = float(bybit_bars[0]["openInterest"])   # newest-first
+        by_1h    = float(bybit_bars[12]["openInterest"])
+        by_delta = (by_now - by_1h) / by_1h * 100 if by_1h else 0
+        print(f"  OI now      : {by_now:>18,.2f} coins")
+        print(f"  OI 1h ago   : {by_1h:>18,.2f} coins")
+        print(f"  OI delta 1h : {by_delta:+.2f}%")
+    else:
+        print(f"  Only {len(bybit_bars)} bars returned")
+except Exception as e:
+    print(f"  Bybit fetch failed: {e}")
+print()
 
 # -- Gate 3: OI spike --
 print("-- Gate 3: OI spike >= 5% --")
