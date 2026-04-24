@@ -136,7 +136,7 @@ oi_range_breakout:
   tp1_range_multiplier: 1.0
   tp2_range_multiplier: 1.5
   min_risk_pct: 0.5               # avoid setups too tight (SL vulnerable to noise)
-  max_risk_pct: 60.0              # skip if risk > 60%
+  max_risk_pct: 35.0              # skip if risk > 35%
 
   # Score gates — disabled
   score_min_send: 0
@@ -145,3 +145,6 @@ oi_range_breakout:
 
   # Ops
   max_pending_bars_5m: 48         # timeout before confirm (4h = 48×5m)
+
+bybit:
+  enabled: true                   # kill switch — false disables all Bybit fetching

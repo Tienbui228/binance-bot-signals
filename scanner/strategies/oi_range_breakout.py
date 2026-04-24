@@ -423,9 +423,15 @@ def detect_oi_range_breakout(
 
     band = quality_band(score)
 
+    # ── Bybit cross-exchange metadata (logged only, no score impact) ──
+    _bybit_oi_ok  = bool(config.get("_bybit_oi_ok", False))
+    _bybit_vol_ok = bool(config.get("_bybit_vol_ok", False))
+    _bybit_oi_delta_pct = float(config.get("_bybit_oi_delta_pct", 0.0))
+    cross_exchange_confirmed = _bybit_oi_ok and _bybit_vol_ok
+
     # ── Build signal dict ──
     now_ms = int(__import__("time").time() * 1000)
-    signal_open_ts = int(klines_1h[-1].get("openTime", now_ms))
+    signal_open_ts = int(klines_1h[-1].get("open_time", now_ms))
 
     return {
         "strategy_family": "oi_range_breakout",
@@ -454,4 +460,8 @@ def detect_oi_range_breakout(
         "setup_quality_band": band,
         "signal_ts_ms": now_ms,
         "trigger_bar_open_ts": signal_open_ts,
+        "cross_exchange_confirmed": cross_exchange_confirmed,
+        "bybit_oi_ok": _bybit_oi_ok,
+        "bybit_vol_ok": _bybit_vol_ok,
+        "bybit_oi_delta_pct": _bybit_oi_delta_pct,
     }

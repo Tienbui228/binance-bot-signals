@@ -11,6 +11,7 @@ BASE = "https://fapi.binance.com"
 # -- Config thresholds (from config.yaml) --
 CFG = {
     "min_quote_volume_usdt_24h": 20_000_000,
+    "max_quote_volume_usdt_24h": 300_000_000,
     "max_symbols": 300,
     "oi_spike_min_pct": 5.0,
     "max_market_cap_usd": 500_000_000,
@@ -20,7 +21,7 @@ CFG = {
     "range_atr_ratio_max": 2.0,
     "range_lookback_bars_1h": 20,
     "min_risk_pct": 0.5,
-    "max_risk_pct": 15.0,
+    "max_risk_pct": 20.0,
     "stop_buffer_pct": 0.2,
     "score_min_send": 0,
 }
@@ -89,11 +90,13 @@ if not t:
 
 qv = float(t.get("quoteVolume", 0))
 price = float(t.get("lastPrice", 0))
-print(f"  24h volume  : ${qv:>15,.0f}  (min ${CFG['min_quote_volume_usdt_24h']:,})")
+print(f"  24h volume  : ${qv:>15,.0f}  (min ${CFG['min_quote_volume_usdt_24h']:,} / max ${CFG['max_quote_volume_usdt_24h']:,})")
 print(f"  Last price  : ${price}")
 
 if qv < CFG["min_quote_volume_usdt_24h"]:
     print(f"  {F} Volume < ${CFG['min_quote_volume_usdt_24h']:,} -> BLOCKED")
+elif qv > CFG["max_quote_volume_usdt_24h"]:
+    print(f"  {F} Volume > ${CFG['max_quote_volume_usdt_24h']:,} (too liquid) -> BLOCKED")
 else:
     print(f"  {S} Volume OK")
 

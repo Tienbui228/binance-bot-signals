@@ -26,6 +26,7 @@ except Exception:
     CaseReviewRuntime = None
 
 BASE_FAPI = "https://fapi.binance.com"
+BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 CODE_BUILD_ID = "orb-vol-gate-vol20m-dispatch-clean-2026-04-23"
@@ -113,7 +114,8 @@ class Signal:
     oi_delta_pct: float = 0.0
     vol_ema20: float = 0.0
     vol_24h_usdt: float = 0.0
-
+    cross_exchange_confirmed: str = "N"   # "Y"/"N" — Binance + Bybit both confirmed
+    bybit_vol_24h_usdt: float = 0.0
 
 
 @dataclass
@@ -178,6 +180,9 @@ class PendingSetup:
     oi_prev: float = 0.0
     oi_delta_pct: float = 0.0
     vol_ema20: float = 0.0
+    cross_exchange_confirmed: str = "N"   # "Y"/"N"
+    bybit_oi_delta_pct: float = 0.0
+    bybit_vol_ok: str = "N"              # "Y"/"N"
 
 
 _ORB_REGIME_MULT = {
@@ -195,6 +200,10 @@ def _orb_atr_bonus(atr_ratio: float, threshold: float) -> float:
     if atr_ratio < threshold:
         return 0.10
     return 0.00
+
+
+import logging as _logging
+_logger_bybit = _logging.getLogger("bybit")
 
 
 class BinanceScanner:
@@ -257,7 +266,12 @@ class BinanceScanner:
             "retest_depth_pct", "score_oi", "score_exhaustion", "score_breakout", "score_retest",
             "reason_tags", "stop_was_forced_min_risk", "manual_tradable", "manual_trade_note",
             "regime_label", "regime_fit_for_strategy",
-            "dispatch_action", "dispatch_confidence_band", "dispatch_reason", "status"
+            "dispatch_action", "dispatch_confidence_band", "dispatch_reason", "status",
+            # oi_range_breakout specific fields (were missing from signal_fields)
+            "range_high", "range_low", "range_height", "range_width_pct", "midpoint",
+            "atr_current", "atr_avg", "atr_ratio",
+            "oi_current", "oi_prev", "oi_delta_pct", "vol_ema20", "vol_24h_usdt",
+            "cross_exchange_confirmed", "bybit_vol_24h_usdt",
         ]
         self.result_fields = [
             "signal_id", "setup_id", "timestamp_ms", "symbol", "side", "entry_ref", "stop",
@@ -296,7 +310,8 @@ class BinanceScanner:
             "entry_price", "stop_loss", "tp1", "tp2",
             "range_high", "range_low", "range_height", "range_width_pct", "midpoint",
             "atr_current", "atr_avg", "atr_ratio",
-            "oi_current", "oi_prev", "oi_delta_pct", "vol_ema20"
+            "oi_current", "oi_prev", "oi_delta_pct", "vol_ema20",
+            "cross_exchange_confirmed", "bybit_oi_delta_pct", "bybit_vol_ok",
         ]
         self.snapshot_fields = [
             "snapshot_ts_ms", "stage", "symbol", "side", "strategy", "signal_id", "pending_id",
@@ -545,6 +560,147 @@ class BinanceScanner:
             total = float(x.get("sumOpenInterestValue") or 0.0)
             out.append({"ts": int(x["timestamp"]), "oi_value": total})
         return out
+
+    # ── Bybit V5 client methods ─────────────────────────────────────────────────
+
+    def bybit_get(self, path: str, params: dict | None = None) -> dict:
+        r = self.session.get(BASE_BYBIT + path, params=params, timeout=15)
+        r.raise_for_status()
+        d = r.json()
+        if d.get("retCode", -1) != 0:
+            raise ValueError(f"retCode={d.get('retCode')} {d.get('retMsg', '')}")
+        return d
+
+    def bybit_oi_hist(self, symbol: str, interval_time: str = "5min", limit: int = 13) -> list:
+        """
+        Fetch Bybit OI history. Returns [{ts, oi_coins}] oldest-first.
+        oi_coins = open interest in BASE ASSET (e.g. BTC for BTCUSDT).
+        Multiply by current price to convert to USDT before combining with Binance.
+        Returns [] on any error.
+        """
+        try:
+            d = self.bybit_get("/v5/market/open-interest", {
+                "category": "linear",
+                "symbol": symbol,
+                "intervalTime": interval_time,
+                "limit": limit,
+            })
+            raw = d["result"]["list"]   # newest-first
+            out = []
+            for x in raw:
+                oi_coins = float(x.get("openInterest") or 0.0)
+                out.append({"ts": int(x["timestamp"]), "oi_coins": oi_coins})
+            out.reverse()               # convert to oldest-first
+            return out
+        except Exception as e:
+            _logger_bybit.debug(f"[bybit_oi_hist] {symbol} — {e}")
+            return []
+
+    def bybit_klines_1h(self, symbol: str, limit: int = 22) -> list:
+        """
+        Fetch Bybit 1h klines. Returns [{open_time, open, high, low, close, volume, quote_volume}]
+        oldest-first. volume = base asset (same denomination as Binance klines["volume"]).
+        Returns [] on any error.
+        """
+        try:
+            d = self.bybit_get("/v5/market/kline", {
+                "category": "linear",
+                "symbol": symbol,
+                "interval": "60",
+                "limit": limit,
+            })
+            raw = d["result"]["list"]   # newest-first: [startTime, open, high, low, close, volume, turnover]
+            out = []
+            for x in raw:
+                out.append({
+                    "open_time":    int(x[0]),
+                    "open":         float(x[1]),
+                    "high":         float(x[2]),
+                    "low":          float(x[3]),
+                    "close":        float(x[4]),
+                    "volume":       float(x[5]),    # base asset
+                    "quote_volume": float(x[6]),    # USDT turnover
+                })
+            out.reverse()               # oldest-first
+            return out
+        except Exception as e:
+            _logger_bybit.debug(f"[bybit_klines_1h] {symbol} — {e}")
+            return []
+
+    def bybit_ticker_24h(self, symbol: str) -> float:
+        """24h USDT turnover for symbol. Returns 0.0 on error."""
+        try:
+            d = self.bybit_get("/v5/market/tickers", {
+                "category": "linear",
+                "symbol": symbol,
+            })
+            return float(d["result"]["list"][0].get("turnover24h") or 0.0)
+        except Exception as e:
+            _logger_bybit.debug(f"[bybit_ticker_24h] {symbol} — {e}")
+            return 0.0
+
+    @staticmethod
+    def _combine_oi_histories(binance_hist: list, bybit_hist: list, current_price: float) -> tuple:
+        """
+        Combine Binance (USDT) + Bybit (base coins) OI histories into a single USDT series.
+        bybit_hist items have key 'oi_coins'; Bybit coins are converted via current_price.
+        Both lists must be oldest-first [{ts, oi_value/oi_coins}].
+        Alignment: each Binance bar matched to nearest Bybit bar within ±90s.
+        Returns (combined_list, bybit_aligned_coins) where combined_list has same
+        format as binance_hist [{ts, oi_value}] and bybit_aligned_coins is [float].
+        """
+        if not bybit_hist or current_price <= 0:
+            return binance_hist, [0.0] * len(binance_hist)
+
+        TOLERANCE_MS = 90_000
+        bybit_lookup = {x["ts"]: x["oi_coins"] for x in bybit_hist}
+        bybit_ts_sorted = sorted(bybit_lookup.keys())
+
+        combined = []
+        bybit_aligned = []
+
+        for bar in binance_hist:
+            b_ts = bar["ts"]
+            b_oi = bar["oi_value"]
+            by_coins = 0.0
+            for bt in bybit_ts_sorted:
+                if abs(bt - b_ts) <= TOLERANCE_MS:
+                    by_coins = bybit_lookup[bt]
+                    break
+            bybit_aligned.append(by_coins)
+            combined.append({"ts": b_ts, "oi_value": b_oi + by_coins * current_price})
+
+        return combined, bybit_aligned
+
+    @staticmethod
+    def _combine_klines_volume(binance_klines: list, bybit_klines: list) -> list:
+        """
+        Merge Bybit volume into Binance klines by matching open_time (±5 min tolerance).
+        Price/OHLC always from Binance. Only base-asset volume is summed.
+        Returns new list (binance_klines unchanged if bybit_klines is empty).
+        """
+        if not bybit_klines:
+            return binance_klines
+
+        TOLERANCE_MS = 300_000
+        bybit_lookup = {x["open_time"]: x["volume"] for x in bybit_klines}
+        bybit_ts_sorted = sorted(bybit_lookup.keys())
+
+        result = []
+        for bar in binance_klines:
+            b_ts = bar["open_time"]
+            by_vol = 0.0
+            for bt in bybit_ts_sorted:
+                if abs(bt - b_ts) <= TOLERANCE_MS:
+                    by_vol = bybit_lookup[bt]
+                    break
+            combined_bar = dict(bar)
+            combined_bar["volume"] = bar["volume"] + by_vol
+            result.append(combined_bar)
+
+        return result
+
+    # ── End Bybit methods ───────────────────────────────────────────────────────
 
     def funding(self, symbol: str) -> float:
         data = self.get("/fapi/v1/premiumIndex", {"symbol": symbol})
@@ -2221,7 +2377,13 @@ class BinanceScanner:
                 return True
         return False
 
-    def build_pending_setups_for_symbol(self, symbol: str, oi_1h_history: list = None) -> List[PendingSetup]:
+    def build_pending_setups_for_symbol(
+        self,
+        symbol: str,
+        oi_1h_history: list = None,
+        bybit_oi_ok: bool = False,
+        bybit_aligned_coins: list = None,
+    ) -> List[PendingSetup]:
         setups: List[PendingSetup] = []
         strategy_cfg = self.cfg.get("strategy", {})
 
@@ -2231,7 +2393,11 @@ class BinanceScanner:
                 setups.append(short_setup)
 
         if strategy_cfg.get("oi_range_breakout", {}).get("enabled", False):
-            orb_setups = self.build_pending_oi_range_breakout_setup(symbol, oi_1h_history)
+            orb_setups = self.build_pending_oi_range_breakout_setup(
+                symbol, oi_1h_history,
+                bybit_oi_ok=bybit_oi_ok,
+                bybit_aligned_coins=bybit_aligned_coins or [],
+            )
             setups.extend(orb_setups)
 
         return setups
@@ -2633,7 +2799,13 @@ class BinanceScanner:
         self.close_pending(pending_id, "CONFIRMED", "acc_cont_immediate_confirm", bars_waited=0)
         return [signal]
 
-    def build_pending_oi_range_breakout_setup(self, symbol: str, oi_1h_history: list | None) -> list:
+    def build_pending_oi_range_breakout_setup(
+        self,
+        symbol: str,
+        oi_1h_history: list | None,
+        bybit_oi_ok: bool = False,
+        bybit_aligned_coins: list = None,
+    ) -> list:
         """Build pending setups for oi_range_breakout strategy."""
         if not oi_1h_history:
             return []
@@ -2644,20 +2816,39 @@ class BinanceScanner:
         try:
             orb_cfg = self.cfg.get("oi_range_breakout", {})
 
-            # Fetch 1h klines
-            klines_1h = self.klines(symbol, "1h", limit=22)
-            if not klines_1h or len(klines_1h) < 22:
+            # Fetch Binance 1h klines (price authority)
+            klines_1h_binance = self.klines(symbol, "1h", limit=22)
+            if not klines_1h_binance or len(klines_1h_binance) < 22:
                 return []
 
-            # Call strategy
+            # Optionally fetch Bybit 1h klines and combine volume
+            klines_1h = klines_1h_binance
+            _bybit_vol_ok = False
+            if bybit_oi_ok and self.cfg.get("bybit", {}).get("enabled", True):
+                bybit_kl = self.bybit_klines_1h(symbol)
+                if len(bybit_kl) >= 22:
+                    klines_1h = self._combine_klines_volume(klines_1h_binance, bybit_kl)
+                    _bybit_vol_ok = True
+
+            # Compute per-exchange Bybit OI delta (BTC delta % == USDT delta % since price cancels)
+            _bybit_oi_delta_pct = 0.0
+            _aligned = bybit_aligned_coins or []
+            if bybit_oi_ok and len(_aligned) >= 13 and _aligned[-13] > 0:
+                _bybit_oi_delta_pct = (_aligned[-1] - _aligned[-13]) / _aligned[-13] * 100.0
+
+            # Smuggle Bybit metadata into config dict so strategy can report it
+            orb_cfg_ext = dict(orb_cfg)
+            orb_cfg_ext["_bybit_oi_ok"] = bybit_oi_ok
+            orb_cfg_ext["_bybit_vol_ok"] = _bybit_vol_ok
+            orb_cfg_ext["_bybit_oi_delta_pct"] = _bybit_oi_delta_pct
+
             from scanner.strategies.oi_range_breakout import detect_oi_range_breakout
 
-            signal_dict = detect_oi_range_breakout(symbol, klines_1h, oi_1h_history, orb_cfg)
+            signal_dict = detect_oi_range_breakout(symbol, klines_1h, oi_1h_history, orb_cfg_ext)
 
             if not signal_dict:
                 return []
 
-            # Wrap in PendingSetup
             setup = self._wrap_oi_range_breakout_signal(signal_dict)
             return [setup] if setup else []
 
@@ -2679,14 +2870,15 @@ class BinanceScanner:
         now_ms = int(time.time() * 1000)
         pending_id = f"ORB-{symbol}-{now_ms}"
 
-        # Format: oi_delta_pct=X | vol_ratio=X | range_width=X% | atr_ratio=X | score=X | band=X
+        _xex = "Y" if signal_dict.get("cross_exchange_confirmed") else "N"
         reason_tags = (
             f"oi_delta_pct={signal_dict.get('oi_delta_pct', 0):.2f}|"
             f"vol_ratio={signal_dict.get('vol_ratio', 0):.2f}|"
             f"range_width={signal_dict.get('range_width_pct', 0):.2f}%|"
             f"atr_ratio={signal_dict.get('atr_ratio', 0):.2f}|"
             f"score={signal_dict.get('score', 0)}|"
-            f"band={signal_dict.get('setup_quality_band', 'WEAK')}"
+            f"band={signal_dict.get('setup_quality_band', 'WEAK')}|"
+            f"xex={_xex}"
         )
 
         return PendingSetup(
@@ -2728,6 +2920,9 @@ class BinanceScanner:
             oi_prev=self._safe_orb_float(signal_dict.get("oi_prev")),
             oi_delta_pct=self._safe_orb_float(signal_dict.get("oi_delta_pct")),
             vol_ema20=self._safe_orb_float(signal_dict.get("vol_ema20")),
+            cross_exchange_confirmed=_xex,
+            bybit_oi_delta_pct=self._safe_orb_float(signal_dict.get("bybit_oi_delta_pct", 0.0)),
+            bybit_vol_ok="Y" if signal_dict.get("bybit_vol_ok") else "N",
         )
 
     def _process_oi_range_breakout_pending(self, row: dict, risk_cfg: dict) -> list:
@@ -2755,9 +2950,15 @@ class BinanceScanner:
 
         try:
             _ticker = self.get("/fapi/v1/ticker/24hr", {"symbol": symbol})
-            _vol_24h_usdt = float(_ticker.get("quoteVolume", 0))
+            _binance_vol_24h = float(_ticker.get("quoteVolume", 0))
         except Exception:
-            _vol_24h_usdt = 0.0
+            _binance_vol_24h = 0.0
+
+        _bybit_vol_24h = 0.0
+        if self.cfg.get("bybit", {}).get("enabled", True):
+            _bybit_vol_24h = self.bybit_ticker_24h(symbol)
+
+        _vol_24h_usdt = _binance_vol_24h + _bybit_vol_24h
 
         signal = Signal(
             signal_id=f"{symbol}-LONG-oi_range_breakout-{int(time.time() * 1000)}",
@@ -2820,6 +3021,8 @@ class BinanceScanner:
             vol_ema20=self._safe_orb_float(row.get("vol_ema20")),
             range_width_pct=self._safe_orb_float(row.get("range_width_pct")),
             vol_24h_usdt=_vol_24h_usdt,
+            cross_exchange_confirmed=str(row.get("cross_exchange_confirmed", "N")),
+            bybit_vol_24h_usdt=_bybit_vol_24h,
         )
 
         self.close_pending(row.get("pending_id", ""), "CONFIRMED", "orb_immediate_confirm", bars_waited=0)
@@ -3804,15 +4007,41 @@ class BinanceScanner:
 
         for sym in symbols:
             try:
-                # Fetch 15m OI (5 bars = 1h span) for oi_range_breakout
+                # Fetch 5m OI history (13 bars = 65 min span) for oi_range_breakout
                 oi_1h_history = None
+                _bybit_oi_ok = False
+                _bybit_aligned_coins: list = []
                 if self.cfg.get("strategy", {}).get("oi_range_breakout", {}).get("enabled", False):
                     try:
-                        oi_1h_history = self.oi_hist(sym, "5m", 13)
+                        oi_binance = self.oi_hist(sym, "5m", 13)
                     except Exception as e:
-                        print(f"[scan_once] {sym} — failed to fetch 15m OI: {e}")
+                        print(f"[scan_once] {sym} — failed to fetch Binance OI: {e}")
+                        oi_binance = None
 
-                setups = self.build_pending_setups_for_symbol(sym, oi_1h_history)
+                    if oi_binance:
+                        if self.cfg.get("bybit", {}).get("enabled", True):
+                            _bybit_raw = self.bybit_oi_hist(sym)
+                            if len(_bybit_raw) >= 13:
+                                # current price from tickers dict (already loaded this round)
+                                _cur_price = float(tickers.get(sym, {}).get("lastPrice", 0) or 0)
+                                if _cur_price > 0:
+                                    oi_1h_history, _bybit_aligned_coins = self._combine_oi_histories(
+                                        oi_binance, _bybit_raw, _cur_price
+                                    )
+                                    _bybit_oi_ok = True
+                                    print(f"[bybit OI] {sym} — combined OK (binance+bybit)")
+                                else:
+                                    oi_1h_history = oi_binance
+                            else:
+                                oi_1h_history = oi_binance
+                        else:
+                            oi_1h_history = oi_binance
+
+                setups = self.build_pending_setups_for_symbol(
+                    sym, oi_1h_history,
+                    bybit_oi_ok=_bybit_oi_ok,
+                    bybit_aligned_coins=_bybit_aligned_coins,
+                )
                 for p in setups:
                     p.regime_label = regime.regime_label
                     if p.side == "LONG":
