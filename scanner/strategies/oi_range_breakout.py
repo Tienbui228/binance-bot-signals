@@ -340,7 +340,7 @@ def detect_oi_range_breakout(
     if "_override_oi_delta_pct" in config:
         oi_delta_pct = float(config["_override_oi_delta_pct"])
 
-    oi_delta_abs_1h = oi_now - oi_1h_ago   # USDT absolute delta, informational only
+    oi_delta_abs_1h = oi_now - oi_1h_ago + float(config.get("_bybit_abs_usdt_delta", 0.0))  # Binance + Bybit USDT
 
     if oi_delta_pct < oi_spike_min_pct:
         logger.debug(

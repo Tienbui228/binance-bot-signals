@@ -2848,6 +2848,13 @@ class BinanceScanner:
 
             _max_oi_delta = max(_binance_oi_delta_pct, _bybit_oi_delta_pct) if bybit_oi_ok else _binance_oi_delta_pct
 
+            # Bybit OI abs delta in USDT: coins × last-closed 1h price
+            _bybit_abs_usdt_delta = 0.0
+            if bybit_oi_ok and len(_aligned) >= 13:
+                _price_1h = float(klines_1h_binance[-2].get("close", 0) or 0)
+                if _price_1h > 0:
+                    _bybit_abs_usdt_delta = (_aligned[-1] - _aligned[-13]) * _price_1h
+
             # Smuggle cross-exchange metadata into config dict so strategy can use it
             orb_cfg_ext = dict(orb_cfg)
             orb_cfg_ext["_bybit_oi_ok"] = bybit_oi_ok
@@ -2855,6 +2862,7 @@ class BinanceScanner:
             orb_cfg_ext["_bybit_oi_delta_pct"] = _bybit_oi_delta_pct
             orb_cfg_ext["_override_oi_delta_pct"] = _max_oi_delta
             orb_cfg_ext["_binance_oi_delta_pct"] = _binance_oi_delta_pct
+            orb_cfg_ext["_bybit_abs_usdt_delta"] = _bybit_abs_usdt_delta
 
             from scanner.strategies.oi_range_breakout import detect_oi_range_breakout
 
