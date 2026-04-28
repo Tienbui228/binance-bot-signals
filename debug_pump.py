@@ -80,7 +80,7 @@ DATA_DIR          = pump_cfg.get("watchlist", {}).get("data_dir", "data/pump_exh
 
 print(f"\ndebug_pump.py — token: {SYMBOL}")
 print(f"Thresholds: pump>={PUMP_PCT_MIN:.0%}, vol>={PUMP_VOL_MIN}x, "
-      f"peak<={PEAK_AGE_MAX_H}h, room>={ROOM_PCT_MIN:.0%}, mc<=${MC_MAX/1e6:.0f}M")
+      f"room>={ROOM_PCT_MIN:.0%}, mc<=${MC_MAX/1e6:.0f}M")
 
 # ── import strategy modules ───────────────────────────────────────────────────
 try:
@@ -100,7 +100,7 @@ http = _BinanceHttp(delay_sec=0.15, timeout_sec=10)
 # ═══════════════════════════════════════════════════════════════════════
 _section(f"GATE 0 — Universe filter  [{SYMBOL}]")
 
-# First try eligible_universe.json cache
+# Check eligible_universe.json cache — THIS is what the live bot actually uses
 cache_path = uf_cfg.get("cache_path", "data/eligible_universe.json")
 universe_eligible = None
 universe_from_cache = False
@@ -108,21 +108,31 @@ if os.path.exists(cache_path):
     try:
         with open(cache_path) as f:
             uf_data = json.load(f)
-        built_at = uf_data.get("built_at", "?")
-        _info("Cache found", f"built_at={built_at}")
+        built_at  = uf_data.get("built_at", "?")
+        n_eligible = len(uf_data.get("symbols", []))
+        n_excluded = len(uf_data.get("excluded", {}))
+        _info("eligible_universe.json", f"built_at={built_at}, eligible={n_eligible}, excluded={n_excluded}")
         if SYMBOL in uf_data.get("symbols", []):
             universe_eligible = True
             universe_from_cache = True
-            _pass("In eligible_universe.json cache")
+            _pass("In eligible_universe.json  (bot WILL scan this token)")
         elif SYMBOL in uf_data.get("excluded", {}):
             excl_reason = uf_data["excluded"][SYMBOL]
             universe_eligible = False
             universe_from_cache = True
-            _fail(f"Excluded in cache", f"reason={excl_reason}")
+            _fail("Excluded from eligible_universe.json  (bot SKIPS this token in discovery)",
+                  f"reason={excl_reason}")
+            print("  >>> FIX: rebuild universe cache (UniverseFilter.build_eligible_universe()) "
+                  "or wait for next 4h refresh")
         else:
-            _info("Not in cache (neither eligible nor excluded) — will check CoinGecko live")
+            _fail("NOT IN eligible_universe.json  (bot SKIPS this token — not checked at all)",
+                  "not in symbols[] nor excluded{}")
+            print("  >>> FIX: rebuild universe cache — token was not present when cache was built")
     except Exception as e:
         _info(f"Cache read error: {e}")
+else:
+    _info("eligible_universe.json NOT FOUND",
+          f"path={cache_path} — bot has not built universe cache yet, or running locally")
 
 if not universe_from_cache:
     # Live CoinGecko check — search for the base symbol
