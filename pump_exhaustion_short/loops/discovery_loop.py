@@ -3,6 +3,7 @@ import threading
 from typing import Dict, List, Optional
 
 from pump_exhaustion_short.shared.r2_binance_client import R2BinanceClient
+from pump_exhaustion_short.shared.market_cap_cache import MarketCapCache
 from pump_exhaustion_short.watchlist.watchlist_manager import WatchlistManager
 from pump_exhaustion_short.detectors.base_detector import detect_base
 from pump_exhaustion_short.detectors.pump_detector import detect_pump
@@ -13,20 +14,22 @@ def run_discovery_loop(client: R2BinanceClient,
                        cfg: Dict,
                        stop_event: threading.Event):
     interval_sec = cfg["runtime"]["discovery_interval_minutes"] * 60
+    mc_cfg = cfg.get("market_cap_filter", {})
+    mc_cache = MarketCapCache(mc_cfg) if mc_cfg.get("enabled", False) else None
     print(f"[Discovery] Loop started. Interval: {interval_sec}s")
     # Run immediately on start
-    _safe_run(client, wl_manager, cfg, None)
+    _safe_run(client, wl_manager, cfg, None, mc_cache)
     while not stop_event.is_set():
         stop_event.wait(timeout=interval_sec)
         if stop_event.is_set():
             break
-        _safe_run(client, wl_manager, cfg, None)
+        _safe_run(client, wl_manager, cfg, None, mc_cache)
     print("[Discovery] Loop stopped.")
 
 
-def _safe_run(client, wl_manager, cfg, limit_symbols):
+def _safe_run(client, wl_manager, cfg, limit_symbols, mc_cache=None):
     try:
-        run_discovery_once(client, wl_manager, cfg, limit_symbols)
+        run_discovery_once(client, wl_manager, cfg, limit_symbols, mc_cache)
     except Exception as e:
         import traceback
         print(f"[Discovery] run_once error: {e}")
@@ -36,7 +39,8 @@ def _safe_run(client, wl_manager, cfg, limit_symbols):
 def run_discovery_once(client: R2BinanceClient,
                        wl_manager: WatchlistManager,
                        cfg: Dict,
-                       limit_symbols: Optional[int] = None):
+                       limit_symbols: Optional[int] = None,
+                       mc_cache: Optional[MarketCapCache] = None):
     disc_cfg = cfg["discovery"]
     now_ms = int(time.time() * 1000)
 
@@ -74,8 +78,18 @@ def run_discovery_once(client: R2BinanceClient,
         eligible = eligible[:limit_symbols]
 
     max_watchlist = cfg.get("watchlist", {}).get("max_symbols", 50)
+    mc_cfg = cfg.get("market_cap_filter", {})
+    max_cap = mc_cfg.get("max_market_cap_usd", 500_000_000)
     added = 0
     processed = 0
+
+    # Refresh market cap cache once per discovery run (not per symbol)
+    _mc = mc_cache
+    if _mc is not None:
+        _mc.refresh_if_stale()
+        if not _mc.has_data():
+            print("[Discovery] MarketCapCache has no data — skipping G_D0 this run")
+            _mc = None
 
     # Skip symbols already active in watchlist
     active_symbols = {c["symbol"] for c in wl_manager.get_active_cases()}
@@ -87,6 +101,13 @@ def run_discovery_once(client: R2BinanceClient,
         # Skip if already active (non-EXCLUDED)
         if sym in active_symbols:
             continue
+
+        # G_D0: market cap gate — checked before fetching klines to save API calls
+        if _mc is not None:
+            cap_ok, mc_reason = _mc.is_eligible(sym, max_cap)
+            if not cap_ok:
+                _log_discovery(wl_manager, sym, info, mc_reason, False)
+                continue
 
         # Fetch 1h klines
         bars_1h = client.get_klines(sym, "1h", disc_cfg["peak_window_candles"])

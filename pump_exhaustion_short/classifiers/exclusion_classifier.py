@@ -17,6 +17,8 @@ _EXCLUSION_REASONS = {
     "ignition_not_found_before_peak": "base_invalid",
     "insufficient_bars_before_ignition": "base_invalid",
     "base_window_already_trending": "base_invalid",
+    "market_cap_too_large": "market_cap_too_large",
+    "market_cap_unknown": "market_cap_unknown",
 }
 
 

@@ -40,6 +40,15 @@ alert:
   telegram_token: ""
   telegram_chat_id: ""
 
+market_cap_filter:
+  enabled: true
+  max_market_cap_usd: 500000000     # 500M USD — market cap (circulating × price), KHÔNG phải FDV
+  cache_hours: 4
+  exclude_if_unknown: true          # không map được → exclude (safe side)
+  coingecko_base_url: "https://api.coingecko.com/api/v3"
+  pages_to_fetch: 3                 # 3 × 250 = 750 coins, đủ bắt top ~200
+  request_delay_sec: 1.5            # CoinGecko free tier: ~10 req/min
+
 binance:
   futures_base_url: "https://fapi.binance.com"
   request_timeout_sec: 10
