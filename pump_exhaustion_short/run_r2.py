@@ -4,6 +4,10 @@ import sys
 import threading
 import yaml
 
+# Ensure project root is in sys.path so `pump_exhaustion_short` is importable
+# regardless of how this script is invoked (python3 pump_exhaustion_short/run_r2.py)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 
 def main():
     cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
