@@ -17,10 +17,10 @@ from scanner.strategies.pump_exhaustion.alert import send_alert
 
 
 class PumpScanner:
-    def __init__(self, cfg: Dict, client):
+    def __init__(self, cfg: Dict, client, wl_manager: Optional[WatchlistManager] = None):
         self._cfg = cfg
         self._client_app = client  # BinanceScanner — used only for market_regime BTC klines
-        self._wl_manager = WatchlistManager(cfg)
+        self._wl_manager = wl_manager if wl_manager is not None else WatchlistManager(cfg)
         self._http = _BinanceHttp(
             delay_sec=cfg.get("binance", {}).get("request_delay_sec", 0.2),
             timeout_sec=cfg.get("binance", {}).get("request_timeout_sec", 10),
@@ -205,7 +205,8 @@ def _handle_retest_stage(case: Dict, bars_5m: List[Dict], cfg: Dict,
     breakdown_time = case.get("breakdown_candle_time") or case.get("p2_ts")
     breakdown_level = case.get("breakdown_level")
 
-    if not breakdown_time or not breakdown_level:
+    _sentinel = ("not_reached_yet", "not_evaluated", None, "")
+    if breakdown_time in _sentinel or breakdown_level in _sentinel:
         return {**context_updates, "case_state": "RETEST_WAITING"}
 
     try:

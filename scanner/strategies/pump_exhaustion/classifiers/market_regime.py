@@ -42,8 +42,6 @@ def classify_market_regime(client, watchlist_cases: List[Dict]) -> Dict:
             and ema20_slope < -0.002
             and alts_declining_pct >= 0.60):
         label, score = "BROAD_WEAKNESS", 2
-    elif btc_current < ema20_now and not (ema20_now < ema50_now):
-        label, score = "BTC_WEAK_ALTS_MIXED", 1
     elif btc_current < ema20_now:
         label, score = "BTC_WEAK_ALTS_MIXED", 1
     elif btc_current > ema20_now > ema50_now and ema20_slope > 0.002:
@@ -75,23 +73,10 @@ def _ema(series: List[float], period: int) -> List[float]:
     return pad + result
 
 
-def _compute_alts_declining(cases: List[Dict]) -> float:
-    """Fraction of active cases where current price is below their recorded current_price_at_scan."""
-    if not cases:
-        return 0.0
-    declining = 0
-    valid = 0
-    for c in cases:
-        try:
-            ref = float(c.get("current_price_at_scan") or 0)
-            cur = float(c.get("current_price_at_scan") or 0)
-        except (TypeError, ValueError):
-            continue
-        if ref > 0:
-            valid += 1
-            if cur < ref:
-                declining += 1
-    return declining / valid if valid > 0 else 0.0
+def _compute_alts_declining(_cases: List[Dict]) -> float:
+    # No live price to compare against — watchlist only stores price at last scan cycle.
+    # BROAD_WEAKNESS is gated by BTC signals; this component deferred to v2.
+    return 0.0
 
 
 def _regime_unclear() -> Dict:

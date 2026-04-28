@@ -8,11 +8,11 @@ from scanner.strategies.pump_exhaustion.watchlist.watchlist_manager import Watch
 
 
 class OutcomeUpdater:
-    def __init__(self, cfg: Dict, client):
+    def __init__(self, cfg: Dict, client, wl_manager: Optional[WatchlistManager] = None):
         self._cfg = cfg
         pump_cfg = get_pump_cfg(cfg)
         self._interval_sec = pump_cfg.get("outcome", {}).get("check_interval_minutes", 30) * 60
-        self._wl_manager = WatchlistManager(cfg)
+        self._wl_manager = wl_manager if wl_manager is not None else WatchlistManager(cfg)
         self._http = _BinanceHttp(
             delay_sec=cfg.get("binance", {}).get("request_delay_sec", 0.2),
             timeout_sec=cfg.get("binance", {}).get("request_timeout_sec", 10),

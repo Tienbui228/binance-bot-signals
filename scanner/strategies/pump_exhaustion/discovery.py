@@ -11,12 +11,13 @@ from scanner.strategies.pump_exhaustion.detectors.pump_detector import detect_pu
 
 
 class PumpDiscovery:
-    def __init__(self, cfg: Dict, universe_filter: UniverseFilter, client):
+    def __init__(self, cfg: Dict, universe_filter: UniverseFilter, client,
+                 wl_manager: Optional[WatchlistManager] = None):
         self._cfg = cfg
         self._uf = universe_filter
         pump_cfg = get_pump_cfg(cfg)
         self._interval_sec = pump_cfg.get("discovery", {}).get("interval_minutes", 60) * 60
-        self._wl_manager = WatchlistManager(cfg)
+        self._wl_manager = wl_manager if wl_manager is not None else WatchlistManager(cfg)
         self._http = _BinanceHttp(
             delay_sec=cfg.get("binance", {}).get("request_delay_sec", 0.2),
             timeout_sec=cfg.get("binance", {}).get("request_timeout_sec", 10),
@@ -47,7 +48,6 @@ class PumpDiscovery:
     def run_once(self, limit_symbols: Optional[int] = None):
         pump_cfg = get_pump_cfg(self._cfg)
         disc_cfg = pump_cfg.get("discovery", {})
-        now_ms = int(time.time() * 1000)
 
         print(f"[PumpDiscovery] Starting scan at {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())}")
 

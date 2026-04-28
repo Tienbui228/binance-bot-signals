@@ -356,10 +356,12 @@ class BinanceScanner:
         self._eligible_symbols: List[str] = []
         if _PUMP_EXHAUSTION_AVAILABLE and self.cfg.get("pump_exhaustion", {}).get("enabled", False):
             try:
+                from scanner.strategies.pump_exhaustion.watchlist.watchlist_manager import WatchlistManager as _PEWatchlistManager
                 self.universe_filter = UniverseFilter(self.cfg)
-                self.pump_discovery = PumpDiscovery(self.cfg, self.universe_filter, self)
-                self.pump_scanner = PumpScanner(self.cfg, self)
-                self.outcome_updater = OutcomeUpdater(self.cfg, self)
+                _shared_wl = _PEWatchlistManager(self.cfg)
+                self.pump_discovery = PumpDiscovery(self.cfg, self.universe_filter, self, wl_manager=_shared_wl)
+                self.pump_scanner = PumpScanner(self.cfg, self, wl_manager=_shared_wl)
+                self.outcome_updater = OutcomeUpdater(self.cfg, self, wl_manager=_shared_wl)
                 print("[PumpExhaustion] Initialized.")
             except Exception as _pe_init_err:
                 import traceback
