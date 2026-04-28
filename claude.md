@@ -1,7 +1,7 @@
 # CLAUDE.md — Binance Bot Signals Project
 
 > Read this file fully before touching any code. It exists to prevent wrong-file patches,
-> broken semantics, and architecture drift. Updated: 2026-04-22.
+> broken semantics, and architecture drift. Updated: 2026-04-28.
 
 ---
 
@@ -10,10 +10,11 @@
 - **Manual-trading signal bot** — not auto-trading. Signals go to a human via Telegram.
 - Python 3.12.3, `.venv` at repo root.
 - Live on Ubuntu VPS, runtime process is `oi_scanner.py` running inside a `screen` session.
-- Three active strategy families — keep them **always separate** in code, review, measurement:
+- Four active strategy families — keep them **always separate** in code, review, measurement:
   - `long_breakout_retest`
   - `short_exhaustion_retest`
   - `long_accumulation_continuation`
+  - `oi_range_breakout` ← primary focus since 2026-04-23; has Bybit OI + MAX formula + funding rate
 - Current working priority: **Daily Review Report V2** (downstream-only, no truth repair).
 
 ---
@@ -53,9 +54,11 @@ Some target modules exist but are wrappers/shims. Patching them instead of the r
 | Layer | **Real owner NOW** | Target owner later | Shim / wrapper (do NOT treat as real owner) |
 |---|---|---|---|
 | Runtime orchestration | `oi_scanner.py` | `app/scanner_runtime.py` | — |
+| Strategy — ORB | `scanner/strategies/oi_range_breakout.py` | same | — |
 | Strategy — long breakout | `scanner/strategies/long_breakout_retest.py` | same | — |
 | Strategy — short exhaustion | `scanner/strategies/short_exhaustion_retest.py` | same | — |
 | Strategy — long accumulation | `scanner/strategies/long_accumulation_continuation.py` | same | — |
+| Bybit API methods | `oi_scanner.py` (pragmatic; 6 methods: bybit_get, bybit_oi_hist, bybit_klines_1h, bybit_ticker_24h, bybit_funding, _combine_*) | separate Bybit client (target) | — |
 | Regime classify | `scanner/regime/classifier.py` | same | — |
 | Regime normalize/persist | `regime/regime_normalizer.py` | same | — |
 | Delivery metadata | `delivery/delivery_state_evaluator.py` | same | — |
@@ -64,16 +67,18 @@ Some target modules exist but are wrappers/shims. Patching them instead of the r
 | Lifecycle truth | `scanner/lifecycle.py` | `lifecycle/case_truth_service.py` | — |
 | Review stage capture | `scanner/review_service.py` + `review_capture_runtime.py` | `review/review_truth_service.py` | `review/review_truth_service.py` ← not real owner yet |
 | Report V2 rendering | `build_daily_review_pack.py` | `review/review_pack_builder.py` | `review/review_pack_builder.py` ← not real owner yet |
-| Legacy runtime models | `scanner/domain.py` | `contracts/*.py` | `contracts/*.py` ← target only; runtime still uses domain.py |
+| Legacy runtime models | `scanner/domain.py` | `contracts/*.py` | `contracts/*.py` ← target only; runtime still uses **`oi_scanner.py`** definitions (NOT domain.py) |
 | Storage/CSV infra | `scanner/storage.py` | same | — |
 | API/market math | `scanner/binance_client.py`, `scanner/market_math.py` | same | — |
+| ORB gate diagnostic | `debug_spk.py` (repo root) | same | — |
 | Phase R1 research | `scripts/run_daily_top_movers_research.py` + `research/top_movers/*` | same | — |
 
 ### Files that look canonical but are NOT the real owner yet
 - `dispatch/dispatch_router.py` — migration shim, do not patch for logic changes
 - `review/review_pack_builder.py` — future home, not active render owner
 - `review/review_truth_service.py` — future home, not active stage-truth owner
-- `contracts/*.py` — important for migration, but live runtime still flows through `scanner/domain.py`
+- `contracts/*.py` — important for migration, but live runtime still flows through `oi_scanner.py` dataclasses
+- `scanner/domain.py` — **stale legacy copies** of PendingSetup/Signal. Live `oi_scanner.py` definitions are the truth. Fields added to `oi_scanner.py` (e.g., `oi_delta_abs_1h`, `bybit_vol_24h_usdt`, `cross_exchange_confirmed`, `funding_pct`) are NOT in `scanner/domain.py`. Do not patch domain.py expecting live effect.
 
 ---
 
@@ -89,6 +94,10 @@ strategy:
 
 retest:
   enabled                             # disables full retest gate for long_breakout_retest
+
+bybit:
+  enabled: true                       # kill switch — false disables ALL Bybit fetching for ORB
+                                      # affects: OI combine, volume combine, vol_24h, funding rate
 
 review_snapshots:
   enabled
@@ -121,6 +130,17 @@ Never declare a patch complete without checking which config the running process
 **Report consumer only if output fields changed:** `build_daily_review_pack.py`
 **Do NOT start with:** report builder, dispatch shim, veto file
 
+### ORB signal missing / OI data wrong / Bybit not included
+**Primary:** `scanner/strategies/oi_range_breakout.py` (detection + MAX formula) + `oi_scanner.py` (`build_pending_oi_range_breakout_setup`, Bybit methods)
+**Config check:** `bybit.enabled` in `config.yaml`; `debug_spk.py` CFG must match `config.yaml`
+**Diagnostic:** run `python debug_spk.py` (change SYMBOL first) — shows which gate fails and actual values
+**Do NOT patch:** `scanner/domain.py` (stale copies, no live effect), `dispatch/dispatch_router.py`
+
+### Funding rate in ORB Telegram signal wrong or missing
+**Primary:** `oi_scanner.py` — `bybit_funding()` method, `_process_oi_range_breakout_pending()` (fetch block), `format_signal()` ORB block
+**Formula:** `funding_pct = binance_fr + bybit_fr` (current cycle, both in %)
+**Note:** `funding_pct` is fetched live at confirmation time, not stored at pending creation
+
 ### Regime label / fit looks wrong
 **Primary:** `scanner/regime/classifier.py` + `regime/regime_normalizer.py`
 **Also check:** `oi_scanner.py`, `scanner/lifecycle.py`, `contracts/regime_result.py`
@@ -152,9 +172,9 @@ Never declare a patch complete without checking which config the running process
 ### Adding a new field end-to-end
 Always touch in this order:
 1. Source layer owner (strategy/regime/delivery/veto/dispatch/lifecycle)
-2. `oi_scanner.py` integration path
-3. `scanner/domain.py` if runtime uses legacy dataclass
-4. Matching `contracts/*.py` for target contract
+2. `oi_scanner.py` integration path — dataclass definition, field lists (`signal_fields` / `pending_fields`), wrap/process functions
+3. `scanner/domain.py` **only if** the field is used by a non-ORB strategy that still flows through domain.py; for ORB fields, skip domain.py entirely
+4. Matching `contracts/*.py` for target contract (awareness only, does not affect live runtime)
 5. Persistence writer (`scanner/lifecycle.py` or review truth writer)
 6. Report builder if visible downstream
 
@@ -293,7 +313,7 @@ Located in `docs/` or project root:
 | `FIELD_PROPAGATION_MAP_V1.md` | Where each field is decided / propagated / persisted / rendered |
 | `binance_bot_detailed_code_mapping_audit_2026-04-05.md` | Real owner vs target owner per layer |
 | `CODE_OWNERSHIP_AND_CHANGE_IMPACT_MAP_V1.md` | Full repo change-impact map |
-| `CURRENT_CODE_TO_TARGET_MAPPING_REPORT_V2_1.md` | Report V2 implementation map |
+| `CURRENT_CODE_TO_TARGET_MAPPING_REPORT_V2_1.md` | Report V2 implementation map + real owner map for all layers (updated 2026-04-28) |
 | `RUNTIME_DEPLOY_TEST_GUARDRAILS.md` | Runtime patch validation rules |
 | `POST_PATCH_CHECKLIST.md` | Mandatory checklist after any runtime patch |
 | `WORKED_EXAMPLES_V1_1.md` | Concrete semantic examples for Report V2 |
@@ -409,3 +429,61 @@ CFG = {
 ```
 
 > Script này **không** sửa CSV, không ảnh hưởng bot đang chạy — chỉ đọc data từ Binance/CoinGecko và in kết quả.
+
+---
+
+## 15. Debug tool — pump_exhaustion gate diagnostic
+
+**File:** `debug_pump.py` (repo root)
+
+Script standalone dùng để trace tại sao 1 token **không** đi vào hệ thống `pump_exhaustion_short`. Chạy local, không cần bot đang chạy. Thresholds đọc trực tiếp từ `config.yaml`.
+
+### Cách dùng
+
+```bash
+# Mặc định dùng SYMBOL ở đầu file:
+python debug_pump.py
+
+# Hoặc override qua CLI:
+python debug_pump.py AEROUSDT
+python debug_pump.py BTC        # tự thêm USDT
+```
+
+### Gates được trace (theo thứ tự)
+
+| Gate | Điều kiện | Nguồn data |
+|------|-----------|------------|
+| UNIVERSE | Market cap ≤ 500M USD | CoinGecko API hoặc `data/eligible_universe.json` |
+| WATCHLIST | Token đã trong watchlist chưa? → hiện state + anchors | `data/pump_exhaustion/watchlist.json` |
+| D1 | Base detection valid (vol spike tìm thấy, window không trending) | 200 × 1h klines |
+| D2 | pump_pct ≥ 35% (giá từ base → peak) | 200 × 1h klines |
+| D3 | pump_vol_ratio ≥ 3x (vol tại peak vs avg 20 bars trước) | 200 × 1h klines |
+| D4 | peak_age_h ≤ 72h (peak chưa quá cũ) | 200 × 1h klines |
+| D5 | room_pct ≥ 15% (giá hiện tại vẫn còn đủ cao trên base) | 200 × 1h klines |
+| D8 | anchor order valid: p0_ts < p1_ts | timestamps |
+| SCANNER | 5m quote_vol_median ≥ 10,000 USDT | 288 × 5m klines |
+| OI | Snapshot OI 6h cuối | `/futures/data/openInterestHist` |
+
+Output `[PASS]` / `[FAIL]` / `[INFO]` cho từng gate với giá trị thực.
+
+### Khi nào dùng
+
+- User báo "token X không vào pump_exhaustion" → chạy script, đọc gate nào FAIL
+- Token đã trong watchlist → hiển thị state machine hiện tại (DISCOVERED / BREAKDOWN_CONFIRMED / RETEST_WAITING / FAILED_RETEST_CONFIRMED)
+- Cần biết pump_pct, room_pct, peak_age thực tế của 1 token
+
+### State machine của pump_exhaustion
+
+```
+DISCOVERED
+  → [detect_breakdown] → BREAKDOWN_CONFIRMED
+    → [detect_retest] → RETEST_WAITING → FAILED_RETEST_CONFIRMED
+      → [score_case] → OUTCOME_PENDING (signal fired nếu score ≥ 6/12)
+  → EXCLUDED (peak_too_old / room_too_small / false_break_reclaim / ...)
+```
+
+### Config thresholds
+
+Script đọc từ `config.yaml` sections `pump_exhaustion.discovery`, `pump_exhaustion.scan`, `universe_filter`. Khi thay đổi config, script tự cập nhật — không cần sửa tay.
+
+> Script này **không** sửa CSV, không ảnh hưởng bot đang chạy.
