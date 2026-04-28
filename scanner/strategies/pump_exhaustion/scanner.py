@@ -47,7 +47,7 @@ class PumpScanner:
             regime = {"regime_label": "NEUTRAL_MIXED", "regime_score": 0,
                       "btc_vs_ema20_pct": 0.0, "alts_declining_pct": 0.0, "regime_note": ""}
 
-        stale_removed = self._wl_manager.remove_stale(max_peak_age_h=72.0)
+        stale_removed = self._wl_manager.remove_stale(max_peak_age_h=720.0)  # 30 days housekeeping only
         if stale_removed:
             self._wl_manager.flush()
             self._wl_manager.sync_csvs()
@@ -112,9 +112,6 @@ class PumpScanner:
             peak_age_h = (now_ms - int(peak_time)) / 3_600_000 if peak_time else 9999
         except (TypeError, ValueError):
             peak_age_h = 9999
-        if peak_age_h > 72:
-            return {"case_state": "EXCLUDED", "exclusion_reason": "peak_too_old",
-                    "data_fetch_error": data_fetch_error}
 
         qvol_median = quote_vol_5m_median(bars_5m, last_n=20)
         min_qvol = scan_cfg.get("quote_vol_5m_min_usdt", 10000)

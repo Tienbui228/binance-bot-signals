@@ -289,11 +289,8 @@ if pump_vol_ratio >= PUMP_VOL_MIN:
 else:
     _fail(f"D3 pump_vol_ratio", f"{pump_vol_ratio:.2f}x < {PUMP_VOL_MIN}x")
 
-# D4 — peak age
-if peak_age_h <= PEAK_AGE_MAX_H:
-    _pass(f"D4 peak_age_h", f"{peak_age_h:.1f}h <= {PEAK_AGE_MAX_H}h")
-else:
-    _fail(f"D4 peak_age_h", f"{peak_age_h:.1f}h > {PEAK_AGE_MAX_H}h  (peak expired)")
+# D4 — peak age (gate removed — token may re-pump, not necessarily linear dump)
+_info(f"D4 peak_age_h (info only)", f"{peak_age_h:.1f}h  (gate removed)")
 
 # D5 — room
 if room_pct >= ROOM_PCT_MIN:
@@ -316,7 +313,6 @@ gates = {
     "D1 base_valid": base_valid,
     "D2 pump_pct":   pump_pct >= PUMP_PCT_MIN,
     "D3 pump_vol":   pump_vol_ratio >= PUMP_VOL_MIN,
-    "D4 peak_age":   peak_age_h <= PEAK_AGE_MAX_H,
     "D5 room":       room_pct >= ROOM_PCT_MIN,
     "D8 anchor":     anchor_valid,
 }

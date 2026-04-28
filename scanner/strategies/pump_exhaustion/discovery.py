@@ -102,7 +102,6 @@ class PumpDiscovery:
                 "G_D1_base_valid": base.get("base_validity_flag", False),
                 "G_D2_pump_pct": pump_pct >= disc_cfg.get("pump_pct_min", 0.35),
                 "G_D3_pump_vol": pump_vol_ratio >= disc_cfg.get("pump_vol_ratio_min", 3.0),
-                "G_D4_peak_age": peak_age_h <= disc_cfg.get("peak_age_max_hours", 72),
                 "G_D5_room": room_pct >= disc_cfg.get("room_pct_min", 0.15),
                 "G_D8_anchor_order": anchor_order_valid,
             }
