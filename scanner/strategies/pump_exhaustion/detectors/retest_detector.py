@@ -17,9 +17,8 @@ def detect_retest(bars_5m: List[Dict],
     taker_buy_max = scan_cfg.get("retest_taker_buy_max", 0.45)
     max_age_min = scan_cfg.get("signal_max_age_min", 15)
 
-    cutoff_ms = breakdown_time_ms + 24 * 3_600_000
-    post_breakdown = [b for b in bars_5m
-                      if b["open_time"] > breakdown_time_ms and b["open_time"] <= cutoff_ms]
+    # No upper cutoff — use all bars after breakdown_time in the fetched window
+    post_breakdown = [b for b in bars_5m if b["open_time"] > breakdown_time_ms]
 
     if not post_breakdown:
         return _no_retest()

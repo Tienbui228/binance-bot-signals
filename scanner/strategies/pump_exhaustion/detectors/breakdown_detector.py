@@ -30,9 +30,8 @@ def detect_breakdown(bars_5m: List[Dict],
     taker_sell_min = scan_cfg.get("breakdown_taker_sell_ratio_min", 0.52)
     false_break_bars = scan_cfg.get("false_break_reclaim_bars", 3)
 
-    # Filter: bars after peak within 24h
-    cutoff_ms = peak_time_ms + 24 * 3_600_000
-    post_peak = [b for b in bars_5m if b["open_time"] > peak_time_ms and b["open_time"] <= cutoff_ms]
+    # Filter: bars after peak (no upper cutoff — scanner fetches last 24h; older peaks use current market data)
+    post_peak = [b for b in bars_5m if b["open_time"] > peak_time_ms]
 
     if len(post_peak) < 6:
         return _no_breakdown()

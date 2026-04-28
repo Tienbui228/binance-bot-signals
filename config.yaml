@@ -162,7 +162,7 @@ universe_filter:
 
 # ——— pump_exhaustion_short strategy ———
 pump_exhaustion:
-  enabled: false                  # set true to activate
+  enabled: true                   # set true to activate
   discovery:
     interval_minutes: 60
     peak_window_candles: 200
