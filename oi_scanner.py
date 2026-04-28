@@ -25,6 +25,16 @@ try:
 except Exception:
     CaseReviewRuntime = None
 
+try:
+    from scanner.universe_filter import UniverseFilter
+    from scanner.strategies.pump_exhaustion.discovery import PumpDiscovery
+    from scanner.strategies.pump_exhaustion.scanner import PumpScanner
+    from scanner.strategies.pump_exhaustion.outcome import OutcomeUpdater
+    _PUMP_EXHAUSTION_AVAILABLE = True
+except Exception as _pump_import_err:
+    print(f"[pump_exhaustion] import failed (disabled): {_pump_import_err}")
+    _PUMP_EXHAUSTION_AVAILABLE = False
+
 BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
@@ -338,6 +348,24 @@ class BinanceScanner:
 
         self._ensure_storage_layout()
 
+        # Pump exhaustion init
+        self.universe_filter = None
+        self.pump_discovery = None
+        self.pump_scanner = None
+        self.outcome_updater = None
+        self._eligible_symbols: List[str] = []
+        if _PUMP_EXHAUSTION_AVAILABLE and self.cfg.get("pump_exhaustion", {}).get("enabled", False):
+            try:
+                self.universe_filter = UniverseFilter(self.cfg)
+                self.pump_discovery = PumpDiscovery(self.cfg, self.universe_filter, self)
+                self.pump_scanner = PumpScanner(self.cfg, self)
+                self.outcome_updater = OutcomeUpdater(self.cfg, self)
+                print("[PumpExhaustion] Initialized.")
+            except Exception as _pe_init_err:
+                import traceback
+                print(f"[PumpExhaustion] init failed: {_pe_init_err}")
+                traceback.print_exc()
+
     def _normalize_regime_label_value(self, regime_label: str = "", market_regime: str = "", btc_regime: str = "") -> str:
         raw = str(regime_label or market_regime or btc_regime or "").strip()
         if not raw:
@@ -641,6 +669,18 @@ class BinanceScanner:
             return float(d["result"]["list"][0].get("turnover24h") or 0.0)
         except Exception as e:
             _logger_bybit.debug(f"[bybit_ticker_24h] {symbol} — {e}")
+            return 0.0
+
+    def bybit_funding(self, symbol: str) -> float:
+        """Current funding rate from Bybit for symbol, in %. Returns 0.0 on error."""
+        try:
+            d = self.bybit_get("/v5/market/tickers", {
+                "category": "linear",
+                "symbol": symbol,
+            })
+            return float(d["result"]["list"][0].get("fundingRate", 0.0)) * 100.0
+        except Exception as e:
+            _logger_bybit.debug(f"[bybit_funding] {symbol} — {e}")
             return 0.0
 
     @staticmethod
@@ -1937,7 +1977,8 @@ class BinanceScanner:
                 f"Volume 1h: {s.vol_ratio:.2f}x EMA20\n"
                 f"Volume 24h: ${s.vol_24h_usdt/1_000_000:.1f}M\n"
                 f"Range: {s.range_height:.6g} ({s.range_width_pct:.2f}%)\n"
-                f"ATR Ratio: {s.atr_ratio:.2f}\n\n"
+                f"ATR Ratio: {s.atr_ratio:.2f}\n"
+                f"Funding: {s.funding_pct:+.4f}% (B+B)\n\n"
                 f"BTC 24h: {s.btc_24h_change_pct:+.2f}% ({s.btc_regime})\n"
                 f"Reason: {s.reason}\n\n"
                 f"{_orb_icon} #{s.symbol} #BINANCE"
@@ -2982,6 +3023,16 @@ class BinanceScanner:
 
         _vol_24h_usdt = _binance_vol_24h + _bybit_vol_24h
 
+        _binance_fr = 0.0
+        try:
+            _binance_fr = self.funding(symbol)
+        except Exception:
+            pass
+        _bybit_fr = 0.0
+        if self.cfg.get("bybit", {}).get("enabled", True):
+            _bybit_fr = self.bybit_funding(symbol)
+        _funding_pct = _binance_fr + _bybit_fr
+
         signal = Signal(
             signal_id=f"{symbol}-LONG-oi_range_breakout-{int(time.time() * 1000)}",
             timestamp_ms=int(row.get("signal_open_time") or 0),
@@ -2999,7 +3050,7 @@ class BinanceScanner:
             entry_low=signal_price,
             entry_high=signal_price,
             oi_jump_pct=float(row.get("oi_jump_pct", 0)),
-            funding_pct=0.0,
+            funding_pct=_funding_pct,
             vol_ratio=float(row.get("vol_ratio", 0)),
             retest_bars_waited=0,
             config_version=str(self.cfg.get("config_version", "")),
@@ -4121,6 +4172,18 @@ class BinanceScanner:
         if not confirmed and new_pending == 0:
             print("No valid setups this round.")
 
+        # Pump exhaustion scan (runs in main thread every scan cycle)
+        if self.pump_scanner is not None:
+            try:
+                if self.universe_filter is not None:
+                    self.universe_filter.refresh_if_stale()
+                    self._eligible_symbols = self.universe_filter.get_eligible_symbols()
+                self.pump_scanner.scan_once(self._eligible_symbols)
+            except Exception as _pe_scan_err:
+                import traceback
+                print(f"[PumpExhaustion] scan error: {_pe_scan_err}")
+                traceback.print_exc()
+
         pending_active = sum(1 for r in self.read_csv(self.pending_file) if r.get("status") == "PENDING")
         open_signals = sum(1 for r in self.read_csv(self.signals_file) if r.get("status") == "OPEN")
         print(
@@ -4277,7 +4340,28 @@ class BinanceScanner:
 
     def run_forever(self):
         import traceback
+        import threading
         sec = int(self.cfg["scanner"]["loop_seconds"])
+
+        # Start pump_exhaustion background threads
+        if self.pump_discovery is not None:
+            threading.Thread(
+                target=self.pump_discovery.run_loop,
+                name="pump_discovery",
+                daemon=True,
+            ).start()
+            print("[PumpExhaustion] Discovery thread started.")
+        if self.outcome_updater is not None:
+            threading.Thread(
+                target=self.outcome_updater.run_loop,
+                name="pump_outcome",
+                daemon=True,
+            ).start()
+            print("[PumpExhaustion] Outcome thread started.")
+        if self.universe_filter is not None:
+            self._eligible_symbols = self.universe_filter.get_eligible_symbols()
+            print(f"[PumpExhaustion] Universe: {len(self._eligible_symbols)} eligible symbols")
+
         while True:
             try:
                 self.scan_once()
