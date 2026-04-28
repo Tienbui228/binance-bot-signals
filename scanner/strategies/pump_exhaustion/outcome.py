@@ -91,7 +91,6 @@ class OutcomeUpdater:
                         "outcome_status": "1h_partial",
                         "case_state": "CLOSED_1H_READY",
                     })
-                    updated += 1
 
             effective_status = updates.get("outcome_status", outcome_status)
             if elapsed_h >= 4.0 and effective_status in ("1h_partial", "pending"):
@@ -121,10 +120,10 @@ class OutcomeUpdater:
                         "outcome_status": "4h_ready",
                         "case_state": "CLOSED_4H_READY",
                     })
-                    updated += 1
 
             if updates:
                 self._wl_manager.update_case(case["case_id"], updates)
+                updated += 1
 
         if updated:
             self._wl_manager.flush()

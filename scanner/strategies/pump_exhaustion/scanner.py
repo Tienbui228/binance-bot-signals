@@ -75,6 +75,16 @@ class PumpScanner:
         scan_cfg = pump_cfg.get("scan", {})
         now_ms = int(time.time() * 1000)
 
+        # Skip expensive API fetch for cases that have already fired — only update regime context.
+        if state in ("OUTCOME_PENDING", "CLOSED_1H_READY"):
+            return {
+                "regime_label": regime.get("regime_label"),
+                "regime_score": regime.get("regime_score"),
+                "btc_vs_ema20_pct": regime.get("btc_vs_ema20_pct"),
+                "alts_declining_pct": regime.get("alts_declining_pct"),
+                "regime_note": regime.get("regime_note"),
+            }
+
         bars_5m = self._http.klines(symbol, "5m", scan_cfg.get("candles_5m", 288))
         bars_1h = self._http.klines(symbol, "1h", 80)
         oi_hist = self._http.oi_hist(symbol, period="1h", limit=24)
@@ -151,7 +161,7 @@ class PumpScanner:
             return _handle_discovered(case, bars_5m, {"scan": scan_cfg}, context_updates, now_ms, peak_time)
 
         if state in ("BREAKDOWN_CONFIRMED", "RETEST_WAITING"):
-            return _handle_retest_stage(case, bars_5m, {"scan": scan_cfg}, context_updates, now_ms,
+            return _handle_retest_stage(case, bars_5m, {"scan": scan_cfg}, context_updates,
                                         base_price_median, peak_high)
 
         if state == "FAILED_RETEST_CONFIRMED":
@@ -204,7 +214,7 @@ def _handle_discovered(case: Dict, bars_5m: List[Dict], cfg: Dict,
 
 
 def _handle_retest_stage(case: Dict, bars_5m: List[Dict], cfg: Dict,
-                          context_updates: Dict, now_ms: int,
+                          context_updates: Dict,
                           base_price_median: float, peak_high: float) -> Dict:
     breakdown_time = case.get("breakdown_candle_time") or case.get("p2_ts")
     breakdown_level = case.get("breakdown_level")
