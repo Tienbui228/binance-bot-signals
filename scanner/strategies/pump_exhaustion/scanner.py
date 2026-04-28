@@ -14,6 +14,10 @@ from scanner.strategies.pump_exhaustion.classifiers.oi_regime_classifier import 
 from scanner.strategies.pump_exhaustion.classifiers.market_regime import classify_market_regime
 from scanner.strategies.pump_exhaustion.scoring.scorer import score_case
 from scanner.strategies.pump_exhaustion.alert import send_alert
+try:
+    from scanner.strategies.pump_exhaustion.lifecycle_bridge import write_to_lifecycle as _write_lifecycle
+except Exception:
+    _write_lifecycle = None
 
 
 class PumpScanner:
@@ -151,7 +155,7 @@ class PumpScanner:
                                         base_price_median, peak_high)
 
         if state == "FAILED_RETEST_CONFIRMED":
-            return _handle_scoring(case, self._cfg, context_updates)
+            return _handle_scoring(case, self._cfg, context_updates, app=self._client_app)
 
         return context_updates
 
@@ -235,7 +239,7 @@ def _handle_retest_stage(case: Dict, bars_5m: List[Dict], cfg: Dict,
     }
 
 
-def _handle_scoring(case: Dict, cfg: Dict, context_updates: Dict) -> Dict:
+def _handle_scoring(case: Dict, cfg: Dict, context_updates: Dict, app=None) -> Dict:
     merged = {**case, **context_updates}
     score_result = score_case(merged)
 
@@ -251,6 +255,13 @@ def _handle_scoring(case: Dict, cfg: Dict, context_updates: Dict) -> Dict:
     min_score = pump_cfg.get("scoring", {}).get("min_score_to_alert", 6)
     if score_result.get("score_total", 0) >= min_score:
         _fire_alert(merged, score_result, cfg)
+        if app is not None and _write_lifecycle is not None:
+            try:
+                _write_lifecycle(app, merged, score_result)
+            except Exception as _lc_err:
+                import traceback
+                print(f"[pump_lifecycle] write failed {merged.get('symbol')}: {_lc_err}")
+                traceback.print_exc()
 
     return {
         **context_updates,
