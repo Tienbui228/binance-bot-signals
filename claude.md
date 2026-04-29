@@ -1,7 +1,7 @@
 # CLAUDE.md — Binance Bot Signals Project
 
 > Read this file fully before touching any code. It exists to prevent wrong-file patches,
-> broken semantics, and architecture drift. Updated: 2026-04-29.
+> broken semantics, and architecture drift. Updated: 2026-04-30.
 
 ---
 
@@ -548,3 +548,61 @@ Script chạy theo đúng thứ tự sau (12 checks — phải pass hết):
 Exits 0 nếu tất cả pass, exits 1 nếu có lỗi.
 
 **Lưu ý:** Pipeline phải chạy trên VPS (venv build trên Linux, không chạy được local Windows).
+
+---
+
+## 17. Phase R1 — V4-2 pipeline run + validation
+
+> **Status: V4-2 IMPLEMENTED — 2026-04-30. Pending validation run.**
+
+V4-2 fixes Layer 2 BLOCKING: thêm 10 fields bị thiếu vào `case_builder.py` — không cần API call thêm, tất cả lấy từ `AnchorPoint.bar` dict và timestamp arithmetic.
+
+**Fields được thêm:**
+
+| Field | Source | Note |
+|---|---|---|
+| `p1_price` | `anchors.p1.bar["high"]` | HIGH của P1 bar (peak_high) |
+| `peak_close` | `anchors.p1.bar["close"]` | CLOSE của P1 bar |
+| `p3_price` | `anchors.p3.bar["close"]` | CLOSE của P3 retest bar, null khi không có retest |
+| `bars_p0_to_p1` | timestamp arithmetic (1h) | Thường = 0 (sub-hour detection) |
+| `bars_p1_to_p2` | timestamp arithmetic (1h) | Thường = 0 (fast breakdown) |
+| `bars_p2_to_p3` | timestamp arithmetic (5m) | Null khi p3_ts_ms là None |
+| `bars_p3_to_p4` | timestamp arithmetic (5m) | Null khi p3/p4 là None |
+| `anchor_reason_code` | map từ `anchor_validity_reason` | `clean` / `p1_fallback` / `p1_p2_fallback` / `unknown:*` |
+| `peak_age_hours` | hours từ P1 đến cuối research day | Float |
+| `case_spans_days` | P0.date ≠ P4.date | Thay thế default `False` của V4-1 |
+
+**Files đã thay đổi:**
+- `research/top_movers/case_builder.py` — thêm 10 fields + 3 helpers (`_map_anchor_reason_code`, `_compute_peak_age_hours`, `_compute_case_spans_days`)
+- `research/top_movers/signature_ledger.py` — update `_LAYER_CONTRACT[2]["required_fields"]`
+- `scripts/validate_v4_2.py` — validation script mới (11 checks)
+
+### Bước 1: Chạy pipeline để tạo data
+
+```bash
+python3 scripts/run_daily_top_movers_research.py --day YYYY-MM-DD
+```
+
+### Bước 2: Validate V4-2 output
+
+```bash
+python3 scripts/validate_v4_2.py YYYY-MM-DD
+```
+
+| # | Check | Pass condition |
+|---|-------|----------------|
+| 1 | 10 new Layer 2 fields có mặt | Không all-null (p3_price/bars_p2_to_p3/bars_p3_to_p4/peak_age_hours null_ok) |
+| 2 | `p1_price >= peak_close` | 0 cases vi phạm |
+| 3 | `p1_price` vs `range_high` | WARN nếu >30% cases lệch >5% (không phải hard fail) |
+| 4 | Bar counts non-negative | `bars_p0_to_p1 >= 0`, `bars_p2_to_p3 >= 1` cho non-null |
+| 5 | `anchor_reason_code` values hợp lệ | Trong `{clean, p1_fallback, p1_p2_fallback}` hoặc `unknown:*` |
+| 6 | `anchor_reason_code` correlation | `all_anchors_auto_detected` → `clean`, 0 mismatch |
+| 7 | `peak_age_hours` dương | 0 negative values |
+| 8 | `case_spans_days` không null | 0 null values |
+| 9 | Layer 2 full coverage | 20 required fields đều có mặt trong schema |
+| 10 | Phase 2 fields không biến mất | `resolution_label`, `anchor_conflict_flag`, etc. vẫn còn |
+| 11 | V4-1 fields backward compat | `research_case_id`, `selection_horizon`, etc. vẫn còn |
+
+Exits 0 nếu tất cả pass, exits 1 nếu có lỗi.
+
+**Lưu ý:** `bars_p0_to_p1 == 0` cho phần lớn cases là đúng (P0→P1 xảy ra trong cùng 1h bar). Không phải bug.
