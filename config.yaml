@@ -19,7 +19,7 @@ scanner:
   - ETHUSDT
 strategy:
   short_exhaustion_retest:
-    enabled: false
+    enabled: true
   oi_range_breakout:
     enabled: true
 thresholds:
