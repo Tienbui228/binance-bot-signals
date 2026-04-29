@@ -958,6 +958,142 @@ def compute_exhaustion_pack(
 
 
 # ---------------------------------------------------------------------------
+# V4-5 — Layer 7 OI Regime + Funding Fields
+# ---------------------------------------------------------------------------
+
+def compute_oi_regime_pack(
+    symbol: str,
+    p3_ts_ms,
+    p2_price,
+    p3_price,
+    research_day: str,
+    client,
+) -> Dict:
+    """Compute 8 Layer 7 OI/funding fields. Makes at most 2 API calls when p3_ts_ms available."""
+    from datetime import datetime, timezone, timedelta
+
+    _EMPTY: Dict = {
+        "oi_regime_label":           "OI_UNCLEAR_OR_MISSING",
+        "oi_change_1h_pct":          None,
+        "oi_change_4h_pct":          None,
+        "oi_data_unavailable":       False,
+        "oi_context_note":           "",
+        "latest_funding_rate_raw":   None,
+        "latest_funding_rate_pct":   None,
+        "funding_rate_bucket":       None,
+    }
+
+    # 30-day limit check
+    thirty_days_ago_ms = None
+    try:
+        today = datetime.strptime(research_day, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        thirty_days_ago_ms = int((today - timedelta(days=30)).timestamp() * 1000)
+    except Exception:
+        pass
+
+    p3_ms = None
+    if p3_ts_ms:
+        try:
+            p3_ms = int(p3_ts_ms)
+        except (TypeError, ValueError):
+            pass
+
+    if p3_ms is None:
+        result = dict(_EMPTY)
+        result["oi_context_note"] = "no_p3_timestamp"
+        return result
+
+    oi_unavailable = (
+        thirty_days_ago_ms is not None and p3_ms < thirty_days_ago_ms
+    )
+
+    if oi_unavailable:
+        result = dict(_EMPTY)
+        result["oi_data_unavailable"] = True
+        result["oi_regime_label"]     = "OI_UNCLEAR_OR_MISSING"
+        result["oi_context_note"]     = "oi_history_beyond_30day_limit"
+        result.update(_compute_funding_fields(_safe_fetch_funding(symbol, p3_ms, client)))
+        return result
+
+    # Fetch OI changes (1 API call covers 1h and 4h)
+    try:
+        oi_data = client.fetch_oi_changes(symbol, end_ts_ms=p3_ms)
+        oi_1h = oi_data.get("oi_change_1h_pct")
+        oi_4h = oi_data.get("oi_change_4h_pct")
+    except Exception:
+        oi_1h = None
+        oi_4h = None
+
+    # Fetch funding rate (1 API call)
+    funding_raw = _safe_fetch_funding(symbol, p3_ms, client)
+
+    # OI regime classification using P2→P3 price direction as proxy
+    price_direction_negative = False
+    if p3_price is not None and p2_price is not None and p2_price > 0:
+        p2_to_p3_change = (float(p3_price) - float(p2_price)) / float(p2_price) * 100
+        price_direction_negative = p2_to_p3_change < 0
+
+    if oi_1h is None:
+        oi_regime = "OI_UNCLEAR_OR_MISSING"
+        oi_note = "oi_fetch_failed"
+    elif abs(oi_1h) <= 2.0 and price_direction_negative:
+        oi_regime = "OI_STABLE_PRICE_FAILS"
+        oi_note = ""
+    elif oi_1h > 0 and price_direction_negative:
+        oi_regime = "OI_EXPANSION_PRICE_DOWN"
+        oi_note = ""
+    elif oi_1h < 0 and price_direction_negative:
+        oi_regime = "OI_CONTRACTION_AFTER_DUMP"
+        oi_note = ""
+    else:
+        oi_regime = "OI_UNCLEAR_OR_MISSING"
+        oi_note = "price_not_falling_at_p3"
+
+    return {
+        "oi_regime_label":     oi_regime,
+        "oi_change_1h_pct":    oi_1h,
+        "oi_change_4h_pct":    oi_4h,
+        "oi_data_unavailable": oi_unavailable,
+        "oi_context_note":     oi_note,
+        **_compute_funding_fields(funding_raw),
+    }
+
+
+def _safe_fetch_funding(symbol: str, p3_ms: int, client) -> Optional[float]:
+    try:
+        return client.fetch_funding_rate_at(symbol, end_ts_ms=p3_ms)
+    except Exception:
+        return None
+
+
+def _compute_funding_fields(funding_raw: Optional[float]) -> Dict:
+    """Convert raw funding decimal to pct and bucket. Both representations always persisted."""
+    if funding_raw is None:
+        return {
+            "latest_funding_rate_raw": None,
+            "latest_funding_rate_pct": None,
+            "funding_rate_bucket":     None,
+        }
+
+    funding_pct = round(funding_raw * 100, 6)
+
+    if funding_raw < -0.0001:
+        bucket = "negative"
+    elif funding_raw <= 0.0001:
+        bucket = "neutral"
+    elif funding_raw <= 0.0005:
+        bucket = "slightly_long"
+    else:
+        bucket = "crowded_long"
+
+    return {
+        "latest_funding_rate_raw": round(funding_raw, 6),
+        "latest_funding_rate_pct": funding_pct,
+        "funding_rate_bucket":     bucket,
+    }
+
+
+# ---------------------------------------------------------------------------
 # V4-4 — Layer 5 P3 Tradability Fields
 # ---------------------------------------------------------------------------
 

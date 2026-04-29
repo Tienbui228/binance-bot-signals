@@ -2741,11 +2741,19 @@ _LAYER_CONTRACT: Dict[int, Dict] = {
     7: {
         "name": "Context / Regime / Crowding Layer",
         "required_fields": [
-            # Present:
+            # Original 7 fields:
             "research_regime", "btc_24h_change_pct", "alt_breadth_pct",
             "taker_imbalance_at_p2",
-            # Not yet in case schema:
             "btc_change_15m_pct", "btc_change_1h_pct", "market_volatility_proxy",
+            # V4-5: OI regime + funding (8 new fields):
+            "oi_regime_label",
+            "oi_change_1h_pct",
+            "oi_change_4h_pct",
+            "oi_data_unavailable",
+            "oi_context_note",
+            "latest_funding_rate_raw",
+            "latest_funding_rate_pct",
+            "funding_rate_bucket",
         ],
     },
     8: {

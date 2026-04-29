@@ -50,6 +50,7 @@ from research.top_movers.proxy_features import (
     compute_retest_volume_decay_ratio,
     compute_exhaustion_pack,
     compute_p3_tradability,
+    compute_oi_regime_pack,
 )
 from research.top_movers.io import image_path, safe_round
 
@@ -676,6 +677,17 @@ def build_case_row(
         outcome_measured_from = "p3_price_fallback"
     _tradability["outcome_measured_from"] = outcome_measured_from
     row.update(_tradability)
+
+    # --- V4-5: Layer 7 OI Regime + Funding ---
+    _oi_regime = compute_oi_regime_pack(
+        symbol       = move.symbol,
+        p3_ts_ms     = anchors.p3.ts_ms if anchors.p3 else None,
+        p2_price     = float(anchors.p2.bar["close"]) if anchors.p2 and anchors.p2.bar else None,
+        p3_price     = row.get("p3_price"),
+        research_day = move.research_day,
+        client       = client,
+    )
+    row.update(_oi_regime)
 
     return row
 

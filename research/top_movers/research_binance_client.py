@@ -387,6 +387,81 @@ class ResearchBinanceClient:
         except Exception:
             return None
 
+    # ------------------------------------------------------------------
+    # V4-5: OI history + funding rate (point-in-time fetches)
+    # ------------------------------------------------------------------
+
+    def fetch_oi_history(self, symbol: str, end_ts_ms: int, limit: int = 49) -> List[Dict]:
+        """Fetch OI history ending at end_ts_ms.
+
+        Uses sumOpenInterest (contract count), not sumOpenInterestValue (USD),
+        so that OI change pct reflects actual position changes not price moves.
+        Returns list of dicts ordered oldest→newest with keys: timestamp (int ms), oi_value (float).
+        """
+        try:
+            data = self._get(
+                "/futures/data/openInterestHist",
+                {
+                    "symbol":  symbol,
+                    "period":  "5m",
+                    "limit":   limit,
+                    "endTime": end_ts_ms,
+                },
+            )
+            return [
+                {
+                    "timestamp": int(item.get("timestamp", 0)),
+                    "oi_value":  float(item.get("sumOpenInterest", 0)),
+                }
+                for item in data
+            ]
+        except Exception:
+            return []
+
+    def fetch_oi_changes(self, symbol: str, end_ts_ms: int) -> Dict:
+        """Compute 1h and 4h OI change pct in a single API call (limit=49).
+
+        Returns: {"oi_change_1h_pct": float|None, "oi_change_4h_pct": float|None}
+        """
+        bars = self.fetch_oi_history(symbol, end_ts_ms, limit=49)
+        result = {"oi_change_1h_pct": None, "oi_change_4h_pct": None}
+
+        if len(bars) < 13:
+            return result
+
+        oi_now    = bars[-1]["oi_value"]
+        oi_1h_ago = bars[-13]["oi_value"]   # 12 × 5m = 60 min
+
+        if oi_1h_ago and oi_1h_ago > 0:
+            result["oi_change_1h_pct"] = round(
+                (oi_now - oi_1h_ago) / oi_1h_ago * 100, 4
+            )
+
+        if len(bars) >= 49:
+            oi_4h_ago = bars[-49]["oi_value"]   # 48 × 5m = 240 min
+            if oi_4h_ago and oi_4h_ago > 0:
+                result["oi_change_4h_pct"] = round(
+                    (oi_now - oi_4h_ago) / oi_4h_ago * 100, 4
+                )
+
+        return result
+
+    def fetch_funding_rate_at(self, symbol: str, end_ts_ms: int) -> Optional[float]:
+        """Fetch the most recent funding rate at or before end_ts_ms.
+
+        Returns raw decimal (e.g. 0.0003), NOT percentage. Returns None on failure.
+        """
+        try:
+            raw = self._get(
+                "/fapi/v1/fundingRate",
+                {"symbol": symbol, "endTime": end_ts_ms, "limit": 1},
+            )
+            if raw and len(raw) > 0:
+                return float(raw[0].get("fundingRate", 0))
+            return None
+        except Exception:
+            return None
+
     def fetch_coingecko_market_caps(self, symbols: List[str]) -> Dict[str, Optional[float]]:
         """Batch CoinGecko market cap lookup for Binance symbols.
 
