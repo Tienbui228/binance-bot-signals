@@ -2679,6 +2679,7 @@ _LAYER_CONTRACT: Dict[int, Dict] = {
             "p1_price", "peak_close", "p3_price",
             "bars_p0_to_p1", "bars_p1_to_p2", "bars_p2_to_p3", "bars_p3_to_p4",
             "anchor_reason_code", "peak_age_hours", "case_spans_days",
+            "p1_low",
         ],
     },
     3: {

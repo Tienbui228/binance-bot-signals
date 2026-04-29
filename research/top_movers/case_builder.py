@@ -48,6 +48,7 @@ from research.top_movers.proxy_features import (
     compute_flow_composite,
     compute_btc_context_fields,
     compute_retest_volume_decay_ratio,
+    compute_exhaustion_pack,
 )
 from research.top_movers.io import image_path, safe_round
 
@@ -270,6 +271,7 @@ def build_case_row(
     image_results: Dict,
     btc_bars_15m: Optional[List[Dict]] = None,
     btc_bars_1h: Optional[List[Dict]] = None,
+    bars_1h: Optional[List[Dict]] = None,
     v4_selection_meta: Optional[Dict] = None,
 ) -> Dict:
     """Build one row for daily_top_mover_cases.csv."""
@@ -465,9 +467,10 @@ def build_case_row(
         "p0_price": pr_or(anchors.p0), "p2_price": pr_or(anchors.p2), "p4_price": pr_or(anchors.p4),
         "range_high": safe_round(anchors.range_high, 6), "range_low": safe_round(anchors.range_low, 6),
         "range_expansion_ratio": range_exp,
-        # V4-2: Anchor price fields (from AnchorPoint.bar — no extra API calls)
+        # V4-2/V4-3: Anchor price fields (from AnchorPoint.bar — no extra API calls)
         "p1_price":    float(anchors.p1.bar["high"])  if anchors.p1  else None,
         "peak_close":  float(anchors.p1.bar["close"]) if anchors.p1  else None,
+        "p1_low":      float(anchors.p1.bar["low"])   if anchors.p1  else None,  # V4-3
         "p3_price":    float(anchors.p3.bar["close"]) if anchors.p3  else None,
         # V4-2: Bar counts (1h resolution for P0→P2, 5m for P2→P4)
         "bars_p0_to_p1": max(0, (anchors.p1.ts_ms - anchors.p0.ts_ms) // (60 * 60 * 1000))
@@ -637,6 +640,20 @@ def build_case_row(
         "live_universe_eligible_flag":  _v4.get("live_universe_eligible_flag", False),
         "universe_mismatch_reason":     _v4.get("universe_mismatch_reason", ""),
     })
+
+    # --- V4-3: Layer 3 Exhaustion Pack ---
+    _exhaust = compute_exhaustion_pack(
+        symbol=move.symbol,
+        p0_price=float(anchors.p0.bar["close"]) if anchors.p0 and anchors.p0.bar else None,
+        p0_ts_ms=anchors.p0.ts_ms if anchors.p0 else None,
+        p1_ts_ms=anchors.p1.ts_ms if anchors.p1 else None,
+        p1_price=row.get("p1_price"),
+        peak_close=row.get("peak_close"),
+        p1_low=row.get("p1_low"),
+        p2_ts_ms=anchors.p2.ts_ms if anchors.p2 else None,
+        bars_1h=bars_1h or [],
+    )
+    row.update(_exhaust)
 
     return row
 

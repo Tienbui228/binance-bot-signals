@@ -753,3 +753,205 @@ def compute_btc_context_fields(
             )
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# V4-3 — Layer 3 Exhaustion Measurement
+# ---------------------------------------------------------------------------
+
+_ONE_HOUR_MS = 3_600_000
+_EMA_PERIOD_EXHAUST = 20
+_WICK_CLUSTER_N = 5          # bars before P1 for wick cluster scan
+_WICK_CLUSTER_THRESH = 0.4   # upper_wick_ratio threshold
+_BLOWOFF_BASELINE_N = 20     # baseline bars for blowoff ratio
+_BLOWOFF_MIN_BARS = 3        # minimum bars to compute blowoff
+
+
+def _compute_ema(values: List[float], period: int) -> List[Optional[float]]:
+    """EMA series. Seed = SMA of first `period` values. Returns same-length list."""
+    n = len(values)
+    result: List[Optional[float]] = [None] * n
+    if n < period:
+        return result
+    k = 2.0 / (period + 1)
+    ema = sum(values[:period]) / period
+    result[period - 1] = ema
+    for i in range(period, n):
+        ema = values[i] * k + ema * (1 - k)
+        result[i] = ema
+    return result
+
+
+def compute_exhaustion_pack(
+    symbol: str,
+    p0_price: Optional[float],
+    p0_ts_ms: Optional[int],
+    p1_ts_ms: Optional[int],
+    p1_price: Optional[float],
+    peak_close: Optional[float],
+    p1_low: Optional[float],
+    p2_ts_ms: Optional[int],
+    bars_1h: List[Dict],
+) -> Dict:
+    """All 10 Layer 3 exhaustion fields. Returns EMPTY dict on guard failure.
+
+    bars_1h: pre-fetched 1h klines (dicts with keys: open_time, high, low,
+             close, volume). No new API call is made inside this function.
+    """
+    _EMPTY = {
+        "pre_break_extension_pct_from_local_base": None,
+        "pre_break_extension_pct_from_vwap":       None,
+        "pre_break_extension_pct_from_ema":        None,
+        "peak_upper_wick_ratio":                   None,
+        "wick_cluster_count_last_n_bars":          0,
+        "blowoff_volume_ratio":                    None,
+        "close_location_near_low_score":           None,
+        "failed_continuation_count":               0,
+        "exhaustion_strength_raw":                 None,
+        "exhaustion_strength_bucket":              None,
+    }
+
+    if not bars_1h or p1_ts_ms is None:
+        return _EMPTY
+
+    # Locate P1 bar — the 1h bar containing p1_ts_ms (5m open_time)
+    p1_bar_idx = None
+    for i, bar in enumerate(bars_1h):
+        if bar["open_time"] <= p1_ts_ms < bar["open_time"] + _ONE_HOUR_MS:
+            p1_bar_idx = i
+            break
+    if p1_bar_idx is None:
+        return _EMPTY
+
+    p1_1h_bar = bars_1h[p1_bar_idx]
+
+    # Locate P2 bar
+    p2_bar_idx = None
+    if p2_ts_ms is not None:
+        for i, bar in enumerate(bars_1h):
+            if bar["open_time"] <= p2_ts_ms < bar["open_time"] + _ONE_HOUR_MS:
+                p2_bar_idx = i
+                break
+
+    # Locate P0 bar
+    p0_bar_idx = None
+    if p0_ts_ms is not None:
+        for i, bar in enumerate(bars_1h):
+            if bar["open_time"] <= p0_ts_ms < bar["open_time"] + _ONE_HOUR_MS:
+                p0_bar_idx = i
+                break
+
+    # [1] pre_break_extension_pct_from_local_base = (p1_price - p0_price) / p0_price * 100
+    pbe_local = None
+    if p1_price is not None and p0_price is not None and abs(p0_price) > _EPS:
+        pbe_local = round((p1_price - p0_price) / p0_price * 100.0, 4)
+
+    # [2] pre_break_extension_pct_from_vwap
+    #     VWAP over bars_1h[p0_bar_idx .. p1_bar_idx] inclusive
+    pbe_vwap = None
+    if p0_bar_idx is not None:
+        vwap_bars = bars_1h[p0_bar_idx: p1_bar_idx + 1]
+        total_vol = sum(b["volume"] for b in vwap_bars)
+        if total_vol > _EPS:
+            vwap_val = sum(
+                ((b["high"] + b["low"] + b["close"]) / 3.0) * b["volume"]
+                for b in vwap_bars
+            ) / total_vol
+            if p1_price is not None and abs(vwap_val) > _EPS:
+                pbe_vwap = round((p1_price - vwap_val) / vwap_val * 100.0, 4)
+
+    # [3] pre_break_extension_pct_from_ema
+    #     EMA20 of close, all bars_1h up to and including P1 bar (no lookahead)
+    pbe_ema = None
+    closes_to_p1 = [b["close"] for b in bars_1h[: p1_bar_idx + 1]]
+    if len(closes_to_p1) >= _EMA_PERIOD_EXHAUST:
+        ema_series = _compute_ema(closes_to_p1, _EMA_PERIOD_EXHAUST)
+        ema_at_p1 = ema_series[p1_bar_idx] if p1_bar_idx < len(ema_series) else None
+        if ema_at_p1 is not None and abs(ema_at_p1) > _EPS and p1_price is not None:
+            pbe_ema = round((p1_price - ema_at_p1) / ema_at_p1 * 100.0, 4)
+
+    # [4] peak_upper_wick_ratio = (p1_price - peak_close) / (p1_price - p1_low)
+    #     Uses P1 5m bar OHLC directly (not the 1h bar)
+    peak_upper_wick = None
+    if p1_price is not None and peak_close is not None and p1_low is not None:
+        bar_range = p1_price - p1_low
+        if bar_range > _EPS:
+            peak_upper_wick = round((p1_price - peak_close) / bar_range, 4)
+        else:
+            peak_upper_wick = 0.0  # doji bar
+
+    # [5] wick_cluster_count_last_n_bars
+    #     Count of 1h bars in [p1_bar_idx-5 : p1_bar_idx) with upper_wick_ratio >= 0.4
+    wick_start = max(0, p1_bar_idx - _WICK_CLUSTER_N)
+    wick_window = bars_1h[wick_start: p1_bar_idx]
+    wick_cluster = sum(1 for b in wick_window if upper_wick_ratio(b) >= _WICK_CLUSTER_THRESH)
+
+    # [6] blowoff_volume_ratio = P1_1h_bar volume / mean(baseline vols)
+    #     Baseline = up to 20 bars before P1 bar
+    blowoff_ratio = None
+    bl_start = max(0, p1_bar_idx - _BLOWOFF_BASELINE_N)
+    baseline_bars = bars_1h[bl_start: p1_bar_idx]
+    if len(baseline_bars) >= _BLOWOFF_MIN_BARS:
+        avg_vol = sum(b["volume"] for b in baseline_bars) / len(baseline_bars)
+        if avg_vol > _EPS:
+            blowoff_ratio = round(p1_1h_bar["volume"] / avg_vol, 4)
+
+    # [7] close_location_near_low_score = 1 - (peak_close - p1_low) / (p1_price - p1_low)
+    #     Score near 1 = close near low (bearish exhaustion); near 0 = close near high
+    close_loc = None
+    if p1_price is not None and peak_close is not None and p1_low is not None:
+        bar_range = p1_price - p1_low
+        if bar_range > _EPS:
+            close_loc = round(
+                max(0.0, min(1.0, 1.0 - (peak_close - p1_low) / bar_range)), 4
+            )
+        else:
+            close_loc = 0.5  # doji — neutral
+
+    # [8] failed_continuation_count
+    #     Bars in bars_1h (p1_bar_idx+1 .. p2_bar_idx) where close < open
+    failed_cont = 0
+    if p2_bar_idx is not None and p2_bar_idx > p1_bar_idx + 1:
+        between = bars_1h[p1_bar_idx + 1: p2_bar_idx]
+        failed_cont = sum(1 for b in between if b["close"] < b["open"])
+
+    # [9-10] exhaustion_strength_raw + bucket
+    #        Weighted composite; weights renormalized automatically for None components
+    _wick_clust_norm = min(wick_cluster / 5.0, 1.0)  # always float
+    _blowoff_norm = (
+        min(max((blowoff_ratio - 1.0) / 4.0, 0.0), 1.0)
+        if blowoff_ratio is not None else None
+    )
+    _failed_norm = min(failed_cont / 3.0, 1.0)  # always float
+
+    raw_score = _weighted_sum([
+        (0.30, peak_upper_wick),
+        (0.20, _wick_clust_norm),
+        (0.25, _blowoff_norm),
+        (0.15, close_loc),
+        (0.10, _failed_norm),
+    ])
+    if raw_score is not None:
+        raw_score = round(raw_score, 4)
+
+    bucket = None
+    if raw_score is not None:
+        if raw_score >= 0.65:
+            bucket = "STRONG"
+        elif raw_score >= 0.35:
+            bucket = "MODERATE"
+        else:
+            bucket = "WEAK"
+
+    return {
+        "pre_break_extension_pct_from_local_base": pbe_local,
+        "pre_break_extension_pct_from_vwap":       pbe_vwap,
+        "pre_break_extension_pct_from_ema":        pbe_ema,
+        "peak_upper_wick_ratio":                   peak_upper_wick,
+        "wick_cluster_count_last_n_bars":          wick_cluster,
+        "blowoff_volume_ratio":                    blowoff_ratio,
+        "close_location_near_low_score":           close_loc,
+        "failed_continuation_count":               failed_cont,
+        "exhaustion_strength_raw":                 raw_score,
+        "exhaustion_strength_bucket":              bucket,
+    }

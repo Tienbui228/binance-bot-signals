@@ -150,6 +150,7 @@ def process_token(client, token_bar, side, rank, research_day, day_start_ms, day
             top_mover_rank=rank, top_mover_bucket=bucket, image_results=image_results,
             btc_bars_15m=btc_bars_15m or [],
             btc_bars_1h=btc_bars_1h or [],
+            bars_1h=bars_1h or [],
             v4_selection_meta=v4_selection_meta,
         )
 

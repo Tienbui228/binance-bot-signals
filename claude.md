@@ -606,3 +606,44 @@ python3 scripts/validate_v4_2.py YYYY-MM-DD
 Exits 0 nếu tất cả pass, exits 1 nếu có lỗi.
 
 **Lưu ý:** `bars_p0_to_p1 == 0` cho phần lớn cases là đúng (P0→P1 xảy ra trong cùng 1h bar). Không phải bug.
+
+---
+
+## 18. Mandatory code audit after every implementation
+
+**Audit là bước bắt buộc sau khi code xong, trước khi báo task hoàn thành.**
+
+### Quy trình audit
+
+Sau khi implement xong toàn bộ files, đọc lại từng đoạn code đã viết và kiểm tra:
+
+| Hạng mục | Những gì cần kiểm tra |
+|---|---|
+| **Dead code** | Variables được tính nhưng không bao giờ dùng (ví dụ: assign rồi không reference) |
+| **Index / off-by-one** | Array slicing, list indexing, range() bounds |
+| **None propagation** | Mọi path có thể trả về None — caller có guard không? |
+| **Type assumptions** | Dict key access (`bar["high"]`) vs list index (`bar[2]`) — phải khớp với data source thực tế |
+| **Guard completeness** | Tất cả edge cases (empty list, None input, zero divisor) đều được handle |
+| **Stale comments** | Comment nói "V4-2" nhưng code là V4-3, comment nói "not yet in schema" nhưng đã có |
+| **Weight/formula integrity** | Weighted sum weights cộng lại = 1.0 (hoặc được renormalize đúng), formula direction đúng |
+| **Backward compat** | Fields cũ không bị xóa hay rename trong quá trình thêm fields mới |
+
+### Cách thực hiện
+
+1. Đọc lại từng file đã modify — **không bỏ qua file nào**, kể cả file chỉ sửa 1 dòng
+2. Với mỗi function mới: trace qua ít nhất 2 code paths (happy path + failure path)
+3. Chạy quick smoke test bằng Python inline nếu có thể (không cần full pipeline)
+4. Báo cáo rõ: bugs tìm thấy, bugs đã fix, những gì verify là đúng
+
+### Ví dụ bugs thường gặp (từ V4-3, 2026-04-30)
+
+- **Dead variable**: `_pbe_norm` được tính nhưng không có trong `_weighted_sum` — detect bằng cách đọc lại toàn bộ function và trace từng variable
+- **Stale comment**: `# V4-2:` bao gồm V4-3 field — detect bằng cách đọc comment và so với code thực
+
+### Khi nào bắt buộc
+
+- Sau bất kỳ implementation nào, kể cả patch nhỏ 1 dòng
+- Trước khi báo "done" với user
+- Trước khi chạy validation script trên VPS
+
+**Không được báo task hoàn thành mà không audit.**
