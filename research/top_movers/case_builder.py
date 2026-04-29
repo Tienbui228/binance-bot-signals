@@ -49,6 +49,7 @@ from research.top_movers.proxy_features import (
     compute_btc_context_fields,
     compute_retest_volume_decay_ratio,
     compute_exhaustion_pack,
+    compute_p3_tradability,
 )
 from research.top_movers.io import image_path, safe_round
 
@@ -273,6 +274,7 @@ def build_case_row(
     btc_bars_1h: Optional[List[Dict]] = None,
     bars_1h: Optional[List[Dict]] = None,
     v4_selection_meta: Optional[Dict] = None,
+    client=None,
 ) -> Dict:
     """Build one row for daily_top_mover_cases.csv."""
 
@@ -654,6 +656,26 @@ def build_case_row(
         bars_1h=bars_1h or [],
     )
     row.update(_exhaust)
+
+    # --- V4-4: Layer 5 P3 Tradability ---
+    _tradability = compute_p3_tradability(
+        symbol=move.symbol,
+        p3_ts_ms=anchors.p3.ts_ms if anchors.p3 else None,
+        retest_depth_vs_break_pct=rfp.retest_depth_vs_break_pct,
+        retest_reject_wick_ratio=rfp.retest_reject_wick_ratio,
+        retest_close_back_above_break_flag=rfp.retest_close_back_above_break_flag,
+        bars_to_retest=rfp.bars_to_retest,
+        retest_pack_available=rfp.pack_available,
+        breakdown_level=anchors.range_low,
+        client=client,
+    )
+    # Fallback: if entry bar not in kline window, use p3_price from V4-2
+    outcome_measured_from = "live_entry_price_proxy"
+    if _tradability.get("live_entry_price_proxy") is None and row.get("p3_price"):
+        _tradability["live_entry_price_proxy"] = row["p3_price"]
+        outcome_measured_from = "p3_price_fallback"
+    _tradability["outcome_measured_from"] = outcome_measured_from
+    row.update(_tradability)
 
     return row
 

@@ -955,3 +955,165 @@ def compute_exhaustion_pack(
         "exhaustion_strength_raw":                 raw_score,
         "exhaustion_strength_bucket":              bucket,
     }
+
+
+# ---------------------------------------------------------------------------
+# V4-4 — Layer 5 P3 Tradability Fields
+# ---------------------------------------------------------------------------
+
+_LIQUIDITY_MIN_USDT  = 10_000
+_STOP_BUFFER         = 0.01        # 1% above breakdown_level for short stop
+_MAX_SIGNAL_AGE_MIN  = 15
+_MIN_RR              = 1.5
+_MAX_ENTRY_ABOVE_BREAK_PCT = 2.0   # entry must be <= breakdown_level * 1.02
+_RETEST_TOL_PCT      = 2.0         # retest within ±2% of breakdown_level
+
+
+def compute_p3_tradability(
+    symbol: str,
+    p3_ts_ms,
+    retest_depth_vs_break_pct,
+    retest_reject_wick_ratio,
+    retest_close_back_above_break_flag,
+    bars_to_retest,
+    retest_pack_available,
+    breakdown_level,
+    client,
+) -> Dict:
+    """Compute 9 P3 tradability fields (Layer 5 V4-4).
+
+    Makes 1 API call (5m klines around P3) when p3_ts_ms is available.
+    Returns dict of all 9 fields. Returns EMPTY dict (all None) on no retest or fetch failure.
+    """
+    EMPTY = {
+        "quote_vol_5m_median_at_p3_usdt":   None,
+        "live_liquidity_gate_pass":          None,
+        "p3_detectable_in_live_mode_flag":   None,
+        "live_signal_age_min":               None,
+        "live_entry_price_proxy":            None,
+        "live_stop_price_proxy":             None,
+        "live_rr_conservative":              None,
+        "entry_feasible_flag":               None,
+        "entry_feasible_reason":             "no_retest",
+    }
+
+    if not p3_ts_ms or not retest_pack_available or client is None:
+        return EMPTY
+
+    FIVE_MIN_MS = 300_000
+    try:
+        p3_ms = int(p3_ts_ms)
+    except (TypeError, ValueError):
+        return EMPTY
+
+    # Step 1: fetch 5m klines around P3 (1 API call)
+    try:
+        bars_5m = client.get_klines(
+            symbol=symbol,
+            interval="5m",
+            start_ms=p3_ms - 2 * FIVE_MIN_MS,
+            end_ms=p3_ms + 3 * FIVE_MIN_MS,
+            limit=6,
+        )
+        if not bars_5m:
+            return EMPTY
+    except Exception:
+        return EMPTY
+
+    # Step 2: quote_vol_5m_median_at_p3_usdt — median quote_volume across fetched bars
+    quote_vols = []
+    for bar in bars_5m:
+        try:
+            qv = float(bar["quote_volume"])
+            if qv > 0:
+                quote_vols.append(qv)
+        except (KeyError, ValueError, TypeError):
+            pass
+
+    if quote_vols:
+        sorted_qv = sorted(quote_vols)
+        n = len(sorted_qv)
+        median_qvol = sorted_qv[n // 2] if n % 2 == 1 else (sorted_qv[n // 2 - 1] + sorted_qv[n // 2]) / 2
+        median_qvol = round(median_qvol, 2)
+    else:
+        median_qvol = None
+
+    # Step 3: live_liquidity_gate_pass
+    liq_gate = (median_qvol >= _LIQUIDITY_MIN_USDT) if median_qvol is not None else None
+
+    # Step 4: live_entry_price_proxy — close of the 5m bar AFTER P3 bar
+    entry_bar_open_ms = p3_ms + FIVE_MIN_MS
+    live_entry_price = None
+    for bar in bars_5m:
+        try:
+            if int(bar["open_time"]) == entry_bar_open_ms:
+                live_entry_price = float(bar["close"])
+                break
+        except (KeyError, ValueError, TypeError):
+            pass
+
+    # Step 5: live_signal_age_min = bars_to_retest × 5
+    signal_age_min = None
+    if bars_to_retest is not None:
+        try:
+            signal_age_min = int(bars_to_retest) * 5
+        except (TypeError, ValueError):
+            pass
+
+    # Step 6: live_stop_price_proxy — 1% above breakdown_level (SHORT: stop above entry)
+    live_stop_price = None
+    if breakdown_level and breakdown_level > 0:
+        live_stop_price = round(float(breakdown_level) * (1 + _STOP_BUFFER), 8)
+
+    # Step 7: live_rr_conservative — for SHORT: risk = stop − entry, target = entry − 1.5×risk
+    live_rr = None
+    if live_entry_price is not None and live_stop_price is not None:
+        risk = live_stop_price - live_entry_price  # positive when stop > entry (correct for short)
+        if risk > 0:
+            live_rr = round(1.5 * risk / risk, 4)   # = 1.5 by construction; kept explicit for clarity
+
+    # Step 8: p3_detectable_in_live_mode_flag — 4 conditions
+    cond1_depth = (
+        retest_depth_vs_break_pct is not None
+        and abs(float(retest_depth_vs_break_pct)) <= _RETEST_TOL_PCT
+    )
+    cond2_rejection = (
+        retest_reject_wick_ratio is not None
+        and float(retest_reject_wick_ratio) > 0
+    )
+    cond3_no_reclaim = (
+        retest_close_back_above_break_flag is not None
+        and str(retest_close_back_above_break_flag).strip().upper() == "N"
+    )
+    cond4_liquidity = liq_gate is True
+
+    p3_detectable = all([cond1_depth, cond2_rejection, cond3_no_reclaim, cond4_liquidity])
+
+    # Step 9: entry_feasible_flag + entry_feasible_reason
+    reasons = []
+    if not p3_detectable:
+        reasons.append("p3_not_detectable")
+    if signal_age_min is None or signal_age_min > _MAX_SIGNAL_AGE_MIN:
+        reasons.append("signal_too_old")
+    if live_rr is None or live_rr < _MIN_RR:
+        reasons.append("rr_too_low")
+    if live_entry_price is not None and breakdown_level:
+        if live_entry_price > float(breakdown_level) * (1 + _MAX_ENTRY_ABOVE_BREAK_PCT / 100):
+            reasons.append("entry_price_too_high")
+    if not cond4_liquidity:
+        reasons.append("liquidity_insufficient")
+
+    entry_feasible = (len(reasons) == 0)
+    entry_feasible_reason = reasons[0] if reasons else "feasible"
+
+    return {
+        "quote_vol_5m_median_at_p3_usdt":   median_qvol,
+        "live_liquidity_gate_pass":          liq_gate,
+        "p3_detectable_in_live_mode_flag":   p3_detectable,
+        "live_signal_age_min":               signal_age_min,
+        "live_entry_price_proxy":            round(live_entry_price, 8) if live_entry_price is not None else None,
+        "live_stop_price_proxy":             live_stop_price,
+        "live_rr_conservative":              live_rr,
+        "entry_feasible_flag":               entry_feasible,
+        "entry_feasible_reason":             entry_feasible_reason,
+    }

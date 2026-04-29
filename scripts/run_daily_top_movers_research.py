@@ -152,6 +152,7 @@ def process_token(client, token_bar, side, rank, research_day, day_start_ms, day
             btc_bars_1h=btc_bars_1h or [],
             bars_1h=bars_1h or [],
             v4_selection_meta=v4_selection_meta,
+            client=client,
         )
 
         anchor_rows = build_anchor_snapshot_rows(case_id, research_day, symbol, anchors, proxy)

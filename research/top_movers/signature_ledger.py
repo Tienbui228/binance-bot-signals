@@ -2711,12 +2711,21 @@ _LAYER_CONTRACT: Dict[int, Dict] = {
     5: {
         "name": "Retest Fail / Reclaim Layer",
         "required_fields": [
-            # Present (proxy only):
+            # Present (pre-V4-4):
             "reclaim_break_4h_YN",
-            # Not yet in case schema:
             "reclaim_pct", "retest_depth_vs_break_pct",
             "retest_duration_bars", "retest_volume_decay_ratio",
             "retest_rejection_quality",
+            # V4-4: P3 tradability fields:
+            "quote_vol_5m_median_at_p3_usdt",
+            "live_liquidity_gate_pass",
+            "p3_detectable_in_live_mode_flag",
+            "live_signal_age_min",
+            "live_entry_price_proxy",
+            "live_stop_price_proxy",
+            "live_rr_conservative",
+            "entry_feasible_flag",
+            "entry_feasible_reason",
         ],
     },
     6: {
