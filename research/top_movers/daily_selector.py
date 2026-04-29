@@ -21,7 +21,7 @@ This module is downstream-only and does not write to live bot files.
 
 import sys
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 from research.top_movers.io import (
     day_window_ms,
@@ -213,6 +213,294 @@ def select_daily_top_movers(
         total_eligible_alts=total_eligible,
         positive_alts=positive_alts,
     )
+
+
+# ---------------------------------------------------------------------------
+# V4-1: Enriched selection helpers
+# ---------------------------------------------------------------------------
+
+def _assign_ranks_to_tickers(all_tickers: List[Dict]) -> None:
+    """Assign rank_abs_change_24h and rank_volume_24h to each ticker dict in-place."""
+    sorted_by_abs = sorted(all_tickers, key=lambda t: abs(t.get("price_change_pct", 0)), reverse=True)
+    for rank_idx, t in enumerate(sorted_by_abs, start=1):
+        t["rank_abs_change_24h"] = rank_idx
+
+    sorted_by_vol = sorted(all_tickers, key=lambda t: t.get("quote_vol_24h_usdt", 0), reverse=True)
+    for rank_idx, t in enumerate(sorted_by_vol, start=1):
+        t["rank_volume_24h"] = rank_idx
+
+
+def _existing_selection_to_v4_cases(
+    result: DailySelectionResult,
+    ticker_lookup: Dict[str, Dict],
+) -> List[Dict]:
+    """Convert gainers/losers from DailySelectionResult into V4 case dicts."""
+    cases: List[Dict] = []
+
+    def _make(token_bar: TokenDailyBar, side: str, rank: int) -> Dict:
+        sym = token_bar.symbol
+        ticker = ticker_lookup.get(sym, {})
+        horizon = "1d_gainers" if side == "LONG" else "1d_losers"
+        bucket  = "top_gainers" if side == "LONG" else "top_losers"
+        vol = ticker.get("quote_vol_24h_usdt") or token_bar.quote_volume
+        h = token_bar.day_high
+        l = token_bar.day_low
+        o = token_bar.day_open
+        return {
+            "symbol":               sym,
+            "side":                 side,
+            "selection_horizon":    horizon,
+            "selection_window":     "rolling_24h",
+            "top_mover_bucket":     bucket,
+            "top_mover_rank":       rank,
+            "rank_abs_change_24h":  ticker.get("rank_abs_change_24h"),
+            "rank_volume_24h":      ticker.get("rank_volume_24h"),
+            "daily_return_pct":     token_bar.daily_return_pct,
+            "week_change_pct":      None,
+            "quote_vol_24h_usdt":   vol,
+            "notional_volume_usd":  vol,
+            "day_high":             h,
+            "day_low":              l,
+            "day_open":             o,
+            "day_close":            token_bar.day_close,
+            "day_range_pct":        (h - l) / l * 100 if l > 0 else None,
+            "intraday_expansion_pct": (h - l) / o * 100 if o > 0 else None,
+            "also_in_7d_top10":     False,
+            "also_in_1d_top10":     False,
+            "liquidity_ok":         vol >= 1_000_000,
+            "_token_bar":           token_bar,
+        }
+
+    for rank, token_bar in enumerate(result.gainers, start=1):
+        cases.append(_make(token_bar, "LONG", rank))
+    for rank, token_bar in enumerate(result.losers, start=1):
+        cases.append(_make(token_bar, "SHORT", rank))
+    return cases
+
+
+def _build_1d_dump_cases(
+    all_tickers: List[Dict],
+    ticker_lookup: Dict[str, Dict],
+    top_n: int = 10,
+) -> List[Dict]:
+    """Top N tokens by 24h price decline, excluding BTC/ETH and stablecoins."""
+    candidates = [
+        t for t in all_tickers
+        if t["price_change_pct"] < 0
+        and t["symbol"] not in _ALWAYS_EXCLUDE
+        and not _is_stablecoin(t["symbol"])
+    ]
+    sorted_dump = sorted(candidates, key=lambda t: t["price_change_pct"])[:top_n]
+
+    result: List[Dict] = []
+    for rank_idx, t in enumerate(sorted_dump, start=1):
+        sym = t["symbol"]
+        h, l, o = t["day_high"], t["day_low"], t["day_open"]
+        vol = t["quote_vol_24h_usdt"]
+        result.append({
+            "symbol":               sym,
+            "side":                 "SHORT",
+            "selection_horizon":    "1d",
+            "selection_window":     "rolling_24h",
+            "top_mover_bucket":     "top_dumpers_1d",
+            "top_mover_rank":       rank_idx,
+            "rank_abs_change_24h":  t.get("rank_abs_change_24h"),
+            "rank_volume_24h":      t.get("rank_volume_24h"),
+            "daily_return_pct":     t["price_change_pct"],
+            "week_change_pct":      None,
+            "quote_vol_24h_usdt":   vol,
+            "notional_volume_usd":  vol,
+            "day_high":             h,
+            "day_low":              l,
+            "day_open":             o,
+            "day_close":            t["day_close"],
+            "day_range_pct":        (h - l) / l * 100 if l > 0 else None,
+            "intraday_expansion_pct": (h - l) / o * 100 if o > 0 else None,
+            "also_in_7d_top10":     False,
+            "also_in_1d_top10":     False,
+            "liquidity_ok":         vol >= 1_000_000,
+            "_token_bar": TokenDailyBar(
+                symbol=sym,
+                day_open=o,
+                day_close=t["day_close"],
+                day_high=h,
+                day_low=l,
+                daily_return_pct=t["price_change_pct"],
+                quote_volume=vol,
+                data_ok=True,
+            ),
+        })
+    return result
+
+
+def _build_7d_dump_cases(
+    all_tickers: List[Dict],
+    client: Any,
+    ticker_lookup: Dict[str, Dict],
+    top_n: int = 10,
+) -> List[Dict]:
+    """Top N tokens by 7-day price decline. Fetches daily klines per candidate."""
+    candidates = [
+        t for t in all_tickers
+        if t["price_change_pct"] < -5.0
+        and t["symbol"] not in _ALWAYS_EXCLUDE
+        and not _is_stablecoin(t["symbol"])
+    ]
+
+    with_7d: List[Dict] = []
+    for t in candidates:
+        sym = t["symbol"]
+        change_7d = client.fetch_7d_change_pct(sym)
+        if change_7d is not None and change_7d < 0:
+            with_7d.append({**t, "week_change_pct": change_7d})
+
+    sorted_7d = sorted(with_7d, key=lambda t: t["week_change_pct"])[:top_n]
+
+    result: List[Dict] = []
+    for rank_idx, t in enumerate(sorted_7d, start=1):
+        sym = t["symbol"]
+        # Skip if not in ticker_lookup (suspended / missing 24h data)
+        if sym not in ticker_lookup:
+            continue
+        h, l, o = t["day_high"], t["day_low"], t["day_open"]
+        vol = t["quote_vol_24h_usdt"]
+        result.append({
+            "symbol":               sym,
+            "side":                 "SHORT",
+            "selection_horizon":    "7d",
+            "selection_window":     "rolling_7d",
+            "top_mover_bucket":     "top_dumpers_7d",
+            "top_mover_rank":       rank_idx,
+            "rank_abs_change_24h":  t.get("rank_abs_change_24h"),
+            "rank_volume_24h":      t.get("rank_volume_24h"),
+            "daily_return_pct":     t["price_change_pct"],
+            "week_change_pct":      t["week_change_pct"],
+            "quote_vol_24h_usdt":   vol,
+            "notional_volume_usd":  vol,
+            "day_high":             h,
+            "day_low":              l,
+            "day_open":             o,
+            "day_close":            t["day_close"],
+            "day_range_pct":        (h - l) / l * 100 if l > 0 else None,
+            "intraday_expansion_pct": (h - l) / o * 100 if o > 0 else None,
+            "also_in_7d_top10":     False,
+            "also_in_1d_top10":     False,
+            "liquidity_ok":         vol >= 1_000_000,
+            "_token_bar": TokenDailyBar(
+                symbol=sym,
+                day_open=o,
+                day_close=t["day_close"],
+                day_high=h,
+                day_low=l,
+                daily_return_pct=t["price_change_pct"],
+                quote_volume=vol,
+                data_ok=True,
+            ),
+        })
+    return result
+
+
+def _apply_dedup_flags(
+    dump_1d: List[Dict],
+    dump_7d: List[Dict],
+) -> Tuple[List[Dict], List[Dict]]:
+    """Flag symbols that appear in both 1d and 7d dump lists. Both rows are kept."""
+    syms_1d = {c["symbol"] for c in dump_1d}
+    syms_7d = {c["symbol"] for c in dump_7d}
+    overlap = syms_1d & syms_7d
+
+    for c in dump_1d:
+        if c["symbol"] in overlap:
+            c["also_in_7d_top10"] = True
+    for c in dump_7d:
+        if c["symbol"] in overlap:
+            c["also_in_1d_top10"] = True
+
+    return dump_1d, dump_7d
+
+
+def _enrich_with_market_cap(cases: List[Dict], client: Any) -> List[Dict]:
+    """Batch CoinGecko market cap lookup; sets live_universe_eligible_flag and exclusion_reason."""
+    all_symbols = [c["symbol"] for c in cases]
+    mc_map = client.fetch_coingecko_market_caps(all_symbols)
+
+    for case in cases:
+        sym = case["symbol"]
+        mc  = mc_map.get(sym)
+
+        case["market_cap_usd"]      = mc
+        case["market_cap_verified"] = mc is not None
+        case["market_cap_source"]   = "coingecko" if mc is not None else "unknown"
+
+        if mc is None:
+            case["live_universe_eligible_flag"] = False
+            case["universe_mismatch_reason"]    = "market_cap_unknown"
+        elif mc > 500_000_000:
+            case["live_universe_eligible_flag"] = False
+            case["universe_mismatch_reason"]    = "market_cap_too_large"
+        else:
+            case["live_universe_eligible_flag"] = True
+            case["universe_mismatch_reason"]    = ""
+
+        if not case.get("liquidity_ok", True):
+            case["exclusion_reason"] = "liquidity_too_low"
+        elif not case["live_universe_eligible_flag"]:
+            case["exclusion_reason"] = case["universe_mismatch_reason"]
+        else:
+            case["exclusion_reason"] = ""
+
+        vol = case.get("quote_vol_24h_usdt") or 0
+        if vol >= 10_000_000:
+            case["notional_liquidity_band"] = "HIGH"
+        elif vol >= 1_000_000:
+            case["notional_liquidity_band"] = "MEDIUM"
+        else:
+            case["notional_liquidity_band"] = "LOW"
+
+    return cases
+
+
+def select_all_cases(
+    research_day: str,
+    client: Any,
+    base_selection: Optional["DailySelectionResult"] = None,
+) -> List[Dict]:
+    """Return enriched case selection list for all horizons (gainers, losers, 1d dump, 7d dump).
+
+    Each dict carries all Layer 0-1 V4 fields plus '_token_bar' (TokenDailyBar, internal key).
+    If base_selection is provided it is reused, otherwise select_daily_top_movers() is called.
+    """
+    all_tickers = client.fetch_all_ticker_24h()
+    if not all_tickers:
+        raise RuntimeError("[select_all_cases] fetch_all_ticker_24h returned empty — cannot proceed")
+
+    _assign_ranks_to_tickers(all_tickers)
+    ticker_lookup: Dict[str, Dict] = {t["symbol"]: t for t in all_tickers}
+
+    if base_selection is None:
+        base_selection = select_daily_top_movers(client, research_day)
+
+    existing_cases = _existing_selection_to_v4_cases(base_selection, ticker_lookup)
+
+    dump_1d = _build_1d_dump_cases(all_tickers, ticker_lookup)
+    print(f"[selector] 1d dump candidates: {len(dump_1d)}")
+
+    dump_7d = _build_7d_dump_cases(all_tickers, client, ticker_lookup)
+    print(f"[selector] 7d dump candidates: {len(dump_7d)}")
+
+    dump_1d, dump_7d = _apply_dedup_flags(dump_1d, dump_7d)
+
+    all_cases = existing_cases + dump_1d + dump_7d
+
+    all_cases = _enrich_with_market_cap(all_cases, client)
+
+    n_excluded = sum(1 for c in all_cases if c.get("exclusion_reason", ""))
+    print(
+        f"[selector] select_all_cases: {len(existing_cases)} existing + "
+        f"{len(dump_1d)} 1d_dump + {len(dump_7d)} 7d_dump = {len(all_cases)} total "
+        f"({n_excluded} excluded)"
+    )
+    return all_cases
 
 
 def selection_to_movers_list_rows(result: DailySelectionResult) -> List[Dict]:

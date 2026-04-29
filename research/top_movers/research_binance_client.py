@@ -328,3 +328,104 @@ class ResearchBinanceClient:
             ]
         except Exception:
             return []
+
+    # ------------------------------------------------------------------
+    # V4-1: 24h ticker, 7d change, CoinGecko market cap
+    # ------------------------------------------------------------------
+
+    def _get_external(self, url: str, params: dict) -> Any:
+        """Fetch from an external URL (non-Binance). No auth headers, no session."""
+        resp = requests.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+
+    def fetch_all_ticker_24h(self) -> List[Dict]:
+        """Fetch 24h rolling ticker for all USDT-ending symbols.
+
+        Returns list of dicts with keys:
+            symbol, price_change_pct, quote_vol_24h_usdt,
+            day_high, day_low, day_open, day_close
+        Returns [] on failure.
+        """
+        try:
+            data = self._get("/fapi/v1/ticker/24hr")
+            result = []
+            for item in data:
+                sym = item.get("symbol", "")
+                if not sym.endswith("USDT"):
+                    continue
+                result.append({
+                    "symbol":             sym,
+                    "price_change_pct":   float(item.get("priceChangePercent", 0)),
+                    "quote_vol_24h_usdt": float(item.get("quoteVolume", 0)),
+                    "day_high":           float(item.get("highPrice", 0)),
+                    "day_low":            float(item.get("lowPrice", 0)),
+                    "day_open":           float(item.get("openPrice", 0)),
+                    "day_close":          float(item.get("lastPrice", 0)),
+                })
+            return result
+        except Exception as e:
+            print(f"[research_client] fetch_all_ticker_24h failed: {e}")
+            return []
+
+    def fetch_7d_change_pct(self, symbol: str) -> Optional[float]:
+        """Compute 7-day price change pct using last 8 daily bars.
+
+        Returns (close[-1] - close[0]) / close[0] * 100, or None on failure.
+        """
+        try:
+            data = self._get("/fapi/v1/klines", {
+                "symbol": symbol, "interval": "1d", "limit": 8,
+            })
+            if not data or len(data) < 8:
+                return None
+            close_7d_ago = float(data[0][4])
+            close_now    = float(data[-1][4])
+            if close_7d_ago == 0:
+                return None
+            return (close_now - close_7d_ago) / close_7d_ago * 100
+        except Exception:
+            return None
+
+    def fetch_coingecko_market_caps(self, symbols: List[str]) -> Dict[str, Optional[float]]:
+        """Batch CoinGecko market cap lookup for Binance symbols.
+
+        Fetches pages 1-3 (up to 750 coins). On symbol conflict keeps higher market_cap.
+        Returns {binance_symbol: market_cap_usd | None}.
+        """
+        cg_base = "https://api.coingecko.com/api/v3"
+        coin_map: Dict[str, Dict] = {}
+
+        for page in range(1, 4):
+            try:
+                resp = self._get_external(
+                    f"{cg_base}/coins/markets",
+                    {
+                        "vs_currency": "usd",
+                        "order":       "market_cap_desc",
+                        "per_page":    250,
+                        "page":        page,
+                        "sparkline":   "false",
+                    },
+                )
+                for coin in resp:
+                    sym_lower = (coin.get("symbol") or "").lower()
+                    mc = float(coin.get("market_cap") or 0)
+                    if sym_lower in coin_map:
+                        if mc > coin_map[sym_lower]["market_cap"]:
+                            coin_map[sym_lower] = {"cg_id": coin.get("id", ""), "market_cap": mc}
+                    else:
+                        coin_map[sym_lower] = {"cg_id": coin.get("id", ""), "market_cap": mc}
+                time.sleep(1.5)
+            except Exception as e:
+                print(f"[research_client] CoinGecko page {page} failed: {e}")
+                break
+
+        result: Dict[str, Optional[float]] = {}
+        for binance_sym in symbols:
+            base = binance_sym.replace("USDT", "").lower()
+            if base in coin_map:
+                result[binance_sym] = float(coin_map[base]["market_cap"])
+            else:
+                result[binance_sym] = None
+        return result

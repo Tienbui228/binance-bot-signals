@@ -65,6 +65,20 @@ def make_case_id(research_day: str, symbol: str, side: str) -> str:
     return f"{research_day.replace('-','')}_{symbol}_{side}"
 
 
+def _derive_case_inclusion_reason(v4_meta: Dict) -> str:
+    horizon = v4_meta.get("selection_horizon", "")
+    bucket  = v4_meta.get("top_mover_bucket", "")
+    if horizon == "1d" and "dump" in bucket:
+        return "top_dumper_1d"
+    if horizon == "7d" and "dump" in bucket:
+        return "top_dumper_7d"
+    if "gainer" in bucket or horizon == "1d_gainers":
+        return "top_gainer_1d"
+    if "loser" in bucket or horizon == "1d_losers":
+        return "top_loser_1d"
+    return f"unknown_{horizon}"
+
+
 # ---------------------------------------------------------------------------
 # Classification helpers v2
 # ---------------------------------------------------------------------------
@@ -224,6 +238,7 @@ def build_case_row(
     image_results: Dict,
     btc_bars_15m: Optional[List[Dict]] = None,
     btc_bars_1h: Optional[List[Dict]] = None,
+    v4_selection_meta: Optional[Dict] = None,
 ) -> Dict:
     """Build one row for daily_top_mover_cases.csv."""
 
@@ -302,6 +317,12 @@ def build_case_row(
         proxy_completeness=conf["proxy_completeness_score"],
         outcome_completeness=conf["outcome_completeness_score"],
     )
+    # V4-1: exclusion_reason overrides research_eligible_YN for dump cases only.
+    # Existing gainers/losers keep their computed eligibility unchanged.
+    if (v4_selection_meta
+            and v4_selection_meta.get("exclusion_reason", "")
+            and v4_selection_meta.get("selection_horizon") in ("1d", "7d")):
+        elig["research_eligible_YN"] = "N"
 
     # --- decision grade ---
     grade = compute_decision_grade(
@@ -523,6 +544,51 @@ def build_case_row(
         "time_since_day_high_minutes":  time_since_high,
         "time_since_break_minutes":     time_since_break,
     }
+
+    # --- V4-1: Case identity (Layer 0) + Selection/Universe (Layer 1) ---
+    _v4 = v4_selection_meta or {}
+    _sel_horizon = _v4.get("selection_horizon", "1d_gainers")
+    _excl_reason = _v4.get("exclusion_reason", "")
+    if _sel_horizon in ("1d", "7d"):
+        _case_identity_mode = "research_dump_event"
+    elif _sel_horizon == "1d_gainers":
+        _case_identity_mode = "research_gainer_event"
+    elif _sel_horizon == "1d_losers":
+        _case_identity_mode = "research_loser_event"
+    else:
+        _case_identity_mode = "research_daily_bar_event"
+
+    row.update({
+        # Layer 0 — Case identity
+        "research_case_id":             f"{move.symbol}_{move.research_day}_{_sel_horizon}",
+        "case_identity_mode":           _case_identity_mode,
+        "selection_horizon":            _sel_horizon,
+        "selection_window":             _v4.get("selection_window", "rolling_24h"),
+        "case_inclusion_reason":        _derive_case_inclusion_reason(_v4) if _v4 else "",
+        "semantic_clean_flag":          True,
+        "exclusion_reason":             _excl_reason,
+        "dataset_batch":                move.research_day,
+        "also_in_7d_top10":             _v4.get("also_in_7d_top10", False),
+        "also_in_1d_top10":             _v4.get("also_in_1d_top10", False),
+        "runtime_equivalent_case_id":   None,
+        "runtime_linkage_status":       "linkage_not_attempted",
+        "case_spans_days":              False,
+        # Layer 1 — Selection / universe
+        "rank_abs_change_24h":          _v4.get("rank_abs_change_24h"),
+        "rank_volume_24h":              _v4.get("rank_volume_24h"),
+        "quote_vol_24h_usdt":           _v4.get("quote_vol_24h_usdt"),
+        "notional_volume_usd":          _v4.get("notional_volume_usd"),
+        "notional_liquidity_band":      _v4.get("notional_liquidity_band"),
+        "week_change_pct":              _v4.get("week_change_pct"),
+        "day_range_pct":                _v4.get("day_range_pct"),
+        "intraday_expansion_pct":       _v4.get("intraday_expansion_pct"),
+        "market_cap_usd":               _v4.get("market_cap_usd"),
+        "market_cap_verified":          _v4.get("market_cap_verified", False),
+        "market_cap_source":            _v4.get("market_cap_source", "unknown"),
+        "live_universe_eligible_flag":  _v4.get("live_universe_eligible_flag", False),
+        "universe_mismatch_reason":     _v4.get("universe_mismatch_reason", ""),
+    })
+
     return row
 
 

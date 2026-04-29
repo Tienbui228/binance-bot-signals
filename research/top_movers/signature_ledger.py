@@ -2642,9 +2642,15 @@ _LAYER_CONTRACT: Dict[int, Dict] = {
             # Present in case_builder:
             "case_id", "research_day", "symbol", "side",
             "top_mover_rank", "anchor_quality_flag", "anchor_conflict_flag",
-            # Not yet in case schema (spec aspirational):
+            # V4-1: now filled by select_all_cases() + build_case_row():
             "case_inclusion_reason", "semantic_clean_flag",
             "exclusion_reason", "dataset_batch",
+            # V4-1 new identity fields:
+            "research_case_id", "case_identity_mode",
+            "selection_horizon", "selection_window",
+            "also_in_7d_top10", "also_in_1d_top10",
+            "runtime_equivalent_case_id",  # nullable — linkage_not_attempted in V4-1
+            "runtime_linkage_status", "case_spans_days",
         ],
     },
     1: {
@@ -2652,9 +2658,14 @@ _LAYER_CONTRACT: Dict[int, Dict] = {
         "required_fields": [
             # Present:
             "daily_return_pct",
-            # Not yet in case schema:
+            # V4-1: now filled by select_all_cases() + build_case_row():
             "day_range_pct", "intraday_expansion_pct",
             "rank_volume_24h", "notional_volume_usd", "rank_abs_change_24h",
+            # V4-1 new selection fields:
+            "quote_vol_24h_usdt", "notional_liquidity_band",
+            "week_change_pct",  # null for 1d_gainers/1d_losers — expected
+            "market_cap_usd", "market_cap_verified", "market_cap_source",
+            "live_universe_eligible_flag", "universe_mismatch_reason",
         ],
     },
     2: {

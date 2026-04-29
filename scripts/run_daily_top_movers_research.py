@@ -32,7 +32,7 @@ from research.top_movers.io import (
     write_csv, write_markdown, csv_path, dated_csv_path, report_path,
 )
 from research.top_movers.daily_selector import (
-    select_daily_top_movers, selection_to_movers_list_rows,
+    select_daily_top_movers, selection_to_movers_list_rows, select_all_cases,
 )
 from research.top_movers.canonical_move import build_canonical_move
 from research.top_movers.proxy_features import build_proxy_features
@@ -108,10 +108,15 @@ def fetch_token_raw_data(client, symbol, research_day, day_start_ms, day_end_ms,
 
 def process_token(client, token_bar, side, rank, research_day, day_start_ms, day_end_ms,
                   lb_start_ms, selection_context,
-                  btc_bars_15m=None, btc_bars_1h=None):
+                  btc_bars_15m=None, btc_bars_1h=None, v4_selection_meta=None):
     symbol = token_bar.symbol
-    bucket = "top_gainers" if side == "LONG" else "top_losers"
-    print(f"\n[{symbol}] {side} rank={rank}")
+    bucket = (
+        v4_selection_meta.get("top_mover_bucket")
+        if v4_selection_meta and v4_selection_meta.get("top_mover_bucket")
+        else ("top_gainers" if side == "LONG" else "top_losers")
+    )
+    horizon = v4_selection_meta.get("selection_horizon", "?") if v4_selection_meta else "?"
+    print(f"\n[{symbol}] {side} rank={rank} horizon={horizon}")
     try:
         raw = fetch_token_raw_data(client, symbol, research_day, day_start_ms, day_end_ms, lb_start_ms)
         bars_5m = raw["bars_5m"]; bars_5m_ext = raw["bars_5m_extended"]
@@ -145,6 +150,7 @@ def process_token(client, token_bar, side, rank, research_day, day_start_ms, day
             top_mover_rank=rank, top_mover_bucket=bucket, image_results=image_results,
             btc_bars_15m=btc_bars_15m or [],
             btc_bars_1h=btc_bars_1h or [],
+            v4_selection_meta=v4_selection_meta,
         )
 
         anchor_rows = build_anchor_snapshot_rows(case_id, research_day, symbol, anchors, proxy)
@@ -176,7 +182,7 @@ def main():
     day_start_ms, day_end_ms = day_window_ms(research_day)
     lb_start_ms = lookback_start_ms(day_start_ms)
 
-    # === Step 1: Select top movers ===
+    # === Step 1: Select top movers (kline-based, for selection_context + movers list) ===
     print("=== Step 1: Selecting top movers ===")
     selection = select_daily_top_movers(client, research_day, top_n=args.top_n)
     write_csv(csv_path(research_day, "daily_top_movers_list.csv"),
@@ -190,7 +196,33 @@ def main():
         "positive_alts": selection.positive_alts,
     }
 
-    # === Step 1.5: Fetch BTC reference klines (once, shared across all tokens) ===
+    # === Step 1.5: V4-1 enriched selection (ticker-based ranks + dump cases) ===
+    print("=== Step 1.5: V4-1 enriched case selection ===")
+    try:
+        all_v4_cases = select_all_cases(research_day, client, base_selection=selection)
+        n_1d_dump  = sum(1 for c in all_v4_cases if c.get("selection_horizon") == "1d")
+        n_7d_dump  = sum(1 for c in all_v4_cases if c.get("selection_horizon") == "7d")
+        n_gainers  = sum(1 for c in all_v4_cases if c.get("selection_horizon") == "1d_gainers")
+        n_losers   = sum(1 for c in all_v4_cases if c.get("selection_horizon") == "1d_losers")
+        n_excluded = sum(1 for c in all_v4_cases if c.get("exclusion_reason", ""))
+        print(f"  V4 selection: {n_gainers} gainers, {n_losers} losers, "
+              f"{n_1d_dump} 1d_dump, {n_7d_dump} 7d_dump "
+              f"= {len(all_v4_cases)} total ({n_excluded} excluded)")
+    except Exception as _v4_err:
+        print(f"  V4 enriched selection failed: {_v4_err} — falling back to base selection only")
+        traceback.print_exc()
+        # Fallback: build minimal v4 case dicts from base selection
+        all_v4_cases = []
+        for (tb, side), rank in zip(selection.all_tokens, list(range(1, args.top_n + 1)) * 2):
+            all_v4_cases.append({
+                "symbol": tb.symbol, "side": side, "top_mover_rank": rank,
+                "top_mover_bucket": "top_gainers" if side == "LONG" else "top_losers",
+                "selection_horizon": "1d_gainers" if side == "LONG" else "1d_losers",
+                "selection_window": "rolling_24h",
+                "_token_bar": tb,
+            })
+
+    # === Step 1.6: Fetch BTC reference klines (once, shared across all tokens) ===
     # Cache-poisoning-safe: load_or_fetch caches [] on API failure; re-fetch if empty.
     _btc = "BTCUSDT"
     def _fetch_btc_safe(key, interval, limit):
@@ -209,19 +241,25 @@ def main():
         print(f"  BTC reference fetch failed: {_btc_err}. Context fields will be null.")
         btc_bars_15m, btc_bars_1h = [], []
 
-    # === Step 2: Process each token ===
-    print(f"\n=== Step 2: Processing {len(selection.all_tokens)} tokens ===")
+    # === Step 2: Process each token (all horizons: gainers, losers, 1d dump, 7d dump) ===
+    print(f"\n=== Step 2: Processing {len(all_v4_cases)} tokens ===")
     all_case_rows: List[Dict] = []
     all_anchor_rows: List[Dict] = []
     all_image_results: Dict[str, Dict] = {}
 
-    for (token_bar, side), rank in zip(selection.all_tokens,
-                                       list(range(1, args.top_n + 1)) * 2):
+    for case_meta in all_v4_cases:
+        token_bar = case_meta.get("_token_bar")
+        if token_bar is None:
+            print(f"  [SKIP] {case_meta.get('symbol')} — no _token_bar in case_meta")
+            continue
+        side = case_meta["side"]
+        rank = case_meta["top_mover_rank"]
         case_row, anchor_rows, img_results = process_token(
             client=client, token_bar=token_bar, side=side, rank=rank,
             research_day=research_day, day_start_ms=day_start_ms, day_end_ms=day_end_ms,
             lb_start_ms=lb_start_ms, selection_context=selection_context,
             btc_bars_15m=btc_bars_15m, btc_bars_1h=btc_bars_1h,
+            v4_selection_meta=case_meta,
         )
         if case_row is not None:
             all_case_rows.append(case_row)
@@ -442,7 +480,7 @@ def main():
     # === Summary ===
     print(f"\n{'='*60}")
     print(f"Phase R1 Complete: {research_day}")
-    print(f"  Cases:      {len(all_case_rows)} / {len(selection.all_tokens)}")
+    print(f"  Cases:      {len(all_case_rows)} / {len(all_v4_cases)}")
     print(f"  Eligible:   {sum(1 for c in all_case_rows if c.get('research_eligible_YN')=='Y')}")
     print(f"  Images:     {images_created} / {len(all_case_rows) * 5}")
     print(f"  Signatures: {len(sig_candidates)} (0 = no repeated pattern today, not an error)")
