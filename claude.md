@@ -502,6 +502,10 @@ Script đọc từ `config.yaml` sections `pump_exhaustion.discovery`, `pump_exh
 
 ## 16. Phase R1 — V4-1 pipeline run + validation
 
+> **Status: V4-1 VALIDATED — 2026-04-29. All 12 checks passed.**
+
+V4-1 adds: 7d dump selection (top 10 tokens by 7d decline), V4 case identity fields (`research_case_id`, `selection_horizon`, `runtime_linkage_status`, etc.), and fills all previously-blocking Layer 0-1 fields (`case_inclusion_reason`, `semantic_clean_flag`, `exclusion_reason`, `dataset_batch`, `day_range_pct`, `intraday_expansion_pct`, `rank_volume_24h`, `notional_volume_usd`, `rank_abs_change_24h`).
+
 Sau khi implement V4-1 (hoặc bất kỳ thay đổi nào trong `research/top_movers/*`), phải chạy pipeline để tạo data rồi mới validate được.
 
 ### Bước 1: Chạy pipeline để tạo data
