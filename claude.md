@@ -528,6 +528,23 @@ Output: `data/research_output/top_movers/YYYY-MM-DD/csv/daily_case_dataset_YYYY-
 python3 scripts/validate_v4_1.py YYYY-MM-DD
 ```
 
-Script kiểm tra 12 điểm: research_case_id format, selection_horizon valid, 7d cases hiện diện, Layer 0-1 blocking fields populated, live_universe_eligible_flag, dedup rows, also_in_7d_top10 flags, runtime_equivalent_case_id null, case_id format, Phase 2 fields còn đủ, import isolation.
+Script chạy theo đúng thứ tự sau (12 checks — phải pass hết):
+
+| # | Check | Pass condition |
+|---|-------|----------------|
+| 1 | `research_case_id` format | `{symbol}_{research_day}_{selection_horizon}` — 0 mismatch |
+| 2 | `selection_horizon` populated & valid | Values trong `{"1d","7d","1d_gainers","1d_losers"}`, 0 null |
+| 3 | 7d cases tồn tại | `n_7d > 0` |
+| 4 | Layer 0 blocking fields populated | `case_inclusion_reason`, `semantic_clean_flag`, `exclusion_reason`, `dataset_batch` — không phải all-null |
+| 5 | Layer 1 blocking fields populated | `day_range_pct`, `intraday_expansion_pct`, `rank_volume_24h`, `notional_volume_usd`, `rank_abs_change_24h` — không phải all-null |
+| 6 | `live_universe_eligible_flag` có mặt | Column tồn tại, không bị missing |
+| 7 | Dedup: 1d ∩ 7d phải là 2 rows riêng | Mỗi symbol overlap có ≥ 2 rows |
+| 8 | `also_in_7d_top10` đúng trên 1d overlap rows | Tất cả 1d rows của overlap symbols có flag = True |
+| 9 | `runtime_equivalent_case_id` là null | Không có non-null values (V4-1 chưa làm linkage) |
+| 10 | `case_id` format không đổi | `{YYYYMMDD}_{symbol}_{side}` — tất cả rows match |
+| 11 | Phase 2A-2E fields còn đủ | `resolution_label`, `data_quality_flag`, `decision_grade`, `future_1h/4h_max_favor_pct`, `research_eligible_YN` — vẫn hiện diện |
+| 12 | Import isolation | `grep "from scanner"` và `grep "import oi_scanner"` trong `research/top_movers/` → zero results |
 
 Exits 0 nếu tất cả pass, exits 1 nếu có lỗi.
+
+**Lưu ý:** Pipeline phải chạy trên VPS (venv build trên Linux, không chạy được local Windows).
