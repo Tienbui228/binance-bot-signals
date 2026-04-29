@@ -2671,14 +2671,14 @@ _LAYER_CONTRACT: Dict[int, Dict] = {
     2: {
         "name": "Canonical Move / Anchor Detection Layer",
         "required_fields": [
-            # Present:
+            # Present (pre-V4-2):
             "p0_ts_ms", "p1_ts_ms", "p2_ts_ms", "p3_ts_ms", "p4_ts_ms",
             "p0_price", "p2_price", "p4_price",
-            "anchor_quality_flag", "anchor_conflict_flag",
-            # Not yet in case schema:
-            "p1_price", "p3_price",
+            "anchor_detect_method", "anchor_quality_flag",
+            # V4-2: anchor price + bar counts + derived metadata:
+            "p1_price", "peak_close", "p3_price",
             "bars_p0_to_p1", "bars_p1_to_p2", "bars_p2_to_p3", "bars_p3_to_p4",
-            "anchor_reason_code",
+            "anchor_reason_code", "peak_age_hours", "case_spans_days",
         ],
     },
     3: {

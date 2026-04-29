@@ -221,6 +221,38 @@ def _compute_time_since_day_high(
 
 
 # ---------------------------------------------------------------------------
+# V4-2 anchor derived helpers
+# ---------------------------------------------------------------------------
+
+def _map_anchor_reason_code(validity_reason: str) -> str:
+    mapping = {
+        "all_anchors_auto_detected":        "clean",
+        "p1_no_ignition":                   "p1_fallback",
+        "p1_no_ignition_p2_no_clean_break": "p1_p2_fallback",
+    }
+    if validity_reason in mapping:
+        return mapping[validity_reason]
+    return "unknown" if not validity_reason else f"unknown:{validity_reason}"
+
+
+def _compute_peak_age_hours(p1_ts_ms: int, research_day: str) -> Optional[float]:
+    try:
+        day_end_ms = int(
+            datetime.strptime(research_day, "%Y-%m-%d")
+            .replace(tzinfo=_utc.utc).timestamp() * 1000
+        ) + 24 * 3600 * 1000
+        return round((day_end_ms - p1_ts_ms) / (3600 * 1000), 2)
+    except Exception:
+        return None
+
+
+def _compute_case_spans_days(p0_ts_ms: int, p4_ts_ms: int) -> bool:
+    p0_day = datetime.fromtimestamp(p0_ts_ms / 1000, tz=_utc.utc).date()
+    p4_day = datetime.fromtimestamp(p4_ts_ms / 1000, tz=_utc.utc).date()
+    return p0_day != p4_day
+
+
+# ---------------------------------------------------------------------------
 # Main case row builder
 # ---------------------------------------------------------------------------
 
@@ -433,6 +465,19 @@ def build_case_row(
         "p0_price": pr_or(anchors.p0), "p2_price": pr_or(anchors.p2), "p4_price": pr_or(anchors.p4),
         "range_high": safe_round(anchors.range_high, 6), "range_low": safe_round(anchors.range_low, 6),
         "range_expansion_ratio": range_exp,
+        # V4-2: Anchor price fields (from AnchorPoint.bar — no extra API calls)
+        "p1_price":    float(anchors.p1.bar["high"])  if anchors.p1  else None,
+        "peak_close":  float(anchors.p1.bar["close"]) if anchors.p1  else None,
+        "p3_price":    float(anchors.p3.bar["close"]) if anchors.p3  else None,
+        # V4-2: Bar counts (1h resolution for P0→P2, 5m for P2→P4)
+        "bars_p0_to_p1": max(0, (anchors.p1.ts_ms - anchors.p0.ts_ms) // (60 * 60 * 1000))
+                         if anchors.p0 and anchors.p1 else None,
+        "bars_p1_to_p2": max(0, (anchors.p2.ts_ms - anchors.p1.ts_ms) // (60 * 60 * 1000))
+                         if anchors.p1 and anchors.p2 else None,
+        "bars_p2_to_p3": max(0, (anchors.p3.ts_ms - anchors.p2.ts_ms) // (5 * 60 * 1000))
+                         if anchors.p2 and anchors.p3 else None,
+        "bars_p3_to_p4": max(0, (anchors.p4.ts_ms - anchors.p3.ts_ms) // (5 * 60 * 1000))
+                         if anchors.p3 and anchors.p4 else None,
         # Anchors quality
         "compression_score": safe_round(comp_score, 4),
         "break_quality_score": safe_round(bq_score, 4), "break_quality_band": bq_band or "",
@@ -508,6 +553,9 @@ def build_case_row(
         "anchor_quality_flag":     anc_quality,
         "anchor_conflict_flag":    anc_conflict,
         "anchor_validity_reason":  anc_validity,
+        "anchor_reason_code":      _map_anchor_reason_code(anc_validity or ""),
+        "peak_age_hours":          _compute_peak_age_hours(anchors.p1.ts_ms, move.research_day)
+                                   if anchors.p1 else None,
         "p4_resolution_trigger":   p4_trigger,
         "data_confidence":         data_conf,
         "intervention_confidence": interv_conf,
@@ -572,7 +620,8 @@ def build_case_row(
         "also_in_1d_top10":             _v4.get("also_in_1d_top10", False),
         "runtime_equivalent_case_id":   None,
         "runtime_linkage_status":       "linkage_not_attempted",
-        "case_spans_days":              False,
+        "case_spans_days":              _compute_case_spans_days(anchors.p0.ts_ms, anchors.p4.ts_ms)
+                                        if anchors.p0 and anchors.p4 else False,
         # Layer 1 — Selection / universe
         "rank_abs_change_24h":          _v4.get("rank_abs_change_24h"),
         "rank_volume_24h":              _v4.get("rank_volume_24h"),
