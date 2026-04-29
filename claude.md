@@ -1,7 +1,7 @@
 # CLAUDE.md — Binance Bot Signals Project
 
 > Read this file fully before touching any code. It exists to prevent wrong-file patches,
-> broken semantics, and architecture drift. Updated: 2026-04-30.
+> broken semantics, and architecture drift. Updated: 2026-04-30 (V4-4 added).
 
 ---
 
@@ -606,6 +606,73 @@ python3 scripts/validate_v4_2.py YYYY-MM-DD
 Exits 0 nếu tất cả pass, exits 1 nếu có lỗi.
 
 **Lưu ý:** `bars_p0_to_p1 == 0` cho phần lớn cases là đúng (P0→P1 xảy ra trong cùng 1h bar). Không phải bug.
+
+---
+
+## 19. Phase R1 — V4-4 pipeline run + validation
+
+> **Status: V4-4 IMPLEMENTED — 2026-04-30. Validation script passes.**
+
+V4-4 adds 9 Layer 5 P3 Tradability fields trả lời: "could the live scanner have detected and traded P3, and at what entry/stop/RR?" — 1 API call per case (5m klines around P3), còn lại là arithmetic từ fields đã có.
+
+**Fields được thêm:**
+
+| Field | Source | Note |
+|---|---|---|
+| `quote_vol_5m_median_at_p3_usdt` | 5m kline fetch quanh P3 | Median quote_volume của ~6 bars |
+| `live_liquidity_gate_pass` | derived from above | `>= 10,000 USDT` |
+| `p3_detectable_in_live_mode_flag` | 4 conditions (depth ±2%, wick, no-reclaim, liquidity) | Thường `False` cho data hiện tại — expected |
+| `live_signal_age_min` | `bars_to_retest × 5` — no API | Minutes từ P3 đến khi signal available |
+| `live_entry_price_proxy` | close của bar 5m SAU P3 bar | Fallback về `p3_price` nếu bar không nằm trong window |
+| `live_stop_price_proxy` | `range_low × 1.01` | 1% trên breakdown level (SHORT: stop above entry) |
+| `live_rr_conservative` | 1.5 by construction (target = entry − 1.5×risk) | None nếu stop ≤ entry |
+| `entry_feasible_flag` | 5-condition composite gate | bool |
+| `entry_feasible_reason` | first failing condition | `"feasible"` khi pass, `"no_retest"` khi không có P3 |
+
+**Cũng thêm:** `outcome_measured_from` — `"live_entry_price_proxy"` hoặc `"p3_price_fallback"`.
+
+**Files đã thay đổi:**
+- `research/top_movers/proxy_features.py` — thêm `compute_p3_tradability()` + 6 module-level constants
+- `research/top_movers/case_builder.py` — import function mới, thêm `client=None` param vào `build_case_row()`, wire 9 fields + `outcome_measured_from`
+- `research/top_movers/signature_ledger.py` — `_LAYER_CONTRACT[5]` từ 6 → 15 required fields
+- `scripts/run_daily_top_movers_research.py` — truyền `client=client` vào `build_case_row()`
+- `scripts/validate_v4_4.py` — validation script mới (11 checks)
+
+**Lưu ý quan trọng về implementation:**
+- Method đúng là `client.get_klines()` (không phải `fetch_klines()` như một số plan cũ ghi)
+- `get_klines()` trả về dict với keys `"open_time"`, `"close"`, `"quote_volume"` — không phải raw tuple indices
+- `entry_feasible_reason` dùng `"feasible"` (không phải `""`) để tránh pandas đọc empty string thành NaN
+- `entry_feasible_reason` trong EMPTY dict (no retest) dùng `"no_retest"`
+
+### Bước 1: Chạy pipeline để tạo data
+
+```bash
+python3 scripts/run_daily_top_movers_research.py --day YYYY-MM-DD
+```
+
+### Bước 2: Validate V4-4 output
+
+```bash
+python3 scripts/validate_v4_4.py YYYY-MM-DD
+```
+
+| # | Check | Pass condition |
+|---|-------|----------------|
+| 1 | 9 new V4-4 fields có mặt | Không all-null (null_ok vì nhiều cases không có retest) |
+| 2 | `live_signal_age_min == bars_to_retest × 5` | 0 mismatch cho non-null cases |
+| 3 | `live_stop_price_proxy > live_entry_price_proxy` cho SHORT | Stop phải trên entry |
+| 4 | `live_rr_conservative > 0` khi populated | ~1.5 by construction; WARN nếu mean lệch >0.1 |
+| 5 | `p3_detectable_in_live_mode_flag` distribution | INFO-only — mostly False expected |
+| 6 | `entry_feasible_reason` không null | Phải là `"feasible"`, `"no_retest"`, hoặc reason string |
+| 7 | `entry_feasible_reason == "feasible"` khi flag = True | 0 mismatch |
+| 8 | `outcome_measured_from` values hợp lệ | `"live_entry_price_proxy"` hoặc `"p3_price_fallback"` |
+| 9 | Existing Layer 5 fields còn đủ | `retest_pack_available`, `reclaim_pct`, etc. vẫn có mặt |
+| 10 | `quote_vol_5m_median_at_p3_usdt` distribution | WARN nếu >80% dưới 10K USDT |
+| 11 | V4-1/2/3 fields backward compat | `research_case_id`, `p1_price`, `exhaustion_strength_bucket`, etc. vẫn còn |
+
+Exits 0 nếu tất cả pass, exits 1 nếu có lỗi.
+
+**Lưu ý:** Validation script dùng `pd.read_csv(..., keep_default_na=False)` + `pd.to_numeric(..., errors="coerce")` cho các cột số để tránh crash khi gặp empty string từ CSV.
 
 ---
 
