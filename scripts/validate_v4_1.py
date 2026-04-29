@@ -98,6 +98,7 @@ else:
     print(f"PASS: live_universe_eligible_flag — eligible:{n_elig}, not_eligible:{n_not}")
 
 # 7. Dedup: symbols in both 1d dump and 7d dump must have two separate rows
+overlap_syms = set()
 if "selection_horizon" in df.columns:
     df_1d = df[df["selection_horizon"] == "1d"]
     df_7d = df[df["selection_horizon"] == "7d"]
@@ -112,14 +113,16 @@ if "selection_horizon" in df.columns:
         print("PASS: No overlap between 1d and 7d dump (or no 7d cases yet)")
 
 # 8. also_in_7d_top10 flag on 1d rows when overlap
-if "selection_horizon" in df.columns and overlap_syms:
+if overlap_syms:
+    flag_errors_before = len(errors)
     for sym in overlap_syms:
         row_1d = df[(df["symbol"] == sym) & (df["selection_horizon"] == "1d")]
         if not row_1d.empty:
             flag = row_1d.iloc[0].get("also_in_7d_top10", False)
             if str(flag).lower() not in ("true", "1", "yes"):
                 errors.append(f"FAIL: {sym} 1d row missing also_in_7d_top10=True")
-    print(f"PASS: also_in_7d_top10 flags correct on 1d overlap rows")
+    if len(errors) == flag_errors_before:
+        print(f"PASS: also_in_7d_top10 flags correct on all {len(overlap_syms)} overlap rows")
 
 # 9. runtime_equivalent_case_id is null in V4-1
 if "runtime_equivalent_case_id" in df.columns:
