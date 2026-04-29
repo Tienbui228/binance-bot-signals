@@ -1,7 +1,7 @@
 # CLAUDE.md — Binance Bot Signals Project
 
 > Read this file fully before touching any code. It exists to prevent wrong-file patches,
-> broken semantics, and architecture drift. Updated: 2026-04-28.
+> broken semantics, and architecture drift. Updated: 2026-04-29.
 
 ---
 
@@ -10,12 +10,13 @@
 - **Manual-trading signal bot** — not auto-trading. Signals go to a human via Telegram.
 - Python 3.12.3, `.venv` at repo root.
 - Live on Ubuntu VPS, runtime process is `oi_scanner.py` running inside a `screen` session.
-- Four active strategy families — keep them **always separate** in code, review, measurement:
+- Five active strategy families — keep them **always separate** in code, review, measurement:
   - `long_breakout_retest`
-  - `short_exhaustion_retest`
+  - `short_exhaustion_retest` ← BD gate 3-bar scan fix applied 2026-04-29
   - `long_accumulation_continuation`
-  - `oi_range_breakout` ← primary focus since 2026-04-23; has Bybit OI + MAX formula + funding rate
-- Current working priority: **Daily Review Report V2** (downstream-only, no truth repair).
+  - `oi_range_breakout` — has Bybit OI + MAX formula + funding rate
+  - `pump_exhaustion_short` ← **current working priority**: v3.0 integration into oi_scanner.py
+- Current working priority: **pump_exhaustion v3.0** — integrating `scanner/strategies/pump_exhaustion/` into `oi_scanner.py`, sharing UniverseFilter + BinanceScanner client. Plan: `a-ra-plan-impement-zippy-lovelace.md`.
 
 ---
 
@@ -58,6 +59,8 @@ Some target modules exist but are wrappers/shims. Patching them instead of the r
 | Strategy — long breakout | `scanner/strategies/long_breakout_retest.py` | same | — |
 | Strategy — short exhaustion | `scanner/strategies/short_exhaustion_retest.py` | same | — |
 | Strategy — long accumulation | `scanner/strategies/long_accumulation_continuation.py` | same | — |
+| Strategy — pump exhaustion | `scanner/strategies/pump_exhaustion/` (discovery, scanner, outcome, alert, scoring, detectors, classifiers, watchlist) | same | `pump_exhaustion_short/` ← old standalone, keep untouched |
+| Universe filter | `scanner/universe_filter.py` (NEW — v3.0) | same | — |
 | Bybit API methods | `oi_scanner.py` (pragmatic; 6 methods: bybit_get, bybit_oi_hist, bybit_klines_1h, bybit_ticker_24h, bybit_funding, _combine_*) | separate Bybit client (target) | — |
 | Regime classify | `scanner/regime/classifier.py` | same | — |
 | Regime normalize/persist | `regime/regime_normalizer.py` | same | — |
@@ -98,6 +101,13 @@ retest:
 bybit:
   enabled: true                       # kill switch — false disables ALL Bybit fetching for ORB
                                       # affects: OI combine, volume combine, vol_24h, funding rate
+
+pump_exhaustion:
+  enabled: true/false                 # kill switch — false skips all 4 integration points in oi_scanner.py
+                                      # threads never start, scan_once block skipped, zero effect on main bot
+
+universe_filter:
+  enabled: true                       # shared across strategies (pump_exhaustion uses this)
 
 review_snapshots:
   enabled
@@ -487,3 +497,33 @@ DISCOVERED
 Script đọc từ `config.yaml` sections `pump_exhaustion.discovery`, `pump_exhaustion.scan`, `universe_filter`. Khi thay đổi config, script tự cập nhật — không cần sửa tay.
 
 > Script này **không** sửa CSV, không ảnh hưởng bot đang chạy.
+
+---
+
+## 16. Phase R1 — V4-1 pipeline run + validation
+
+Sau khi implement V4-1 (hoặc bất kỳ thay đổi nào trong `research/top_movers/*`), phải chạy pipeline để tạo data rồi mới validate được.
+
+### Bước 1: Chạy pipeline để tạo data
+
+```bash
+python3 scripts/run_daily_top_movers_research.py --day YYYY-MM-DD
+```
+
+Dùng ngày đã qua (complete daily bar). Ví dụ:
+
+```bash
+python3 scripts/run_daily_top_movers_research.py --day 2026-04-25
+```
+
+Output: `data/research_output/top_movers/YYYY-MM-DD/csv/daily_case_dataset_YYYY-MM-DD.csv`
+
+### Bước 2: Validate V4-1 output
+
+```bash
+python3 scripts/validate_v4_1.py YYYY-MM-DD
+```
+
+Script kiểm tra 12 điểm: research_case_id format, selection_horizon valid, 7d cases hiện diện, Layer 0-1 blocking fields populated, live_universe_eligible_flag, dedup rows, also_in_7d_top10 flags, runtime_equivalent_case_id null, case_id format, Phase 2 fields còn đủ, import isolation.
+
+Exits 0 nếu tất cả pass, exits 1 nếu có lỗi.
