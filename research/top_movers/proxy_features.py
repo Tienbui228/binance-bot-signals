@@ -1075,19 +1075,21 @@ def _compute_funding_fields(funding_raw: Optional[float]) -> Dict:
             "funding_rate_bucket":     None,
         }
 
-    funding_pct = round(funding_raw * 100, 6)
+    # Round raw first, then derive pct from rounded value so pct == raw_stored × 100
+    funding_raw_stored = round(funding_raw, 6)
+    funding_pct = round(funding_raw_stored * 100, 6)
 
-    if funding_raw < -0.0001:
+    if funding_raw_stored < -0.0001:
         bucket = "negative"
-    elif funding_raw <= 0.0001:
+    elif funding_raw_stored <= 0.0001:
         bucket = "neutral"
-    elif funding_raw <= 0.0005:
+    elif funding_raw_stored <= 0.0005:
         bucket = "slightly_long"
     else:
         bucket = "crowded_long"
 
     return {
-        "latest_funding_rate_raw": round(funding_raw, 6),
+        "latest_funding_rate_raw": funding_raw_stored,
         "latest_funding_rate_pct": funding_pct,
         "funding_rate_bucket":     bucket,
     }
