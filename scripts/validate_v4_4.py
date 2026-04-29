@@ -70,10 +70,13 @@ print()
 # ── Check 2: live_signal_age_min == bars_to_retest × 5 ────────────────────
 print("── Check 2: live_signal_age_min == bars_to_retest × 5 ──")
 if "live_signal_age_min" in df.columns and "bars_to_retest" in df.columns:
-    df_nn = df[df["bars_to_retest"].notna() & df["live_signal_age_min"].notna()].copy()
+    btr  = pd.to_numeric(df["bars_to_retest"], errors="coerce")
+    lsam = pd.to_numeric(df["live_signal_age_min"], errors="coerce")
+    mask = btr.notna() & lsam.notna()
+    df_nn = df[mask].copy()
     if len(df_nn) > 0:
-        expected = df_nn["bars_to_retest"].astype(int) * 5
-        mismatch = (df_nn["live_signal_age_min"].astype(int) != expected).sum()
+        expected = btr[mask].astype(int) * 5
+        mismatch = (lsam[mask].astype(int) != expected).sum()
         if mismatch > 0:
             errors.append(f"FAIL: {mismatch} cases have live_signal_age_min != bars_to_retest × 5")
         else:
@@ -87,23 +90,18 @@ print()
 # ── Check 3: live_stop_price_proxy > live_entry_price_proxy for SHORT ─────
 print("── Check 3: live_stop > live_entry for SHORT non-null cases ──")
 if "live_stop_price_proxy" in df.columns and "live_entry_price_proxy" in df.columns:
-    df_sh = df[
-        (df["side"] == "SHORT")
-        & df["live_stop_price_proxy"].notna()
-        & df["live_entry_price_proxy"].notna()
-    ]
-    if len(df_sh) > 0:
-        bad = (
-            df_sh["live_stop_price_proxy"].astype(float)
-            <= df_sh["live_entry_price_proxy"].astype(float)
-        ).sum()
+    stop_num  = pd.to_numeric(df["live_stop_price_proxy"], errors="coerce")
+    entry_num = pd.to_numeric(df["live_entry_price_proxy"], errors="coerce")
+    mask_sh = (df["side"] == "SHORT") & stop_num.notna() & entry_num.notna()
+    if mask_sh.sum() > 0:
+        bad = (stop_num[mask_sh] <= entry_num[mask_sh]).sum()
         if bad > 0:
             errors.append(
                 f"FAIL: {bad} SHORT cases have live_stop_price_proxy <= live_entry_price_proxy "
                 f"(stop must be above entry for shorts)"
             )
         else:
-            print(f"PASS: live_stop > live_entry for all {len(df_sh)} SHORT non-null cases")
+            print(f"PASS: live_stop > live_entry for all {mask_sh.sum()} SHORT non-null cases")
     else:
         print("INFO: no non-null SHORT retest cases — check skipped")
 else:
@@ -113,14 +111,15 @@ print()
 # ── Check 4: live_rr_conservative > 0 when populated ─────────────────────
 print("── Check 4: live_rr_conservative > 0 when populated ──")
 if "live_rr_conservative" in df.columns:
-    df_nn = df[df["live_rr_conservative"].notna()]
+    rr_num = pd.to_numeric(df["live_rr_conservative"], errors="coerce")
+    df_nn  = df[rr_num.notna()]
     if len(df_nn) > 0:
-        bad = (df_nn["live_rr_conservative"].astype(float) <= 0).sum()
+        bad = (rr_num[rr_num.notna()] <= 0).sum()
         if bad > 0:
             errors.append(f"FAIL: {bad} cases have live_rr_conservative <= 0")
         else:
             print(f"PASS: live_rr_conservative > 0 for all {len(df_nn)} non-null cases")
-        mean_rr = df_nn["live_rr_conservative"].astype(float).mean()
+        mean_rr = rr_num[rr_num.notna()].mean()
         if abs(mean_rr - 1.5) > 0.1:
             print(f"WARN: mean live_rr_conservative = {mean_rr:.3f}, expected ~1.5")
         else:
@@ -213,9 +212,10 @@ print()
 # ── Check 10: quote_vol_5m_median_at_p3_usdt liquidity gate distribution ──
 print("── Check 10: quote_vol_5m_median_at_p3_usdt distribution ──")
 if "quote_vol_5m_median_at_p3_usdt" in df.columns:
-    df_nn = df[df["quote_vol_5m_median_at_p3_usdt"].notna()]
+    qvol_num = pd.to_numeric(df["quote_vol_5m_median_at_p3_usdt"], errors="coerce")
+    df_nn = df[qvol_num.notna()]
     if len(df_nn) > 0:
-        pct_below = (df_nn["quote_vol_5m_median_at_p3_usdt"].astype(float) < 10_000).sum()
+        pct_below = (qvol_num[qvol_num.notna()] < 10_000).sum()
         pct = pct_below / len(df_nn) * 100
         if pct > 80:
             print(
