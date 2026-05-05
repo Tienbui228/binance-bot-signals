@@ -341,7 +341,11 @@ def detect_oi_range_breakout(
     if "_override_oi_delta_pct" in config:
         oi_delta_pct = float(config["_override_oi_delta_pct"])
 
-    oi_delta_abs_1h = oi_now - oi_1h_ago + float(config.get("_bybit_abs_usdt_delta", 0.0))  # Binance + Bybit USDT
+    _oi_binance_abs = oi_now - oi_1h_ago
+    _bybit_abs = float(config.get("_bybit_abs_usdt_delta", 0.0))
+    _bybit_oi_available = bool(config.get("_bybit_oi_ok", False))
+    # Use the larger delta across exchanges — gate and display both reference this value
+    oi_delta_abs_1h = max(_oi_binance_abs, _bybit_abs) if _bybit_oi_available else _oi_binance_abs
 
     if oi_delta_pct < oi_spike_min_pct:
         logger.debug(
@@ -349,11 +353,16 @@ def detect_oi_range_breakout(
         )
         return None
 
-    # Gate uses Binance-only delta — consistent with what is displayed in the signal
-    _oi_binance_abs = oi_now - oi_1h_ago
-    if oi_delta_abs_min_usdt > 0 and _oi_binance_abs < oi_delta_abs_min_usdt:
+    # OI delta must be positive (accumulation, not distribution) for a long signal
+    if oi_delta_abs_1h <= 0:
         logger.debug(
-            f"[oi_range_breakout] {symbol} — OI abs delta ${_oi_binance_abs/1e6:.3f}M < min ${oi_delta_abs_min_usdt/1e6:.3f}M"
+            f"[oi_range_breakout] {symbol} — OI abs delta not positive: ${oi_delta_abs_1h/1e6:.3f}M"
+        )
+        return None
+
+    if oi_delta_abs_min_usdt > 0 and oi_delta_abs_1h < oi_delta_abs_min_usdt:
+        logger.debug(
+            f"[oi_range_breakout] {symbol} — OI abs delta ${oi_delta_abs_1h/1e6:.3f}M < min ${oi_delta_abs_min_usdt/1e6:.3f}M"
         )
         return None
 

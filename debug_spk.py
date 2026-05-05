@@ -214,13 +214,15 @@ else:
     print(f"  {S} OI spike OK\n")
     oi_gate_pass = True
 
-# -- Gate 3b: OI abs delta (Binance only; live bot adds Bybit delta on top) --
-print("-- Gate 3b: OI abs delta >= $0.4M --")
+# -- Gate 3b: OI abs delta positive + >= $0.4M (live bot uses max of Binance vs Bybit) --
+print("-- Gate 3b: OI abs delta > 0 and >= $0.4M --")
 oi_delta_abs_usdt = oi_now - oi_1h_ago
 print(f"  oi_delta_abs (Binance): ${oi_delta_abs_usdt/1e6:.3f}M  (min ${CFG['oi_delta_abs_min_usdt']/1e6:.3f}M)")
-print(f"  Note: live bot adds Bybit delta on top of this value")
-if oi_delta_abs_usdt < CFG["oi_delta_abs_min_usdt"]:
-    print(f"  {F} OI abs delta too small -> BLOCKED (Binance-only check; may pass if Bybit adds enough)\n")
+print(f"  Note: live bot uses max(Binance, Bybit) — Bybit may push value higher")
+if oi_delta_abs_usdt <= 0:
+    print(f"  {F} OI abs delta not positive -> BLOCKED\n")
+elif oi_delta_abs_usdt < CFG["oi_delta_abs_min_usdt"]:
+    print(f"  {F} OI abs delta below threshold (Binance-only; check Bybit section above for full picture)\n")
 else:
     print(f"  {S} OI abs delta OK\n")
 

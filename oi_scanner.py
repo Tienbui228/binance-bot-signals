@@ -2313,6 +2313,8 @@ class BinanceScanner:
         }
 
     def detect_15m_breakdown_after_exhaustion(self, bars_15m_closed: List[Dict]) -> Optional[Dict]:
+        BD_MAX_SIGNAL_AGE_MIN = 35
+
         cfg = self.cfg.get("short_exhaustion_retest", {})
         lookback = int(cfg.get("breakdown_15m_lookback_bars", 12))
         min_break_distance_pct = float(cfg.get("breakdown_15m_min_break_distance_pct", 0.15)) / 100.0
@@ -2323,41 +2325,101 @@ class BinanceScanner:
         if len(bars) < lookback + 1:
             return None
 
-        signal_bar = bars[-1]
-        support_window = bars[-(lookback + 1):-1]
-        support_ref = min(b["low"] for b in support_window)
-        break_distance_pct = max((support_ref - signal_bar["close"]) / max(support_ref, 1e-12) * 100.0, 0.0)
-        body_ratio = self.candle_body_ratio(signal_bar)
-        vol_ratio = self.volume_ratio_generic(bars, recent_bars=1, base_bars=min(6, len(bars) - 1))
-        close_near_low = (signal_bar["close"] - signal_bar["low"]) / max(signal_bar["high"] - signal_bar["low"], 1e-12)
+        now_ms = int(time.time() * 1000)
+        bd_reject_reason = "no_valid_candidate_in_window"
 
-        passed = (
-            signal_bar["close"] < support_ref * (1 - min_break_distance_pct)
-            and body_ratio >= min_body_ratio
-            and vol_ratio >= min_volume_ratio
-            and close_near_low <= 0.45
-        )
-        if not passed:
-            return None
+        for k in (2, 1, 0):
+            if (k + 1) >= len(bars):
+                bd_reject_reason = "offset_out_of_range"
+                continue
 
-        score = 0.0
-        score += 12.0
-        score += min(6.0, break_distance_pct / max(min_break_distance_pct * 100.0, 1e-12) * 3.0)
-        score += min(6.0, body_ratio / max(min_body_ratio, 1e-12) * 3.0)
-        score += min(6.0, vol_ratio / max(min_volume_ratio, 1e-12) * 3.0)
+            candidate = bars[-(k + 1)]
 
-        return {
-            "passed": True,
-            "breakdown_level": support_ref,
-            "support_ref": support_ref,
-            "break_bar_open_time": signal_bar["open_time"],
-            "break_distance_pct": break_distance_pct,
-            "body_ratio": body_ratio,
-            "vol_ratio": vol_ratio,
-            "score_15m_breakdown": min(score, 30.0),
-            "reason_tags": ["15m_clean_breakdown", f"15m_break_dist={break_distance_pct:.2f}%"],
-            "signal_bar": signal_bar,
-        }
+            # A. Support ref from bars strictly before candidate (window shifts with k)
+            support_window = bars[-(lookback + k + 1):-(k + 1)]
+            if not support_window:
+                bd_reject_reason = "no_support_window"
+                continue
+            support_ref = min(b["low"] for b in support_window)
+
+            # B. Break distance
+            if candidate["close"] >= support_ref:
+                bd_reject_reason = "close_above_support"
+                continue
+            break_distance_raw = (support_ref - candidate["close"]) / max(support_ref, 1e-12)
+            if break_distance_raw < min_break_distance_pct:
+                bd_reject_reason = "dist_too_small"
+                continue
+
+            # C. Body ratio
+            body_ratio = self.candle_body_ratio(candidate)
+            if body_ratio < min_body_ratio:
+                bd_reject_reason = "body_too_small"
+                continue
+
+            # D. Event cross-check: bar must represent the actual breakdown moment, not continuation
+            prev_bar = bars[-(k + 2)] if (k + 2) <= len(bars) else None
+            open_near_support = candidate["open"] >= support_ref * 0.99
+            prev_close_near_support = (
+                prev_bar is not None
+                and prev_bar["close"] >= support_ref * (1 - min_break_distance_pct)
+            )
+            bd_is_event_cross = open_near_support or prev_close_near_support
+            if not bd_is_event_cross:
+                bd_reject_reason = "continuation_not_event"
+                continue
+
+            # E. Signal age
+            signal_age_min = (now_ms - candidate["close_time"]) / 60_000
+            if signal_age_min > BD_MAX_SIGNAL_AGE_MIN:
+                bd_reject_reason = "signal_too_old"
+                continue
+
+            # F. Volume ratio
+            bars_for_vol = bars if k == 0 else bars[:-k]
+            vol_ratio = self.volume_ratio_generic(bars_for_vol, recent_bars=1, base_bars=min(6, len(bars_for_vol) - 1))
+            if vol_ratio < min_volume_ratio:
+                bd_reject_reason = "vol_too_low"
+                continue
+
+            # G. Close near low
+            close_near_low = (candidate["close"] - candidate["low"]) / max(candidate["high"] - candidate["low"], 1e-12)
+            if close_near_low > 0.45:
+                bd_reject_reason = "close_not_near_low"
+                continue
+
+            # All conditions pass — score (formula unchanged, operates on same fields)
+            break_distance_pct = break_distance_raw * 100.0
+            score = 0.0
+            score += 12.0
+            score += min(6.0, break_distance_pct / max(min_break_distance_pct * 100.0, 1e-12) * 3.0)
+            score += min(6.0, body_ratio / max(min_body_ratio, 1e-12) * 3.0)
+            score += min(6.0, vol_ratio / max(min_volume_ratio, 1e-12) * 3.0)
+
+            return {
+                "passed": True,
+                "breakdown_level": support_ref,
+                "support_ref": support_ref,
+                "break_bar_open_time": candidate["open_time"],
+                "break_distance_pct": break_distance_pct,
+                "body_ratio": body_ratio,
+                "vol_ratio": vol_ratio,
+                "score_15m_breakdown": min(score, 30.0),
+                "reason_tags": ["15m_clean_breakdown", f"15m_break_dist={break_distance_pct:.2f}%"],
+                "signal_bar": candidate,
+                "bd_scan_window_bars": 3,
+                "bd_candidate_offset": k,
+                "bd_signal_age_min": signal_age_min,
+                "bd_support_ref": support_ref,
+                "bd_previous_close": prev_bar["close"] if prev_bar else None,
+                "bd_candidate_open": candidate["open"],
+                "bd_candidate_close": candidate["close"],
+                "bd_break_distance_pct": break_distance_pct,
+                "bd_is_event_cross": bd_is_event_cross,
+                "bd_reject_reason": None,
+            }
+
+        return None
 
     def _reset_round_detect_funnel(self):
         self._round_detect_funnel = {
@@ -3098,7 +3160,7 @@ class BinanceScanner:
             vol_24h_usdt=_vol_24h_usdt,
             cross_exchange_confirmed=str(row.get("cross_exchange_confirmed", "N")),
             bybit_vol_24h_usdt=_bybit_vol_24h,
-            oi_delta_abs_1h=self._safe_orb_float(row.get("oi_current", 0.0)) - self._safe_orb_float(row.get("oi_prev", 0.0)),
+            oi_delta_abs_1h=self._safe_orb_float(row.get("oi_delta_abs_1h", 0.0)),
         )
 
         self.close_pending(row.get("pending_id", ""), "CONFIRMED", "orb_immediate_confirm", bars_waited=0)
