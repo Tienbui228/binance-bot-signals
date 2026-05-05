@@ -349,9 +349,11 @@ def detect_oi_range_breakout(
         )
         return None
 
-    if oi_delta_abs_min_usdt > 0 and oi_delta_abs_1h < oi_delta_abs_min_usdt:
+    # Gate uses Binance-only delta — consistent with what is displayed in the signal
+    _oi_binance_abs = oi_now - oi_1h_ago
+    if oi_delta_abs_min_usdt > 0 and _oi_binance_abs < oi_delta_abs_min_usdt:
         logger.debug(
-            f"[oi_range_breakout] {symbol} — OI abs delta ${oi_delta_abs_1h/1e6:.3f}M < min ${oi_delta_abs_min_usdt/1e6:.3f}M"
+            f"[oi_range_breakout] {symbol} — OI abs delta ${_oi_binance_abs/1e6:.3f}M < min ${oi_delta_abs_min_usdt/1e6:.3f}M"
         )
         return None
 
