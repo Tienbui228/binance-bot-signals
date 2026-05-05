@@ -5,7 +5,7 @@ Run from repo root: python debug_spk.py
 import math
 import requests
 
-SYMBOL = "PUMPBTCUSDT"
+SYMBOL = "ZKJUSDT"
 BASE = "https://fapi.binance.com"
 
 # -- Config thresholds (from config.yaml) --
@@ -14,6 +14,7 @@ CFG = {
     "max_quote_volume_usdt_24h": 300_000_000,
     "max_symbols": 300,
     "oi_spike_min_pct": 5.0,
+    "oi_delta_abs_min_usdt": 400_000,
     "max_market_cap_usd": 500_000_000,
     "max_range_width_pct": 60.0,
     "min_range_width_pct": 0.0,
@@ -212,6 +213,16 @@ if oi_delta < CFG["oi_spike_min_pct"]:
 else:
     print(f"  {S} OI spike OK\n")
     oi_gate_pass = True
+
+# -- Gate 3b: OI abs delta (Binance only; live bot adds Bybit delta on top) --
+print("-- Gate 3b: OI abs delta >= $0.4M --")
+oi_delta_abs_usdt = oi_now - oi_1h_ago
+print(f"  oi_delta_abs (Binance): ${oi_delta_abs_usdt/1e6:.3f}M  (min ${CFG['oi_delta_abs_min_usdt']/1e6:.3f}M)")
+print(f"  Note: live bot adds Bybit delta on top of this value")
+if oi_delta_abs_usdt < CFG["oi_delta_abs_min_usdt"]:
+    print(f"  {F} OI abs delta too small -> BLOCKED (Binance-only check; may pass if Bybit adds enough)\n")
+else:
+    print(f"  {S} OI abs delta OK\n")
 
 # -- Gate 4: Market cap --
 print("-- Gate 4: Market cap < $150M --")

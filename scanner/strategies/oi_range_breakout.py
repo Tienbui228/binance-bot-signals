@@ -320,6 +320,7 @@ def detect_oi_range_breakout(
     score_min_send = int(config.get("score_min_send", 20))
     score_strong = int(config.get("score_strong_signal", 50))
     score_high_conv = int(config.get("score_high_conviction", 70))
+    oi_delta_abs_min_usdt = float(config.get("oi_delta_abs_min_usdt", 0.0))
 
     # ── Validate inputs ──
     if not klines_1h or len(klines_1h) < 22:
@@ -345,6 +346,12 @@ def detect_oi_range_breakout(
     if oi_delta_pct < oi_spike_min_pct:
         logger.debug(
             f"[oi_range_breakout] {symbol} — OI spike insufficient: {oi_delta_pct:.2f}% < {oi_spike_min_pct}%"
+        )
+        return None
+
+    if oi_delta_abs_min_usdt > 0 and oi_delta_abs_1h < oi_delta_abs_min_usdt:
+        logger.debug(
+            f"[oi_range_breakout] {symbol} — OI abs delta ${oi_delta_abs_1h/1e6:.3f}M < min ${oi_delta_abs_min_usdt/1e6:.3f}M"
         )
         return None
 

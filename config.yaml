@@ -119,6 +119,7 @@ dispatch:
 oi_range_breakout:
   # Signal trigger — OI is the ONLY hard gate
   oi_spike_min_pct: 5.0           # OI delta % minimum (1h window: bar[-1] vs bar[-5])
+  oi_delta_abs_min_usdt: 400000   # OI abs delta minimum in USDT (Binance+Bybit); 0 = disabled
   vol_ema_period: 20              # logged only, not a gate
   vol_ema_multiplier: 2.0         # hard gate: volume must be ≥ 2× EMA20
   max_market_cap_usd: 500000000    # skip if market cap >= $500M
