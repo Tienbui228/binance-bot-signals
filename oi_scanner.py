@@ -324,7 +324,7 @@ class BinanceScanner:
             "entry_price", "stop_loss", "tp1", "tp2",
             "range_high", "range_low", "range_height", "range_width_pct", "midpoint",
             "atr_current", "atr_avg", "atr_ratio",
-            "oi_current", "oi_prev", "oi_delta_pct", "vol_ema20",
+            "oi_current", "oi_prev", "oi_delta_pct", "oi_delta_abs_1h", "vol_ema20",
             "cross_exchange_confirmed", "bybit_oi_delta_pct", "bybit_vol_ok",
         ]
         self.snapshot_fields = [
@@ -3046,6 +3046,7 @@ class BinanceScanner:
             oi_current=self._safe_orb_float(signal_dict.get("oi_current")),
             oi_prev=self._safe_orb_float(signal_dict.get("oi_prev")),
             oi_delta_pct=self._safe_orb_float(signal_dict.get("oi_delta_pct")),
+            oi_delta_abs_1h=self._safe_orb_float(signal_dict.get("oi_delta_abs_1h", 0.0)),
             vol_ema20=self._safe_orb_float(signal_dict.get("vol_ema20")),
             cross_exchange_confirmed=_xex,
             bybit_oi_delta_pct=self._safe_orb_float(signal_dict.get("bybit_oi_delta_pct", 0.0)),
