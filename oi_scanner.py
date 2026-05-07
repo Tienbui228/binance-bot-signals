@@ -194,6 +194,7 @@ class PendingSetup:
     cross_exchange_confirmed: str = "N"   # "Y"/"N"
     bybit_oi_delta_pct: float = 0.0
     bybit_vol_ok: str = "N"              # "Y"/"N"
+    oi_delta_abs_1h: float = 0.0
 
 
 _ORB_REGIME_MULT = {
