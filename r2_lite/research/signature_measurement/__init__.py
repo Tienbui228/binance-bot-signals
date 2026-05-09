@@ -1,1 +1,0 @@
-# research.signature_measurement

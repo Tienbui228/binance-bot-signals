@@ -5,7 +5,7 @@ Run from repo root: python debug_spk.py
 import math
 import requests
 
-SYMBOL = "ZKJUSDT"
+SYMBOL = "ARUSDT"
 BASE = "https://fapi.binance.com"
 
 # -- Config thresholds (from config.yaml) --

@@ -10,20 +10,12 @@ from typing import Dict, List, Optional
 
 import requests
 import yaml
-import shutil
-import subprocess
 
 from scanner.strategies.short_exhaustion_retest import build_pending_short_exhaustion_setup as strategy_build_pending_short_exhaustion_setup
 from scanner.dispatch.router import route_dispatch_v1
 from scanner.regime.classifier import classify_regime
 from scanner import lifecycle as lifecycle_mod
-from scanner import review_service as review_svc
 from regime.regime_normalizer import enrich_row_with_regime
-
-try:
-    from review_capture_runtime import CaseReviewRuntime
-except Exception:
-    CaseReviewRuntime = None
 
 try:
     from scanner.universe_filter import UniverseFilter
@@ -236,38 +228,13 @@ class BinanceScanner:
         self.pending_dir = self.data_dir / str(storage_cfg.get("pending_dir", "pending"))
         self.signals_dir = self.data_dir / str(storage_cfg.get("signals_dir", "signals"))
         self.results_dir = self.data_dir / str(storage_cfg.get("results_dir", "results"))
-        self.review_candidates_dir = self.data_dir / str(storage_cfg.get("review_candidates_dir", "review_candidates"))
-        self.market_review_dir = self.data_dir / str(storage_cfg.get("market_review_dir", "market_review"))
         self.include_legacy_flat_files = bool(storage_cfg.get("include_legacy_flat_files", False))
 
         self.signals_file = self.project_dir / "signals.csv"
         self.results_file = self.project_dir / "results.csv"
         self.pending_file = self.project_dir / "pending_setups.csv"
-        self.review_candidates_file = self.project_dir / str(self.cfg.get("observability", {}).get("review_candidates_file", "review_candidates.csv"))
-        self.market_review_file = self.project_dir / str(storage_cfg.get("market_review_index_file", "market_opportunity_review.csv"))
-        self.snapshots_dir = self.project_dir / str(self.cfg.get("review_snapshots", {}).get("output_dir", "review_snapshots"))
-        self.snapshot_index_file = self.project_dir / str(self.cfg.get("review_snapshots", {}).get("index_file", "review_snapshots.csv"))
-
-        review_cfg = self.cfg.get("review_case_system", {})
-        self.review_case_system_enabled = bool(review_cfg.get("enabled", False))
-        self.review_case_workspace = self.project_dir / str(review_cfg.get("workspace_dir", "review_workspace"))
-        self.review_case_timezone = str(review_cfg.get("timezone", "Asia/Ho_Chi_Minh"))
-        self.review_case_fallback_close_hours = int(review_cfg.get("fallback_close_hours", 4))
-        self.review_daily_exports_dir = self.project_dir / str(review_cfg.get("daily_exports_dir", "review_exports"))
-        self.review_builder_script = self.project_dir / str(review_cfg.get("builder_script", "build_daily_review_pack.py"))
-        self.review_runtime = None
         self._top_marketcap_exclude: set = set()
         self._top_marketcap_fetched_ts: float = 0.0
-        if self.review_case_system_enabled and CaseReviewRuntime is not None:
-            try:
-                self.review_runtime = CaseReviewRuntime(
-                    self.review_case_workspace,
-                    tz_name=self.review_case_timezone,
-                    fallback_close_hours=self.review_case_fallback_close_hours,
-                )
-            except Exception as e:
-                print(f"[review_case warn] runtime init failed: {e}")
-                self.review_runtime = None
 
         self.signal_fields = [
             "signal_id", "setup_id", "timestamp_ms", "symbol", "side", "score", "confidence",
@@ -328,23 +295,10 @@ class BinanceScanner:
             "oi_current", "oi_prev", "oi_delta_pct", "oi_delta_abs_1h", "vol_ema20",
             "cross_exchange_confirmed", "bybit_oi_delta_pct", "bybit_vol_ok",
         ]
-        self.snapshot_fields = [
-            "snapshot_ts_ms", "stage", "symbol", "side", "strategy", "signal_id", "pending_id",
-            "setup_id", "outcome", "image_path", "context_interval", "entry_interval", "breakout_level",
-            "entry_ref", "stop", "tp1", "tp2", "note", "image_available"
-        ]
-        self.market_review_fields = [
-            "review_ts_ms", "review_date", "symbol", "side_hint", "strategy_hint", "market_regime",
-            "opportunity_type", "bot_status", "miss_stage", "miss_type", "reason_code", "reason_text",
-            "setup_id", "signal_id", "manual_tradable", "improvement_candidate", "note"
-        ]
-
         self.table_specs = {
             "pending": {"logical": self.pending_file, "dir": self.pending_dir, "fieldnames": self.pending_fields, "ts_col": "created_ts_ms", "granularity": "day"},
             "signals": {"logical": self.signals_file, "dir": self.signals_dir, "fieldnames": self.signal_fields, "ts_col": "timestamp_ms", "granularity": "month"},
             "results": {"logical": self.results_file, "dir": self.results_dir, "fieldnames": self.result_fields, "ts_col": "close_time_ms", "granularity": "month"},
-            "review_candidates": {"logical": self.review_candidates_file, "dir": self.review_candidates_dir, "fieldnames": None, "ts_col": None, "granularity": "day"},
-            "market_review": {"logical": self.market_review_file, "dir": self.market_review_dir, "fieldnames": self.market_review_fields, "ts_col": "review_ts_ms", "granularity": "day"},
         }
 
         self._ensure_storage_layout()
@@ -476,9 +430,6 @@ class BinanceScanner:
             writer.writeheader()
             writer.writerows(migrated)
         print(f"[schema migrate] {path.name} -> columns={len(fieldnames)}")
-
-    def _ensure_csv_files(self):
-        self._ensure_storage_layout()
 
     def get(self, path: str, params: Optional[Dict] = None):
         url = BASE_FAPI + path
@@ -842,7 +793,6 @@ class BinanceScanner:
 
 
     def _ensure_storage_layout(self):
-        self.snapshots_dir.mkdir(parents=True, exist_ok=True)
         for key, spec in self.table_specs.items():
             spec["dir"].mkdir(parents=True, exist_ok=True)
             fieldnames = spec.get("fieldnames")
@@ -853,8 +803,37 @@ class BinanceScanner:
                     self._ensure_header(fp, fieldnames)
                 if self.include_legacy_flat_files and spec["logical"].exists():
                     self._ensure_header(spec["logical"], fieldnames)
-        self._ensure_header(self.snapshot_index_file, self.snapshot_fields)
-        self._ensure_table_seed("market_review")
+        self._cleanup_old_data(days=7)
+
+    def _cleanup_old_data(self, days: int = 7):
+        from datetime import timedelta, date as date_cls
+        cutoff = datetime.now(timezone.utc).date() - timedelta(days=days)
+        cutoff_month = cutoff.strftime("%Y-%m")
+        deleted = 0
+        for fp in self.pending_dir.glob("pending_*.csv"):
+            try:
+                file_date = date_cls.fromisoformat(fp.stem.replace("pending_", ""))
+                if file_date < cutoff:
+                    fp.unlink()
+                    deleted += 1
+            except Exception:
+                continue
+        for fp in self.signals_dir.glob("signals_*.csv"):
+            try:
+                if fp.stem.replace("signals_", "") < cutoff_month:
+                    fp.unlink()
+                    deleted += 1
+            except Exception:
+                continue
+        for fp in self.results_dir.glob("results_*.csv"):
+            try:
+                if fp.stem.replace("results_", "") < cutoff_month:
+                    fp.unlink()
+                    deleted += 1
+            except Exception:
+                continue
+        if deleted:
+            print(f"[cleanup] deleted {deleted} data file(s) older than {days} days")
 
     def _ensure_table_seed(self, table_key: str):
         spec = self.table_specs[table_key]
@@ -903,52 +882,6 @@ class BinanceScanner:
             files = [spec["logical"]] + files
         return files
 
-    def _interval_to_ms(self, interval: str) -> int:
-        unit = interval[-1]
-        value = int(interval[:-1])
-        if unit == "m":
-            return value * 60 * 1000
-        if unit == "h":
-            return value * 60 * 60 * 1000
-        if unit == "d":
-            return value * 24 * 60 * 60 * 1000
-        return 0
-
-    def _fetch_klines_range(self, symbol: str, interval: str, start_ms: int, end_ms: int, limit: int = 150) -> List[Dict]:
-        try:
-            data = self.get("/fapi/v1/klines", {
-                "symbol": symbol,
-                "interval": interval,
-                "startTime": int(start_ms),
-                "endTime": int(end_ms),
-                "limit": int(limit),
-            })
-        except Exception:
-            return []
-        out = []
-        for x in data:
-            out.append({
-                "open_time": int(x[0]),
-                "open": float(x[1]),
-                "high": float(x[2]),
-                "low": float(x[3]),
-                "close": float(x[4]),
-                "volume": float(x[5]),
-                "close_time": int(x[6]),
-                "quote_volume": float(x[7]),
-            })
-        return out
-
-    def _get_entry_reference_for_outcome(self, row: Dict):
-        for key in ("breakout_level", "signal_price", "signal_high", "signal_low"):
-            try:
-                val = float(row.get(key) or 0.0)
-            except Exception:
-                val = 0.0
-            if val > 0:
-                return val, f"entry_ref_from_{key}"
-        return None, "missing_entry_reference"
-
     def _mark_pending_confirmed_fields(self, row: Dict, confirmed_ts_ms: Optional[int] = None, note: str = "signal confirmed") -> Dict:
         row = dict(row)
         fallback_ts = row.get("confirmed_ts_ms") or row.get("closed_ts_ms") or int(time.time() * 1000)
@@ -978,185 +911,9 @@ class BinanceScanner:
                 changed = True
                 break
         if changed:
-            rows = [self._enrich_pending_row_for_daily_review(r) for r in rows]
             self.write_csv(self.pending_file, rows, fieldnames=self.pending_fields)
             return synced_row
         return None
-
-    def _derive_review_integrity_fields(self, row: Dict) -> Dict:
-        status = str(row.get("status", "") or "").upper()
-        sem_ok = "Y"
-        sem_issue = ""
-        if status == "CONFIRMED" and not str(row.get("confirmed_ts_ms", "") or "").strip():
-            sem_ok = "N"
-            sem_issue = "confirmed_without_confirmed_ts"
-        if str(row.get("is_sent_signal", "N") or "N").upper() == "Y" and not str(row.get("sent_ts_ms", "") or "").strip():
-            sem_ok = "N"
-            sem_issue = sem_issue or "sent_without_sent_ts"
-        review_eligible = "Y" if sem_ok == "Y" else "N"
-        exclusion = "" if review_eligible == "Y" else sem_issue
-        return {
-            "semantic_consistency": sem_ok,
-            "semantic_issue": sem_issue,
-            "review_eligible": review_eligible,
-            "review_exclusion_reason": exclusion,
-        }
-
-    def _compute_close_outcome_metrics(self, row: Dict) -> Optional[Dict]:
-        try:
-            status = str(row.get("status", "") or "").upper()
-            if status == "PENDING":
-                return {
-                    "outcome_1h_available": "N",
-                    "outcome_2h_available": "N",
-                }
-            close_ts = int(float(row.get("closed_ts_ms") or 0))
-            if close_ts <= 0:
-                return None
-            symbol = str(row.get("symbol", "") or "").strip()
-            side = str(row.get("side", "") or "").upper().strip()
-            if not symbol or side not in {"LONG", "SHORT"}:
-                return None
-            now_ms = int(time.time() * 1000)
-            if now_ms < close_ts + 2 * 60 * 60 * 1000:
-                return {
-                    "outcome_1h_available": "N",
-                    "outcome_2h_available": "N",
-                    "post_close_outcome_notes": "not_enough_post_close_time",
-                }
-            entry_ref, entry_note = self._get_entry_reference_for_outcome(row)
-            if not entry_ref or entry_ref <= 0:
-                return {
-                    "review_eligible": "N",
-                    "review_exclusion_reason": "missing_entry_reference",
-                    "outcome_1h_available": "N",
-                    "outcome_2h_available": "N",
-                    "post_close_outcome_notes": entry_note,
-                }
-            bars = self._fetch_klines_range(symbol, "5m", close_ts, close_ts + 4 * 60 * 60 * 1000 + self._interval_to_ms("5m"), limit=120)
-            if not bars:
-                return None
-
-            def compute_window(window_ms: int):
-                subset = [b for b in bars if int(b.get("open_time", 0)) >= close_ts and int(b.get("open_time", 0)) < close_ts + window_ms]
-                if not subset:
-                    return None
-                best_favor = -1e18
-                best_adverse = -1e18
-                t_favor = None
-                t_adverse = None
-                for b in subset:
-                    hi = float(b.get("high", entry_ref))
-                    lo = float(b.get("low", entry_ref))
-                    if side == "LONG":
-                        favor_candidate = (hi - entry_ref) / entry_ref * 100.0
-                        adverse_candidate = (entry_ref - lo) / entry_ref * 100.0
-                    else:
-                        favor_candidate = (entry_ref - lo) / entry_ref * 100.0
-                        adverse_candidate = (hi - entry_ref) / entry_ref * 100.0
-                    if favor_candidate > best_favor:
-                        best_favor = favor_candidate
-                        t_favor = (int(b.get("open_time", close_ts)) - close_ts) / 60000.0
-                    if adverse_candidate > best_adverse:
-                        best_adverse = adverse_candidate
-                        t_adverse = (int(b.get("open_time", close_ts)) - close_ts) / 60000.0
-                return {"favor": max(best_favor, 0.0), "adverse": max(best_adverse, 0.0), "time_to_favor_m": t_favor, "time_to_adverse_m": t_adverse, "subset": subset}
-
-            w1 = compute_window(60 * 60 * 1000)
-            w2 = compute_window(2 * 60 * 60 * 1000)
-            w4 = compute_window(4 * 60 * 60 * 1000)
-            if not w1 or not w2:
-                return None
-            breakout = None
-            try:
-                breakout = float(row.get("breakout_level"))
-            except Exception:
-                breakout = None
-
-            def reclaim_flag(window):
-                if breakout is None or breakout <= 0 or not window:
-                    return "UNKNOWN"
-                subset = window.get("subset") or []
-                if side == "LONG":
-                    hit = any(float(b.get("low", breakout)) <= breakout for b in subset)
-                else:
-                    hit = any(float(b.get("high", breakout)) >= breakout for b in subset)
-                return "Y" if hit else "N"
-
-            entry_window_m = 10
-            signal_open = int(float(row.get("signal_open_time") or 0))
-            entry_feasible = ""
-            entry_slippage = ""
-            entry_exec_note = ""
-            if signal_open > 0:
-                e_bars = self._fetch_klines_range(symbol, "1m", signal_open, signal_open + entry_window_m * 60 * 1000 + self._interval_to_ms("1m"), limit=30)
-                if e_bars:
-                    touches = [b for b in e_bars if float(b.get("low", entry_ref)) <= entry_ref <= float(b.get("high", entry_ref))]
-                    if touches:
-                        entry_feasible = "Y"
-                        entry_slippage = "0.0000"
-                        entry_exec_note = f"entry still reachable within {entry_window_m}m"
-                    else:
-                        entry_feasible = "N"
-                        entry_exec_note = f"entry not reached within {entry_window_m}m"
-
-            no_meaningful_fast = bool((w2["favor"] < 1.0) or ((w2["time_to_favor_m"] or 9999) > 60))
-            regret_valid = "Y"
-            regret_reason = "valid_missed_continuation"
-            if entry_feasible == "N":
-                regret_valid, regret_reason = "N", "entry_not_feasible"
-            elif w2["adverse"] > max(w2["favor"] * 0.8, 1.0):
-                regret_valid, regret_reason = "N", "adverse_too_large"
-            elif no_meaningful_fast:
-                regret_valid, regret_reason = "N", "no_meaningful_fast_move"
-
-            outcome_code = "WAIT_TOO_SHORT_CANDIDATE" if regret_valid == "Y" else "NO_MEANINGFUL_MOVE"
-            if str(row.get("status", "")).upper() == "INVALIDATED" and regret_valid == "N":
-                outcome_code = "KILL_CORRECT"
-
-            return {
-                "close_anchor_time_ms": str(close_ts) if status != "CONFIRMED" else "",
-                "close_capture_basis": "true_close" if status != "CONFIRMED" else "not_due_yet",
-                "future_1h_max_favor_pct": f"{w1['favor']:.4f}",
-                "future_1h_max_adverse_pct": f"{w1['adverse']:.4f}",
-                "future_2h_max_favor_pct": f"{w2['favor']:.4f}",
-                "future_2h_max_adverse_pct": f"{w2['adverse']:.4f}",
-                "future_4h_max_favor_pct": f"{(w4 or w2)['favor']:.4f}",
-                "future_4h_max_adverse_pct": f"{(w4 or w2)['adverse']:.4f}",
-                "reclaim_breakout_2h_YN": reclaim_flag(w2),
-                "reclaim_breakout_4h_YN": reclaim_flag(w4),
-                "outcome_1h_available": "Y",
-                "outcome_2h_available": "Y",
-                "outcome_1h_summary": f"favor={w1['favor']:.2f}% adverse={w1['adverse']:.2f}%",
-                "outcome_2h_summary": f"favor={w2['favor']:.2f}% adverse={w2['adverse']:.2f}%",
-                "post_close_outcome_notes": entry_note,
-                "outcome_conclusion_code": outcome_code,
-                "entry_feasible_YN": entry_feasible,
-                "entry_feasible_window_minutes": str(entry_window_m),
-                "entry_slippage_pct": entry_slippage,
-                "entry_execution_note": entry_exec_note,
-                "time_to_max_favor_minutes": "" if w2["time_to_favor_m"] is None else str(int(round(w2["time_to_favor_m"]))),
-                "time_to_max_adverse_minutes": "" if w2["time_to_adverse_m"] is None else str(int(round(w2["time_to_adverse_m"]))),
-                "regret_valid_YN": regret_valid,
-                "regret_filter_reason": regret_reason,
-            }
-        except Exception as e:
-            return {
-                "post_close_outcome_notes": f"outcome_compute_error:{e}",
-                "outcome_1h_available": "N",
-                "outcome_2h_available": "N",
-            }
-
-    def _enrich_pending_row_for_daily_review(self, row: Dict) -> Dict:
-        row = dict(row)
-        row.update(self._derive_review_integrity_fields(row))
-        outcome = self._compute_close_outcome_metrics(row)
-        if outcome:
-            row.update(outcome)
-            if row.get("review_eligible", "Y") == "Y" and str(outcome.get("outcome_2h_available", "N")).upper() != "Y":
-                row["review_eligible"] = "N"
-                row["review_exclusion_reason"] = "outcome_2h_unavailable"
-        return self._normalize_row_for_fields(row, self.pending_fields)
 
     def read_csv(self, path: Path) -> List[Dict]:
         table_key = self._table_key_for_path(path)
@@ -1238,169 +995,6 @@ class BinanceScanner:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writerow(row)
 
-    def _sanitize_filename(self, value: str) -> str:
-        return re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("_") or "snapshot"
-
-    def _draw_candles(self, ax, bars: List[Dict], candle_width: float = 0.6):
-        for idx, bar in enumerate(bars):
-            op = float(bar["open"])
-            cl = float(bar["close"])
-            hi = float(bar["high"])
-            lo = float(bar["low"])
-            ax.vlines(idx, lo, hi, linewidth=1.0)
-            lower = min(op, cl)
-            height = max(abs(cl - op), max((hi - lo) * 0.003, 1e-12))
-            try:
-                import matplotlib.patches as mpatches
-                rect = mpatches.Rectangle((idx - candle_width / 2, lower), candle_width, height, fill=False, linewidth=1.0)
-                ax.add_patch(rect)
-            except Exception:
-                pass
-
-    def _mark_signal_bar(self, ax, bars: List[Dict], ts_ms: int):
-        if not bars:
-            return
-        target_idx = None
-        for idx, bar in enumerate(bars):
-            if int(bar.get("open_time", 0)) == int(ts_ms):
-                target_idx = idx
-                break
-        if target_idx is None:
-            candidates = [i for i, bar in enumerate(bars) if int(bar.get("open_time", 0)) <= int(ts_ms)]
-            if candidates:
-                target_idx = candidates[-1]
-        if target_idx is None:
-            target_idx = len(bars) - 1
-        ax.axvline(target_idx, linestyle="--", linewidth=1.0)
-
-    def save_review_snapshot(
-        self,
-        symbol: str,
-        side: str,
-        strategy: str,
-        stage: str,
-        ts_ms: int,
-        breakout_level: Optional[float] = None,
-        entry_ref: Optional[float] = None,
-        stop: Optional[float] = None,
-        tp1: Optional[float] = None,
-        tp2: Optional[float] = None,
-        signal_id: str = "",
-        pending_id: str = "",
-        outcome: str = "",
-        note: str = "",
-    ) -> Optional[str]:
-        cfg = self.cfg.get("review_snapshots", {})
-        if not cfg.get("enabled", False):
-            return None
-
-        stage_toggle = {
-            "pre_pending": cfg.get("save_pre_pending", True),
-            "pending": cfg.get("save_pending", True),
-            "confirmed": cfg.get("save_confirmed", True),
-            "closed": cfg.get("save_closed", True),
-        }
-        stage_key = stage.split(":", 1)[0]
-        if not stage_toggle.get(stage_key, True):
-            return None
-
-        try:
-            import matplotlib
-            matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
-            import matplotlib.patches as mpatches
-        except Exception as e:
-            print(f"[snapshot warn] matplotlib unavailable: {e}")
-            return None
-
-        try:
-            context_interval = self.cfg["scanner"].get("interval_1h", "1h")
-            mid_interval = self.cfg["scanner"].get("interval_15m", "15m")
-            entry_interval = self.cfg["scanner"].get("interval_5m", "5m")
-            context_bars_n = int(cfg.get("context_1h_bars", 24))
-            mid_bars_n = int(cfg.get("context_15m_bars", 32))
-            entry_bars_n = int(cfg.get("entry_5m_bars", 48))
-
-            context_bars = self.klines(symbol, context_interval, limit=context_bars_n + 2)[:-1]
-            mid_bars = self.klines(symbol, mid_interval, limit=mid_bars_n + 2)[:-1]
-            entry_bars = self.klines(symbol, entry_interval, limit=entry_bars_n + 2)[:-1]
-            if len(context_bars) < 6 or len(mid_bars) < 8 or len(entry_bars) < 8:
-                return None
-
-            day_dir = self.snapshots_dir / datetime.now(timezone.utc).strftime("%Y%m%d")
-            day_dir.mkdir(parents=True, exist_ok=True)
-            base_name = self._sanitize_filename(f"{symbol}_{side}_{strategy}_{stage}_{ts_ms}")
-            file_path = day_dir / f"{base_name}.png"
-
-            fig, axes = plt.subplots(3, 1, figsize=(15, 11), constrained_layout=False)
-            ctx_ax, mid_ax, ent_ax = axes
-            self._draw_candles(ctx_ax, context_bars)
-            self._draw_candles(mid_ax, mid_bars)
-            self._draw_candles(ent_ax, entry_bars)
-            self._mark_signal_bar(ctx_ax, context_bars, ts_ms)
-            self._mark_signal_bar(mid_ax, mid_bars, ts_ms)
-            self._mark_signal_bar(ent_ax, entry_bars, ts_ms)
-
-            for ax, bars, label in ((ctx_ax, context_bars, context_interval), (mid_ax, mid_bars, mid_interval), (ent_ax, entry_bars, entry_interval)):
-                if breakout_level is not None:
-                    ax.axhline(float(breakout_level), linestyle='--', linewidth=1.0)
-                if entry_ref is not None:
-                    ax.axhline(float(entry_ref), linestyle='-.', linewidth=1.0)
-                if stop is not None:
-                    ax.axhline(float(stop), linestyle=':', linewidth=1.0)
-                if tp1 is not None:
-                    ax.axhline(float(tp1), linestyle=':', linewidth=1.0)
-                if tp2 is not None:
-                    ax.axhline(float(tp2), linestyle=':', linewidth=1.0)
-                ax.set_title(f"{symbol} {side} | {strategy} | {label} | {stage}")
-                ax.set_xlabel("bars")
-                ax.set_ylabel("price")
-                if bars:
-                    closes = [b["close"] for b in bars]
-                    lows = [b["low"] for b in bars]
-                    highs = [b["high"] for b in bars]
-                    lo = min(lows)
-                    hi = max(highs)
-                    pad = max((hi - lo) * 0.05, max(abs(c) for c in closes) * 0.002)
-                    ax.set_ylim(lo - pad, hi + pad)
-
-            fig.suptitle(f"{symbol} {side} {stage} | {note[:180]}")
-            try:
-                fig.tight_layout(rect=[0, 0.02, 1, 0.965])
-            except Exception:
-                pass
-            fig.savefig(file_path, dpi=int(cfg.get("dpi", 100)), bbox_inches="tight")
-            plt.close(fig)
-
-            self.append_csv(
-                self.snapshot_index_file,
-                {
-                    "snapshot_ts_ms": int(time.time() * 1000),
-                    "stage": stage,
-                    "symbol": symbol,
-                    "side": side,
-                    "strategy": strategy,
-                    "signal_id": signal_id,
-                    "pending_id": pending_id,
-                    "setup_id": pending_id or signal_id,
-                    "outcome": outcome,
-                    "image_path": str(file_path),
-                    "context_interval": context_interval,
-                    "entry_interval": f"{mid_interval}|{entry_interval}",
-                    "breakout_level": "" if breakout_level is None else f"{breakout_level}",
-                    "entry_ref": "" if entry_ref is None else f"{entry_ref}",
-                    "stop": "" if stop is None else f"{stop}",
-                    "tp1": "" if tp1 is None else f"{tp1}",
-                    "tp2": "" if tp2 is None else f"{tp2}",
-                    "note": note,
-                },
-                fieldnames=self.snapshot_fields,
-            )
-            return str(file_path)
-        except Exception as e:
-            print(f"[snapshot warn] {symbol} {side} {stage}: {e}")
-            return None
-
     def _local_day_from_ms(self, ts_ms: int) -> str:
         return datetime.fromtimestamp(max(int(ts_ms), 0) / 1000.0, tz=timezone.utc).astimezone().strftime("%Y-%m-%d")
 
@@ -1408,56 +1002,6 @@ class BinanceScanner:
         if strategy == "short_exhaustion_retest":
             return 15 * 60 * 1000
         return 5 * 60 * 1000
-
-    def _review_case_day(self, created_ts_ms: int) -> str:
-        try:
-            from zoneinfo import ZoneInfo
-            tz = ZoneInfo(self.review_case_timezone)
-        except Exception:
-            tz = timezone.utc
-        return datetime.fromtimestamp(max(int(created_ts_ms), 0) / 1000.0, tz=timezone.utc).astimezone(tz).strftime("%Y-%m-%d")
-
-    def _review_register_stage(self, case_day: str, case_id: str, stage: str, image_path: Optional[str], note: str = ""):
-        # Delegated to review_service — tries multiple stage name aliases.
-        review_svc._review_register_stage(self, case_day, case_id, stage, image_path, note=note)
-
-    def _capture_and_register_case_stage(self, pending_row: Dict, stage: str, ts_ms: int, note: str = "", signal_row: Optional[Dict] = None):
-        if not self.review_runtime:
-            return None
-        try:
-            case_day = self._review_case_day(int(pending_row.get("created_ts_ms") or 0))
-            case_id = pending_row.get("pending_id") or pending_row.get("setup_id", "")
-            strategy = pending_row.get("strategy", "")
-            try:
-                if case_id and not self.review_runtime._load_case(case_day, case_id):
-                    self.review_runtime.ensure_case(pending_row)
-            except Exception:
-                pass
-            image_path = self.save_review_snapshot(
-                symbol=pending_row.get("symbol", ""),
-                side=pending_row.get("side", ""),
-                strategy=strategy,
-                stage={"pre_pending":"pre_pending","pending_open":"pending","entry_or_confirm":"confirmed","case_close":"closed"}[stage],
-                ts_ms=int(ts_ms),
-                breakout_level=float(pending_row.get("breakout_level") or 0.0) if pending_row.get("breakout_level") not in (None, "") else None,
-                entry_ref=float((signal_row or {}).get("entry_ref") or 0.0) if (signal_row or {}).get("entry_ref") not in (None, "") else None,
-                stop=float((signal_row or {}).get("stop") or 0.0) if (signal_row or {}).get("stop") not in (None, "") else None,
-                tp1=float((signal_row or {}).get("tp1") or 0.0) if (signal_row or {}).get("tp1") not in (None, "") else None,
-                tp2=float((signal_row or {}).get("tp2") or 0.0) if (signal_row or {}).get("tp2") not in (None, "") else None,
-                signal_id=(signal_row or {}).get("signal_id", ""),
-                pending_id=case_id,
-                outcome=(signal_row or {}).get("status", ""),
-                note=note,
-            )
-            self._review_register_stage(case_day, case_id, stage, image_path, note=note)
-            return image_path
-        except Exception as e:
-            print(f"[review_case warn] capture_stage {stage} {pending_row.get('pending_id','')}: {e}")
-            return None
-
-    def _review_register_pending_case(self, pending_row: Dict):
-        # Delegated to review_service.
-        review_svc._review_register_pending_case(self, pending_row)
 
     def _find_pending_row(self, pending_id: str) -> Optional[Dict]:
         rows = self.read_csv(self.pending_file)
@@ -1473,65 +1017,6 @@ class BinanceScanner:
             if row_setup == setup_id:
                 return row
         return None
-
-    def collect_due_case_close_fallbacks(self):
-        # Delegated to review_service.
-        review_svc.collect_due_case_close_fallbacks(self)
-
-    def build_daily_review_pack(self, case_day: str, debug: bool = False):
-        # Delegated to review_service — includes backfill before build.
-        return review_svc.build_daily_review_pack(self, case_day, debug=debug)
-
-        try:
-            all_rows = self.read_csv(self.pending_file)
-            if all_rows:
-                enriched = [self._enrich_pending_row_for_daily_review(r) for r in all_rows]
-                self.write_csv(self.pending_file, enriched, fieldnames=self.pending_fields)
-        except Exception as e:
-            print(f"[review_case warn] enrich pending rows before build failed: {e}")
-
-        pending_path = self.pending_dir / f"pending_{case_day}.csv"
-        signals_path = self.signals_dir / f"signals_{case_day[:7]}.csv"
-        results_path = self.results_dir / f"results_{case_day[:7]}.csv"
-
-        out_dir = self.review_daily_exports_dir if not debug else self.review_daily_exports_dir / "debug"
-
-        cmd = [
-            sys.executable,
-            str(self.review_builder_script),
-            "--date", case_day,
-            "--workspace", str(self.review_case_workspace),
-            "--pending", str(pending_path),
-            "--signals", str(signals_path),
-            "--results", str(results_path),
-            "--snapshot-index", str(self.snapshot_index_file),
-            "--out-dir", str(out_dir),
-            "--tz", self.review_case_timezone,
-            "--fallback-hours", str(self.review_case_fallback_close_hours),
-        ]
-        try:
-            print("[review_case] building daily pack:", " ".join(cmd))
-            subprocess.run(cmd, cwd=str(self.project_dir), check=True)
-            if debug:
-                debug_dir = self.review_daily_exports_dir / "debug"
-                debug_dir.mkdir(parents=True, exist_ok=True)
-                canonical = debug_dir / f"daily_review_{case_day}.docx"
-                if canonical.exists():
-                    ts_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    debug_path = debug_dir / f"daily_review_debug_{case_day}_{ts_tag}.docx"
-                    try:
-                        canonical.rename(debug_path)
-                    except Exception:
-                        shutil.copy2(canonical, debug_path)
-                        try:
-                            canonical.unlink()
-                        except Exception:
-                            pass
-                    print(f"[review_case] debug export written: {debug_path}")
-            return True
-        except Exception as e:
-            print(f"[review_case warn] build daily pack failed: {e}")
-            return False
 
     def already_open_signal(self, symbol: str, side: str) -> bool:
         rows = self.read_csv(self.signals_file)
@@ -1571,41 +1056,12 @@ class BinanceScanner:
             s.dispatch_reason = "not_evaluated"
         row = self._normalize_row_for_fields(asdict(s), self.signal_fields)
         self.append_csv(self.signals_file, row, fieldnames=self.signal_fields)
-        synced_pending = self._sync_confirmed_pending_row(
+        self._sync_confirmed_pending_row(
             s.setup_id,
             confirmed_ts_ms=int(s.timestamp_ms),
             note=s.reason or "signal confirmed",
         )
         self.sync_pending_send_decision(s.setup_id, "SENT", sent_ts_ms=int(s.timestamp_ms))
-        self.save_review_snapshot(
-            symbol=s.symbol,
-            side=s.side,
-            strategy=s.strategy,
-            stage="confirmed",
-            ts_ms=s.timestamp_ms,
-            breakout_level=s.breakout_level,
-            entry_ref=s.entry_ref,
-            stop=s.stop,
-            tp1=s.tp1,
-            tp2=s.tp2,
-            signal_id=s.signal_id,
-            note=s.reason,
-        )
-        if self.review_runtime:
-            pending_row = synced_pending or self._find_pending_by_setup(s.setup_id)
-            if pending_row:
-                case_day = self._review_case_day(int(pending_row.get("created_ts_ms") or 0))
-                case_id = pending_row.get("pending_id") or pending_row.get("setup_id", "")
-                try:
-                    self.review_runtime.register_sent_signal(case_day, case_id, row)
-                except Exception as e:
-                    print(f"[review_case warn] register_sent_signal {case_id}: {e}")
-                try:
-                    already_captured = self.review_runtime.has_captured_stage(case_day, case_id, "entry_or_confirm")
-                except Exception:
-                    already_captured = False
-                if not already_captured:
-                    self._capture_and_register_case_stage(pending_row, "entry_or_confirm", int(s.timestamp_ms), note=s.reason, signal_row=row)
 
     def save_pending(self, p: PendingSetup):
         if not p.setup_id:
@@ -1640,28 +1096,6 @@ class BinanceScanner:
         pending_row["dispatch_confidence_band"] = pending_row.get("dispatch_confidence_band") or "not_evaluated"
         pending_row["dispatch_reason"] = pending_row.get("dispatch_reason") or "not_evaluated"
         self.append_csv(self.pending_file, self._normalize_row_for_fields(pending_row, self.pending_fields), fieldnames=self.pending_fields)
-        try:
-            self.save_review_snapshot(
-                symbol=p.symbol,
-                side=p.side,
-                strategy=p.strategy,
-                stage="pending",
-                ts_ms=p.signal_open_time,
-                breakout_level=p.breakout_level,
-                entry_ref=getattr(p, 'entry_ref', p.signal_price),
-                stop=getattr(p, 'stop', p.stop_loss),
-                tp1=p.tp1,
-                tp2=p.tp2,
-                pending_id=p.pending_id,
-                note=p.reason,
-            )
-        except Exception as _snap_e:
-            print(f"[snapshot warn] save_pending {p.pending_id}: {_snap_e}")
-        if self.review_runtime:
-            try:
-                self._review_register_pending_case(pending_row)
-            except Exception as e:
-                print(f"[review_case warn] register pending {p.pending_id}: {e}")
 
     def sync_pending_send_decision(self, setup_id: str, send_decision: str, skip_reason: str = "", sent_ts_ms: Optional[int] = None):
         rows = self.read_csv(self.pending_file)
@@ -1692,19 +1126,6 @@ class BinanceScanner:
                 changed = True
                 break
         if changed:
-            changed_row = None
-            for row in rows:
-                row_setup = row.get("setup_id") or row.get("pending_id", "")
-                if row_setup == setup_id:
-                    changed_row = dict(row)
-                    break
-            if changed_row is not None:
-                changed_row = self._enrich_pending_row_for_daily_review(changed_row)
-                for idx, row in enumerate(rows):
-                    row_setup = row.get("setup_id") or row.get("pending_id", "")
-                    if row_setup == setup_id:
-                        rows[idx] = changed_row
-                        break
             self.write_csv(self.pending_file, rows, fieldnames=self.pending_fields)
         return changed
 
@@ -1768,30 +1189,7 @@ class BinanceScanner:
                 closed_row = dict(rows[idx])
                 break
         if changed:
-            if closed_row is not None:
-                closed_row = self._enrich_pending_row_for_daily_review(closed_row)
-                for idx, row in enumerate(rows):
-                    if row.get("pending_id") == pending_id:
-                        rows[idx] = closed_row
-                        break
             self.write_csv(self.pending_file, rows, fieldnames=self.pending_fields)
-            if self.review_runtime and closed_row:
-                case_day = self._review_case_day(int(closed_row.get("created_ts_ms") or 0))
-                case_id = closed_row.get("pending_id") or closed_row.get("setup_id", "")
-                if status == "CONFIRMED":
-                    try:
-                        self.review_runtime.register_confirmed(case_day, case_id, closed_row)
-                    except Exception as e:
-                        print(f"[review_case warn] register_confirmed pending {pending_id}: {e}")
-                    stage_ts = int(closed_row.get("closed_ts_ms") or int(time.time() * 1000))
-                    self._capture_and_register_case_stage(closed_row, "entry_or_confirm", stage_ts, note=close_reason)
-                else:
-                    try:
-                        self.review_runtime.register_close(case_day, case_id, closed_row)
-                    except Exception as e:
-                        print(f"[review_case warn] register_close pending {pending_id}: {e}")
-                    stage_ts = int(closed_row.get("closed_ts_ms") or int(time.time() * 1000))
-                    self._capture_and_register_case_stage(closed_row, "case_close", stage_ts, note=close_reason)
         return changed
 
     def close_signal(self, signal_row: Dict, outcome: str, r_multiple: float, bars_checked: int, close_reason: str, mfe_pct: float = 0.0, mae_pct: float = 0.0):
@@ -1851,36 +1249,6 @@ class BinanceScanner:
         }
         results.append(self._normalize_row_for_fields(result_row, self.result_fields))
         self.write_csv(self.results_file, results, fieldnames=self.result_fields)
-
-        try:
-            self.save_review_snapshot(
-                symbol=signal_row.get("symbol", ""),
-                side=signal_row.get("side", ""),
-                strategy=self.infer_legacy_strategy(signal_row),
-                stage="closed",
-                ts_ms=int(result_row.get("close_time_ms") or signal_row.get("timestamp_ms") or 0),
-                breakout_level=float(signal_row.get("breakout_level") or 0.0) if signal_row.get("breakout_level") else None,
-                entry_ref=float(signal_row.get("entry_ref") or 0.0) if signal_row.get("entry_ref") else None,
-                stop=float(signal_row.get("stop") or 0.0) if signal_row.get("stop") else None,
-                tp1=float(signal_row.get("tp1") or 0.0) if signal_row.get("tp1") else None,
-                tp2=float(signal_row.get("tp2") or 0.0) if signal_row.get("tp2") else None,
-                signal_id=signal_row.get("signal_id", ""),
-                outcome=outcome,
-                note=f"{outcome} | r={r_multiple:.2f} | {close_reason}",
-            )
-        except Exception as e:
-            print(f"[snapshot warn] close_signal {signal_row.get('signal_id')}: {e}")
-
-        if self.review_runtime:
-            pending_row = self._find_pending_by_setup(signal_row.get("setup_id", signal_row.get("signal_id", "")))
-            if pending_row:
-                case_day = self._review_case_day(int(pending_row.get("created_ts_ms") or 0))
-                case_id = pending_row.get("pending_id") or pending_row.get("setup_id", "")
-                try:
-                    self.review_runtime.register_close(case_day, case_id, result_row)
-                except Exception as e:
-                    print(f"[review_case warn] register_close signal {case_id}: {e}")
-                self._capture_and_register_case_stage(pending_row, "case_close", int(result_row.get("close_time_ms") or int(time.time() * 1000)), note=f"{outcome} | {close_reason}", signal_row=signal_row)
 
         signals = self.read_csv(self.signals_file)
         for row in signals:
@@ -3309,12 +2677,10 @@ class BinanceScanner:
         self.print_strategy_pipeline_summary()
         self.print_pending_reason_breakdown()
         self.print_pending_age_summary()
-        self.print_snapshot_stage_summary()
         self.print_score_component_summary()
         self.print_result_breakdown_by_score_bucket()
         self.print_outcome_breakdown_by_strategy_side()
         self.print_manual_trading_diagnostics()
-        self.export_review_candidates()
         manual_yes = sum(1 for r in rows if r.get("manual_tradable") == "yes")
         print(f"Manual summary | tradable_yes={manual_yes}/{total} ({manual_yes/max(total,1):.1%})")
 
@@ -3509,23 +2875,6 @@ class BinanceScanner:
             f"| oldest_bars_waited={self._to_int(oldest.get('bars_waited'), 0)}"
         )
 
-    def print_snapshot_stage_summary(self):
-        cfg = self._observability_cfg()
-        if not cfg.get("enabled", True):
-            return
-
-        rows = self.read_csv(self.snapshot_index_file)
-        if not rows:
-            print("SnapshotSummary | no snapshots yet")
-            return
-        groups: Dict[str, int] = {}
-        for row in rows:
-            key = f"{row.get('strategy','unknown')}|{row.get('stage','unknown')}"
-            groups[key] = groups.get(key, 0) + 1
-        for key in sorted(groups.keys()):
-            strategy, stage = key.split("|", 1)
-            print(f"Snapshot[{strategy}] | stage={stage} | total={groups[key]}")
-
     def print_result_breakdown_by_score_bucket(self):
         cfg = self._observability_cfg()
         if not cfg.get("enabled", True):
@@ -3566,191 +2915,6 @@ class BinanceScanner:
             print(
                 f"ScoreBucket[{label}] | total={total} | TP1={tp1} | TP2={tp2} | STOP={stop} | EXPIRED={expired} | avgR={avg_r:.3f}"
             )
-
-    def export_market_opportunity_review(self, symbols: List[str], tickers: Dict[str, Dict]):
-        cfg = self._observability_cfg()
-        if not cfg.get("enabled", True):
-            return
-        top_n = int(cfg.get("market_review_top_n", 20))
-        min_abs_change = float(cfg.get("market_review_min_abs_change_pct", 4.0))
-        today = datetime.now(timezone.utc)
-        out_path = self.market_review_dir / f"{today.strftime('%Y-%m-%d')}.csv"
-
-        ranked = []
-        for sym in symbols:
-            t = tickers.get(sym)
-            if not t:
-                continue
-            try:
-                chg = float(t.get("priceChangePercent", 0.0))
-                qv = float(t.get("quoteVolume", 0.0))
-                ranked.append((sym, chg, qv))
-            except Exception:
-                continue
-        ranked.sort(key=lambda x: (abs(x[1]), x[2]), reverse=True)
-        ranked = [r for r in ranked if abs(r[1]) >= min_abs_change][:top_n]
-
-        pending_rows = self.read_csv(self.pending_file)
-        signal_rows = self.read_csv(self.signals_file)
-        today_str = today.strftime('%Y-%m-%d')
-
-        rows = []
-        for sym, chg, qv in ranked:
-            pend_for_sym = [r for r in pending_rows if r.get("symbol") == sym]
-            sig_for_sym = [r for r in signal_rows if r.get("symbol") == sym]
-            strategy_hint = "long_breakout_retest" if chg >= 0 else "short_exhaustion_retest"
-            side_hint = "LONG_OPPORTUNITY" if chg >= 0 else "SHORT_OPPORTUNITY"
-            opp_type = "TOP_GAINER" if chg >= 0 else "TOP_LOSER"
-            bot_status = "NOT_DETECTED"
-            miss_stage = "SCAN"
-            miss_type = "BAD_MISS"
-            reason_code = "not_detected"
-            reason_text = "No pending or sent signal for top mover"
-            setup_id = ""
-            signal_id = ""
-
-            if sig_for_sym:
-                latest_sig = sorted(sig_for_sym, key=lambda r: self._to_int(r.get("timestamp_ms"), 0), reverse=True)[0]
-                bot_status = "SENT"
-                miss_stage = "SEND"
-                miss_type = "CAUGHT"
-                reason_code = "sent"
-                reason_text = latest_sig.get("reason", "signal sent")
-                setup_id = latest_sig.get("setup_id", "")
-                signal_id = latest_sig.get("signal_id", "")
-            elif pend_for_sym:
-                latest_pen = sorted(pend_for_sym, key=lambda r: self._to_int(r.get("created_ts_ms"), 0), reverse=True)[0]
-                setup_id = latest_pen.get("setup_id", latest_pen.get("pending_id", ""))
-                status = (latest_pen.get("status", "") or "").upper()
-                send_decision = (latest_pen.get("send_decision", "") or "").upper()
-                skip_reason = latest_pen.get("skip_reason", "") or latest_pen.get("close_reason", "")
-                if send_decision == "SKIPPED_TOP_N":
-                    bot_status = "CONFIRMED_SKIPPED_SELECTION"
-                    miss_stage = "SELECTION"
-                    miss_type = "BAD_MISS"
-                    reason_code = "skipped_top_n"
-                    reason_text = skip_reason or "Confirmed but skipped by top_n selection"
-                elif status == "PENDING":
-                    bot_status = "PENDING"
-                    miss_stage = "RETEST_CONFIRM"
-                    miss_type = "WATCHING"
-                    reason_code = "pending"
-                    reason_text = latest_pen.get("reason", "Waiting for retest confirmation")
-                elif status == "CONFIRMED":
-                    bot_status = "CONFIRMED_NOT_SENT"
-                    miss_stage = "SELECTION"
-                    miss_type = "BAD_MISS"
-                    reason_code = "confirmed_not_sent"
-                    reason_text = skip_reason or latest_pen.get("close_reason", "confirmed but not sent")
-                elif status in ("REJECTED_SCORE", "REJECTED_RULE"):
-                    bot_status = "REJECTED"
-                    miss_stage = "SETUP_LOGIC"
-                    miss_type = "BAD_MISS"
-                    reason_code = status.lower()
-                    reason_text = latest_pen.get("close_reason", status.lower())
-                elif status in ("INVALIDATED", "EXPIRED_WAIT"):
-                    bot_status = status
-                    miss_stage = "RETEST_CONFIRM"
-                    miss_type = "GOOD_MISS" if abs(chg) < (min_abs_change + 2.0) else "BAD_MISS"
-                    reason_code = status.lower()
-                    reason_text = latest_pen.get("close_reason", status.lower())
-
-            manual_tradable = "yes" if abs(chg) >= min_abs_change else "no"
-            improvement_candidate = "yes" if bot_status not in ("SENT", "PENDING") and manual_tradable == "yes" else "no"
-            rows.append({
-                "review_ts_ms": int(time.time() * 1000),
-                "review_date": today_str,
-                "symbol": sym,
-                "side_hint": side_hint,
-                "strategy_hint": strategy_hint,
-                "market_regime": self.current_market_snapshot.get("market_regime", "unknown"),
-                "opportunity_type": opp_type,
-                "bot_status": bot_status,
-                "miss_stage": miss_stage,
-                "miss_type": miss_type,
-                "reason_code": reason_code,
-                "reason_text": reason_text,
-                "setup_id": setup_id,
-                "signal_id": signal_id,
-                "manual_tradable": manual_tradable,
-                "improvement_candidate": improvement_candidate,
-                "note": f"24h_change={chg:.2f}% quote_volume={qv:.0f}",
-            })
-
-        self.write_csv(out_path, rows, fieldnames=self.market_review_fields)
-
-    def export_review_candidates(self):
-        cfg = self._observability_cfg()
-        if not cfg.get("enabled", True):
-            return
-        if not cfg.get("export_review_candidates", True):
-            return
-
-        max_rows = int(cfg.get("review_candidates_max_rows", 50))
-        out_path = self.review_candidates_dir / f"{datetime.now(timezone.utc).strftime("%Y-%m-%d")}.csv"
-
-        signals = {r.get("signal_id", ""): r for r in self.read_csv(self.signals_file)}
-        snapshots = self.read_csv(self.snapshot_index_file)
-        latest_snapshot_by_key: Dict[str, Dict] = {}
-        for row in snapshots:
-            key = f"{row.get('signal_id','')}|{row.get('pending_id','')}|{row.get('stage','')}"
-            latest_snapshot_by_key[key] = row
-
-        review_rows: List[Dict] = []
-        for row in self.read_csv(self.results_file):
-            sig = signals.get(row.get("signal_id", ""), {})
-            score = self._to_float(sig.get("score"), 0.0)
-            outcome = row.get("outcome", "")
-            category = ""
-            if score >= 90 and outcome in ("LOSS_STOP", "EXPIRED"):
-                category = "high_score_failed"
-            elif score < 80 and outcome in ("WIN_TP1", "WIN_TP2"):
-                category = "low_score_won"
-            elif outcome == "LOSS_STOP":
-                category = "all_stops"
-            if not category:
-                continue
-            snap = latest_snapshot_by_key.get(f"{row.get('signal_id','')}||closed", {})
-            review_rows.append({
-                "category": category,
-                "signal_id": row.get("signal_id", ""),
-                "pending_id": "",
-                "symbol": row.get("symbol", ""),
-                "side": row.get("side", ""),
-                "strategy": row.get("strategy", ""),
-                "score": f"{score:.2f}",
-                "outcome": outcome,
-                "r_multiple": row.get("r_multiple", ""),
-                "status": outcome,
-                "close_reason": row.get("close_reason", ""),
-                "image_path": snap.get("image_path", ""),
-            })
-
-        for row in self.read_csv(self.pending_file):
-            status = (row.get("status", "") or "").upper()
-            if status not in ("INVALIDATED", "EXPIRED_WAIT"):
-                continue
-            category = "pending_invalidated" if status == "INVALIDATED" else "pending_expired"
-            snap = latest_snapshot_by_key.get(f"|{row.get('pending_id','')}|pending", {})
-            review_rows.append({
-                "category": category,
-                "signal_id": "",
-                "pending_id": row.get("pending_id", ""),
-                "symbol": row.get("symbol", ""),
-                "side": row.get("side", ""),
-                "strategy": row.get("strategy", ""),
-                "score": row.get("score", ""),
-                "outcome": "",
-                "r_multiple": "",
-                "status": status,
-                "close_reason": row.get("close_reason", ""),
-                "image_path": snap.get("image_path", ""),
-            })
-
-        review_rows.sort(key=lambda r: (r.get("category", ""), self._to_float(r.get("score"), 0.0)), reverse=True)
-        fieldnames = ["category", "signal_id", "pending_id", "symbol", "side", "strategy", "score", "outcome", "r_multiple", "status", "close_reason", "image_path"]
-        self.write_csv(out_path, review_rows[:max_rows], fieldnames=fieldnames)
-        print(f"ReviewCandidates | exported={min(len(review_rows), max_rows)} | file={out_path.name}")
 
     def _infer_strategy_from_row(self, row: Dict) -> str:
         strategy = (row.get("strategy", "") or "").strip()
@@ -3972,19 +3136,12 @@ class BinanceScanner:
         print(f"[startup] short_exhaustion_retest.score_min_send={self.cfg.get('short_exhaustion_retest', {}).get('score_min_send', 70)}")
         print(f"[startup] btc_sentiment.bullish_threshold_pct={self.cfg.get('btc_sentiment', {}).get('bullish_threshold_pct', 1.0)}")
         print(f"[startup] btc_sentiment.bearish_threshold_pct={self.cfg.get('btc_sentiment', {}).get('bearish_threshold_pct', -1.0)}")
-        print(f"[startup] review_snapshots.enabled={self.cfg.get('review_snapshots', {}).get('enabled', False)}")
-        print(f"[startup] review_snapshots.output_dir={self.cfg.get('review_snapshots', {}).get('output_dir', 'review_snapshots')}")
-        print(f"[startup] review_case_system.enabled={self.review_case_system_enabled}")
-        print(f"[startup] review_case_system.workspace_dir={self.review_case_workspace}")
-        print(f"[startup] review_case_system.builder_script={self.review_builder_script}")
         print(f"[startup] observability.enabled={self.cfg.get('observability', {}).get('enabled', True)}")
         print(f"[startup] storage.data_dir={self.data_dir}")
         print(f"[startup] storage.pending_dir={self.pending_dir}")
         print(f"[startup] storage.signals_dir={self.signals_dir}")
         print(f"[startup] storage.results_dir={self.results_dir}")
-        print(f"[startup] observability.review_candidates_file={self.cfg.get('observability', {}).get('review_candidates_file', 'review_candidates.csv')}")
         print(f"[startup] observability.score_component_summary={self.cfg.get('observability', {}).get('score_component_summary', True)}")
-        print(f"[startup] observability.market_review_top_n={self.cfg.get('observability', {}).get('market_review_top_n', 20)}")
         print("=" * 72)
 
     def scan_once(self):
@@ -4165,8 +3322,6 @@ class BinanceScanner:
                 f"DispatchSummary | main_signal={main_count} | watchlist={watchlist_count} | no_send={no_send_count} | sent={sent_count}"
             )
 
-        self.export_market_opportunity_review(symbols, tickers)
-        self.collect_due_case_close_fallbacks()
         self.print_stats()
 
         new_pending = 0
@@ -4260,149 +3415,144 @@ class BinanceScanner:
 
 
     def run_simulation_case(self, case: str):
-        simulation_prev_snapshots = getattr(self, "enable_snapshots", True)
-        self.enable_snapshots = False
-        try:
-            case = case.strip().lower()
-            valid = {"short_tp1", "short_tp2", "short_sl", "long_tp1", "long_tp2", "long_sl"}
-            if case not in valid:
-                raise ValueError(f"unsupported simulate case: {case}")
+        case = case.strip().lower()
+        valid = {"short_tp1", "short_tp2", "short_sl", "long_tp1", "long_tp2", "long_sl"}
+        if case not in valid:
+            raise ValueError(f"unsupported simulate case: {case}")
 
-            now_ms = int(time.time() * 1000)
-            side = "LONG" if case.startswith("long_") else "SHORT"
-            symbol = "SIMLONGUSDT" if side == "LONG" else "SIMSHORTUSDT"
-            pending_id = f"SIMCASE-{symbol}-{side}-{now_ms}"
-            setup_id = pending_id
-            outcome_map = {
-                "short_tp1": ("WIN_TP1", 1.0, "simulated_short_tp1"),
-                "short_tp2": ("WIN_TP2", 2.0, "simulated_short_tp2"),
-                "short_sl": ("LOSS_SL", -1.0, "simulated_short_sl"),
-                "long_tp1": ("WIN_TP1", 1.0, "simulated_long_tp1"),
-                "long_tp2": ("WIN_TP2", 2.0, "simulated_long_tp2"),
-                "long_sl": ("LOSS_SL", -1.0, "simulated_long_sl"),
-            }
-            outcome, r_multiple, close_reason = outcome_map[case]
-            price = 100.0 if side == "LONG" else 50.0
-            sl_pct = 0.03
-            if side == "LONG":
-                stop = price * (1 - sl_pct)
-                tp1 = price * (1 + sl_pct)
-                tp2 = price * (1 + 2 * sl_pct)
-                breakout_level = price * 0.99
-                strategy = "long_breakout_retest"
-            else:
-                stop = price * (1 + sl_pct)
-                tp1 = price * (1 - sl_pct)
-                tp2 = price * (1 - 2 * sl_pct)
-                breakout_level = price * 1.01
-                strategy = "short_exhaustion_retest"
+        now_ms = int(time.time() * 1000)
+        side = "LONG" if case.startswith("long_") else "SHORT"
+        symbol = "SIMLONGUSDT" if side == "LONG" else "SIMSHORTUSDT"
+        pending_id = f"SIMCASE-{symbol}-{side}-{now_ms}"
+        setup_id = pending_id
+        outcome_map = {
+            "short_tp1": ("WIN_TP1", 1.0, "simulated_short_tp1"),
+            "short_tp2": ("WIN_TP2", 2.0, "simulated_short_tp2"),
+            "short_sl": ("LOSS_SL", -1.0, "simulated_short_sl"),
+            "long_tp1": ("WIN_TP1", 1.0, "simulated_long_tp1"),
+            "long_tp2": ("WIN_TP2", 2.0, "simulated_long_tp2"),
+            "long_sl": ("LOSS_SL", -1.0, "simulated_long_sl"),
+        }
+        outcome, r_multiple, close_reason = outcome_map[case]
+        price = 100.0 if side == "LONG" else 50.0
+        sl_pct = 0.03
+        if side == "LONG":
+            stop = price * (1 - sl_pct)
+            tp1 = price * (1 + sl_pct)
+            tp2 = price * (1 + 2 * sl_pct)
+            breakout_level = price * 0.99
+            strategy = "long_breakout_retest"
+        else:
+            stop = price * (1 + sl_pct)
+            tp1 = price * (1 - sl_pct)
+            tp2 = price * (1 - 2 * sl_pct)
+            breakout_level = price * 1.01
+            strategy = "short_exhaustion_retest"
 
-            pending = PendingSetup(
-                pending_id=pending_id,
-                created_ts_ms=now_ms,
-                signal_open_time=now_ms,
-                symbol=symbol,
-                side=side,
-                score=88.0,
-                confidence=0.91,
-                reason=f"SIMULATED_{case.upper()}",
-                breakout_level=breakout_level,
-                signal_price=price,
-                signal_high=max(price, breakout_level),
-                signal_low=min(price, breakout_level),
-                oi_jump_pct=1.2,
-                funding_pct=0.01,
-                vol_ratio=1.9,
-                setup_id=setup_id,
-                strategy=strategy,
-                market_regime="simulated",
-                btc_price=85000.0,
-                btc_24h_change_pct=1.2,
-                btc_4h_change_pct=0.4,
-                btc_1h_change_pct=0.1,
-                btc_24h_range_pct=3.0,
-                btc_4h_range_pct=1.1,
-                alt_market_breadth_pct=56.0,
-                btc_regime="neutral",
-                score_oi=1.5,
-                score_exhaustion=1.2 if side == "SHORT" else 0.0,
-                score_breakout=2.4,
-                score_retest=4.5,
-                reason_tags=f"simulated;case:{case}",
-                status="PENDING",
-                regime_label="unclear_mixed",
-                regime_fit_for_strategy="MEDIUM",
-            )
-            self.save_pending(pending)
-            self.close_pending(pending_id, "CONFIRMED", f"simulated_confirmed_{case}", 1)
+        pending = PendingSetup(
+            pending_id=pending_id,
+            created_ts_ms=now_ms,
+            signal_open_time=now_ms,
+            symbol=symbol,
+            side=side,
+            score=88.0,
+            confidence=0.91,
+            reason=f"SIMULATED_{case.upper()}",
+            breakout_level=breakout_level,
+            signal_price=price,
+            signal_high=max(price, breakout_level),
+            signal_low=min(price, breakout_level),
+            oi_jump_pct=1.2,
+            funding_pct=0.01,
+            vol_ratio=1.9,
+            setup_id=setup_id,
+            strategy=strategy,
+            market_regime="simulated",
+            btc_price=85000.0,
+            btc_24h_change_pct=1.2,
+            btc_4h_change_pct=0.4,
+            btc_1h_change_pct=0.1,
+            btc_24h_range_pct=3.0,
+            btc_4h_range_pct=1.1,
+            alt_market_breadth_pct=56.0,
+            btc_regime="neutral",
+            score_oi=1.5,
+            score_exhaustion=1.2 if side == "SHORT" else 0.0,
+            score_breakout=2.4,
+            score_retest=4.5,
+            reason_tags=f"simulated;case:{case}",
+            status="PENDING",
+            regime_label="unclear_mixed",
+            regime_fit_for_strategy="MEDIUM",
+        )
+        self.save_pending(pending)
+        self.close_pending(pending_id, "CONFIRMED", f"simulated_confirmed_{case}", 1)
 
-            signal_id = f"SIMCASE-SIG-{symbol}-{side}-{now_ms}"
-            signal = Signal(
-                signal_id=signal_id,
-                timestamp_ms=now_ms,
-                symbol=symbol,
-                side=side,
-                score=88.0,
-                confidence=0.91,
-                reason=f"SIMULATED_{case.upper()} | full lifecycle simulation",
-                breakout_level=breakout_level,
-                entry_low=price,
-                entry_high=price,
-                entry_ref=price,
-                stop=stop,
-                tp1=tp1,
-                tp2=tp2,
-                price=price,
-                oi_jump_pct=1.2,
-                funding_pct=0.01,
-                vol_ratio=1.9,
-                retest_bars_waited=1,
-                setup_id=setup_id,
-                config_version="SIMULATED_SIGNAL_CASE_V4",
-                strategy=strategy,
-                market_regime="simulated",
-                btc_price=85000.0,
-                btc_24h_change_pct=1.2,
-                btc_4h_change_pct=0.4,
-                btc_1h_change_pct=0.1,
-                btc_24h_range_pct=3.0,
-                btc_4h_range_pct=1.1,
-                alt_market_breadth_pct=56.0,
-                btc_regime="neutral",
-                risk_pct_real=0.8,
-                sl_distance_pct=3.0,
-                tp1_distance_pct=3.0,
-                tp2_distance_pct=6.0,
-                break_distance_pct=0.5,
-                retest_depth_pct=0.2,
-                score_oi=1.5,
-                score_exhaustion=1.2 if side == "SHORT" else 0.0,
-                score_breakout=2.4,
-                score_retest=4.5,
-                reason_tags=f"simulated;case:{case}",
-                stop_was_forced_min_risk="no",
-                manual_tradable="yes",
-                manual_trade_note="simulated_runtime_case",
-                status="OPEN",
-            )
-            self.save_signal(signal)
-            signal_row = self._normalize_row_for_fields(asdict(signal), self.signal_fields)
-            self.close_signal(
-                signal_row,
-                outcome,
-                r_multiple,
-                3,
-                close_reason,
-                mfe_pct=6.4 if r_multiple > 0 else 1.1,
-                mae_pct=0.7 if r_multiple > 0 else 3.2,
-            )
-            print("SIMULATION_OK")
-            print(f"pending_id={pending_id}")
-            print(f"setup_id={setup_id}")
-            print(f"signal_id={signal_id}")
-            print(f"outcome={outcome}")
-        finally:
-            self.enable_snapshots = simulation_prev_snapshots
+        signal_id = f"SIMCASE-SIG-{symbol}-{side}-{now_ms}"
+        signal = Signal(
+            signal_id=signal_id,
+            timestamp_ms=now_ms,
+            symbol=symbol,
+            side=side,
+            score=88.0,
+            confidence=0.91,
+            reason=f"SIMULATED_{case.upper()} | full lifecycle simulation",
+            breakout_level=breakout_level,
+            entry_low=price,
+            entry_high=price,
+            entry_ref=price,
+            stop=stop,
+            tp1=tp1,
+            tp2=tp2,
+            price=price,
+            oi_jump_pct=1.2,
+            funding_pct=0.01,
+            vol_ratio=1.9,
+            retest_bars_waited=1,
+            setup_id=setup_id,
+            config_version="SIMULATED_SIGNAL_CASE_V4",
+            strategy=strategy,
+            market_regime="simulated",
+            btc_price=85000.0,
+            btc_24h_change_pct=1.2,
+            btc_4h_change_pct=0.4,
+            btc_1h_change_pct=0.1,
+            btc_24h_range_pct=3.0,
+            btc_4h_range_pct=1.1,
+            alt_market_breadth_pct=56.0,
+            btc_regime="neutral",
+            risk_pct_real=0.8,
+            sl_distance_pct=3.0,
+            tp1_distance_pct=3.0,
+            tp2_distance_pct=6.0,
+            break_distance_pct=0.5,
+            retest_depth_pct=0.2,
+            score_oi=1.5,
+            score_exhaustion=1.2 if side == "SHORT" else 0.0,
+            score_breakout=2.4,
+            score_retest=4.5,
+            reason_tags=f"simulated;case:{case}",
+            stop_was_forced_min_risk="no",
+            manual_tradable="yes",
+            manual_trade_note="simulated_runtime_case",
+            status="OPEN",
+        )
+        self.save_signal(signal)
+        signal_row = self._normalize_row_for_fields(asdict(signal), self.signal_fields)
+        self.close_signal(
+            signal_row,
+            outcome,
+            r_multiple,
+            3,
+            close_reason,
+            mfe_pct=6.4 if r_multiple > 0 else 1.1,
+            mae_pct=0.7 if r_multiple > 0 else 3.2,
+        )
+        print("SIMULATION_OK")
+        print(f"pending_id={pending_id}")
+        print(f"setup_id={setup_id}")
+        print(f"signal_id={signal_id}")
+        print(f"outcome={outcome}")
 
     def run_forever(self):
         import traceback
@@ -4446,7 +3596,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("config_path", nargs="?", default="config.yaml")
     parser.add_argument("--simulate-case", dest="simulate_case", default="")
-    parser.add_argument("--build-review-pack", dest="build_review_pack", default="")
     args = parser.parse_args()
 
     cfg = load_config(args.config_path)
@@ -4456,10 +3605,6 @@ def main():
 
     if args.simulate_case:
         scanner.run_simulation_case(args.simulate_case)
-        return
-    if args.build_review_pack:
-        ok = scanner.build_daily_review_pack(args.build_review_pack)
-        print("REVIEW_PACK_OK" if ok else "REVIEW_PACK_FAILED")
         return
 
     scanner.run_forever()
