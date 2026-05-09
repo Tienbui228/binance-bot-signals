@@ -64,35 +64,6 @@ def save_signal(app, s: Signal):
         note=s.reason or "signal confirmed",
     )
     sync_pending_send_decision(app, s.setup_id, "SENT", sent_ts_ms=int(s.timestamp_ms))
-    app.save_review_snapshot(
-        symbol=s.symbol,
-        side=s.side,
-        strategy=s.strategy,
-        stage="confirmed",
-        ts_ms=s.timestamp_ms,
-        breakout_level=s.breakout_level,
-        entry_ref=s.entry_ref,
-        stop=s.stop,
-        tp1=s.tp1,
-        tp2=s.tp2,
-        signal_id=s.signal_id,
-        note=s.reason,
-    )
-    if app.review_runtime:
-        pending_row = synced_pending or app._find_pending_by_setup(s.setup_id)
-        if pending_row:
-            case_day = app._review_case_day(int(pending_row.get("created_ts_ms") or 0))
-            case_id = pending_row.get("pending_id") or pending_row.get("setup_id", "")
-            try:
-                app.review_runtime.register_sent_signal(case_day, case_id, row)
-            except Exception as e:
-                print(f"[review_case warn] register_sent_signal {case_id}: {e}")
-            try:
-                already_captured = app.review_runtime.has_captured_stage(case_day, case_id, "entry_or_confirm")
-            except Exception:
-                already_captured = False
-            if not already_captured:
-                app._capture_and_register_case_stage(pending_row, "entry_or_confirm", int(s.timestamp_ms), note=s.reason, signal_row=row)
 
 
 def save_pending(app, p: PendingSetup):
@@ -123,21 +94,6 @@ def save_pending(app, p: PendingSetup):
     pending_row.setdefault("dispatch_confidence_band", "not_evaluated")
     pending_row.setdefault("dispatch_reason", "not_evaluated")
     app.append_csv(app.pending_file, app._normalize_row_for_fields(pending_row, app.pending_fields), fieldnames=app.pending_fields)
-    try:
-        app.save_review_snapshot(
-            symbol=p.symbol,
-            side=p.side,
-            strategy=p.strategy,
-            stage="pending",
-            ts_ms=p.signal_open_time,
-            breakout_level=p.breakout_level,
-            pending_id=p.pending_id,
-            note=p.reason,
-        )
-    except Exception as _snap_e:
-        print(f"[snapshot warn] save_pending {p.pending_id}: {_snap_e}")
-    if app.review_runtime:
-        app._review_register_pending_case(asdict(p))
 
 
 def sync_pending_send_decision(app, setup_id: str, send_decision: str, skip_reason: str = "", sent_ts_ms: Optional[int] = None):
@@ -234,23 +190,6 @@ def close_pending(app, pending_id: str, status: str, close_reason: str, bars_wai
                     rows[idx] = closed_row
                     break
         app.write_csv(app.pending_file, rows, fieldnames=app.pending_fields)
-        if app.review_runtime and closed_row:
-            case_day = app._review_case_day(int(closed_row.get("created_ts_ms") or 0))
-            case_id = closed_row.get("pending_id") or closed_row.get("setup_id", "")
-            if status == "CONFIRMED":
-                try:
-                    app.review_runtime.register_confirmed(case_day, case_id, closed_row)
-                except Exception as e:
-                    print(f"[review_case warn] register_confirmed pending {pending_id}: {e}")
-                stage_ts = int(closed_row.get("closed_ts_ms") or int(time.time() * 1000))
-                app._capture_and_register_case_stage(closed_row, "entry_or_confirm", stage_ts, note=close_reason)
-            else:
-                try:
-                    app.review_runtime.register_close(case_day, case_id, closed_row)
-                except Exception as e:
-                    print(f"[review_case warn] register_close pending {pending_id}: {e}")
-                stage_ts = int(closed_row.get("closed_ts_ms") or int(time.time() * 1000))
-                app._capture_and_register_case_stage(closed_row, "case_close", stage_ts, note=close_reason)
     return changed
 
 
@@ -301,42 +240,6 @@ def close_signal(app, signal_row: Dict, outcome: str, r_multiple: float, bars_ch
     }
     results.append(app._normalize_row_for_fields(result_row, app.result_fields))
     app.write_csv(app.results_file, results, fieldnames=app.result_fields)
-
-    try:
-        app.save_review_snapshot(
-            symbol=signal_row.get("symbol", ""),
-            side=signal_row.get("side", ""),
-            strategy=app.infer_legacy_strategy(signal_row),
-            stage="closed",
-            ts_ms=int(result_row.get("close_time_ms") or signal_row.get("timestamp_ms") or 0),
-            breakout_level=float(signal_row.get("breakout_level") or 0.0) if signal_row.get("breakout_level") else None,
-            entry_ref=float(signal_row.get("entry_ref") or 0.0) if signal_row.get("entry_ref") else None,
-            stop=float(signal_row.get("stop") or 0.0) if signal_row.get("stop") else None,
-            tp1=float(signal_row.get("tp1") or 0.0) if signal_row.get("tp1") else None,
-            tp2=float(signal_row.get("tp2") or 0.0) if signal_row.get("tp2") else None,
-            signal_id=signal_row.get("signal_id", ""),
-            outcome=outcome,
-            note=f"{outcome} | r={r_multiple:.2f} | {close_reason}",
-        )
-    except Exception as e:
-        print(f"[snapshot warn] close_signal {signal_row.get('signal_id')}: {e}")
-
-    if app.review_runtime:
-        pending_row = app._find_pending_by_setup(signal_row.get("setup_id", signal_row.get("signal_id", "")))
-        if pending_row:
-            case_day = app._review_case_day(int(pending_row.get("created_ts_ms") or 0))
-            case_id = pending_row.get("pending_id") or pending_row.get("setup_id", "")
-            try:
-                app.review_runtime.register_close(case_day, case_id, result_row)
-            except Exception as e:
-                print(f"[review_case warn] register_close signal {case_id}: {e}")
-            app._capture_and_register_case_stage(
-                pending_row,
-                "case_close",
-                int(result_row.get("close_time_ms") or int(time.time() * 1000)),
-                note=f"{outcome} | {close_reason}",
-                signal_row=signal_row,
-            )
 
     signals = app.read_csv(app.signals_file)
     for row in signals:
