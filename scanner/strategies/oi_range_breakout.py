@@ -377,6 +377,14 @@ def detect_oi_range_breakout(
     volume_1h = float(klines_1h[-1].get("volume", 0))
     vol_ratio = volume_1h / vol_ema20 if vol_ema20 > 0 else 0.0
 
+    if volume_1h < vol_ema20 * vol_ema_multiplier:
+        logger.debug(
+            f"[oi_range_breakout] {symbol} — vol spike insufficient: "
+            f"{volume_1h:.0f} < {vol_ema20 * vol_ema_multiplier:.0f} "
+            f"({vol_ratio:.2f}x EMA{vol_ema_period}, need {vol_ema_multiplier}x)"
+        )
+        return None
+
     # ── Step 2.5: Market cap filter ──
     max_market_cap_usd = float(config.get("max_market_cap_usd", 150_000_000))
     market_cap = fetch_market_cap(symbol)

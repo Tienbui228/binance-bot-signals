@@ -25,6 +25,8 @@ CFG = {
     "max_risk_pct": 20.0,
     "stop_buffer_pct": 0.2,
     "score_min_send": 0,
+    "vol_ema_period": 20,
+    "vol_ema_multiplier": 2.0,
 }
 
 S = "[PASS]"
@@ -299,16 +301,22 @@ else:
     else:
         print(f"  {S} Risk OK\n")
 
-# -- Volume info (not a gate, but informational) --
-print("-- Volume info (vol_ema_multiplier=2.0 gate active) --")
+# -- Gate Vol: Volume spike >= vol_ema_multiplier x EMA20 --
+# NOTE: in strategy this gate runs AFTER OI gates and BEFORE market cap / range detection
+print(f"-- Gate Vol: Vol spike >= {CFG['vol_ema_multiplier']}x EMA{CFG['vol_ema_period']} (strategy order: after OI, before range) --")
 vol_series = [k["volume"] for k in klines]
-vol_ema20 = calc_ema(vol_series[:-1], 20)
+vol_ema20 = calc_ema(vol_series[:-1], CFG["vol_ema_period"])
 vol_now = klines[-1]["volume"]
 vol_ratio = vol_now / vol_ema20 if vol_ema20 > 0 else 0
+vol_threshold = vol_ema20 * CFG["vol_ema_multiplier"]
+vol_gate_pass = vol_now >= vol_threshold
 print(f"  Vol current : {vol_now:,.0f}")
-print(f"  Vol EMA20   : {vol_ema20:,.0f}")
-print(f"  Vol ratio   : {vol_ratio:.2f}x  (gate disabled)\n")
+print(f"  Vol EMA{CFG['vol_ema_period']}   : {vol_ema20:,.0f}")
+print(f"  Threshold   : {vol_threshold:,.0f}  ({CFG['vol_ema_multiplier']}x EMA{CFG['vol_ema_period']})")
+print(f"  Vol ratio   : {vol_ratio:.2f}x")
+print(f"  {S if vol_gate_pass else F} Vol spike gate {'PASS' if vol_gate_pass else 'FAIL'}\n")
 
 print("-- Summary --")
 print(f"  OI delta {oi_delta:+.2f}% {'[PASS]' if oi_gate_pass else '[FAIL < 5%]'}")
+print(f"  Vol spike {vol_ratio:.2f}x   {'[PASS]' if vol_gate_pass else f'[FAIL < {CFG[\"vol_ema_multiplier\"]}x]'}")
 print()
