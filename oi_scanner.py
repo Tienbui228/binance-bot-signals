@@ -2857,10 +2857,18 @@ class BinanceScanner:
                         print(f"[eval skip] {symbol} {strategy} disabled — expired {row.get('signal_id')}")
                         continue
 
-                interval = self.cfg["scanner"]["interval_15m"] if strategy == "short_exhaustion_retest" else self.cfg["scanner"]["interval_5m"]
-                bars = self.klines(symbol, interval, limit=max_bars_after_entry + 40)
+                if strategy == "short_exhaustion_retest":
+                    interval = self.cfg["scanner"]["interval_15m"]
+                    _max_bars = max_bars_after_entry
+                elif strategy == "long_accumulation_continuation":
+                    interval = self.cfg["scanner"]["interval_1h"]
+                    _max_bars = int(tracking_cfg.get("acc_cont_max_bars_1h", 168))
+                else:
+                    interval = self.cfg["scanner"]["interval_5m"]
+                    _max_bars = max_bars_after_entry
+                bars = self.klines(symbol, interval, limit=_max_bars + 40)
                 closed_bars = bars[:-1]
-                future_bars = [b for b in closed_bars if b["open_time"] > signal_ts][:max_bars_after_entry]
+                future_bars = [b for b in closed_bars if b["open_time"] > signal_ts][:_max_bars]
 
                 if not future_bars:
                     continue
@@ -2918,7 +2926,7 @@ class BinanceScanner:
                             close_reason = "tp1 hit"
                             break
 
-                if outcome is None and len(future_bars) >= max_bars_after_entry:
+                if outcome is None and len(future_bars) >= _max_bars:
                     outcome = "EXPIRED"
                     last_close = future_bars[-1]["close"]
                     if side == "LONG":

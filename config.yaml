@@ -75,7 +75,8 @@ short_exhaustion_retest:
   score_strong_signal: 80
   score_high_conviction: 90
 tracking:
-  max_bars_after_entry: 144
+  max_bars_after_entry: 144        # 5m bars — ORB, short_exhaustion, breakout (12h)
+  acc_cont_max_bars_1h: 168        # 1h bars — long_accumulation_continuation (7 days)
 btc_sentiment:
   bullish_threshold_pct: 1.0
   bearish_threshold_pct: -1.0
@@ -193,39 +194,3 @@ universe_filter:
   request_delay_sec: 1.5
   cache_path: "data/eligible_universe.json"
 
-# ——— pump_exhaustion_short strategy ———
-pump_exhaustion:
-  enabled: true                   # set true to activate
-  discovery:
-    interval_minutes: 60
-    peak_window_candles: 200
-    pump_pct_min: 0.35
-    pump_vol_ratio_min: 3.0
-    peak_age_max_hours: 72
-    room_pct_min: 0.15
-    vol_spike_multiplier: 2.5
-    base_window_candles: 12
-  scan:
-    candles_5m: 288
-    quote_vol_5m_min_usdt: 10000
-    breakdown_body_ratio_min: 0.45
-    breakdown_vol_ratio_min: 1.0
-    breakdown_taker_sell_ratio_min: 0.52
-    false_break_reclaim_bars: 3
-    retest_tol: 0.02
-    retest_taker_buy_max: 0.45
-    signal_max_age_min: 15
-  outcome:
-    check_interval_minutes: 30
-  scoring:
-    min_score_to_alert: 6
-    rr_conservative_min: 1.5
-  watchlist:
-    max_symbols: 50
-    auto_remove_after_signal: false
-    data_dir: "data/pump_exhaustion"
-  alert:
-    terminal_enabled: true
-    telegram_enabled: false
-    telegram_token: ""
-    telegram_chat_id: ""
