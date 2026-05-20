@@ -31,7 +31,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "acc-cont-strategy-v1-2026-05-20"
+CODE_BUILD_ID = "acc-cont-vol-dedup-fix-2026-05-20"
 CODE_BUILD_SOURCE = "orb-final-tier-redesign"
 CODE_BUILD_NOTE = "ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch."
 
@@ -1416,16 +1416,12 @@ class BinanceScanner:
             participation = next(
                 (t.split("=", 1)[1] for t in _tags if t.startswith("participation=")), "n/a"
             )
-            oi_vs_baseline_str = next(
-                (t.split("=", 1)[1] for t in _tags if t.startswith("oi_vs_baseline=")), None
-            )
-            oi_line = (f"OI vs MA20: +{oi_vs_baseline_str}" if oi_vs_baseline_str
-                       else f"OI vs MA20 (weak): {s.oi_jump_pct:+.2f}%")
-            vol_1h = next(
-                (t.split("=", 1)[1] for t in _tags if t.startswith("vol_vs_baseline=")), "n/a"
-            )
             struct = next(
                 (t.split("=", 1)[1] for t in _tags if t.startswith("structure_score=")), "n/a"
+            )
+            _oi_str = next(
+                (t.split("=", 1)[1] for t in _tags if t.startswith("oi_vs_baseline=")),
+                f"{s.oi_jump_pct:+.2f}%"
             )
             return (
                 f"{side_icon} #{s.symbol} | ${s.price:.6g} | Score {s.score/10:.1f}/10\n\n"
@@ -1433,10 +1429,12 @@ class BinanceScanner:
                 f"Stop: {s.stop:.6g} ({s.sl_distance_pct:.2f}%)\n"
                 f"TP1: {s.tp1:.6g} ({s.tp1_distance_pct:.2f}%)\n"
                 f"TP2: {s.tp2:.6g} ({s.tp2_distance_pct:.2f}%)\n\n"
-                f"{oi_line}\n"
-                f"Vol 1h vs MA20: {'n/a' if vol_1h == 'n/a' else f'{vol_1h}x'}\n"
+                f"Volume 1h: {s.vol_ratio:.2f}x EMA20\n"
+                f"Volume 24h: ${getattr(s, 'vol_24h_usdt', 0)/1_000_000:.1f}M\n"
+                f"Funding: {s.funding_pct:+.4f}% (B+B)\n"
+                f"OI Delta 1h: +{_oi_str}\n"
                 f"Participation: {participation}\n"
-                f"Structure: {struct} | Breakout vol: {s.vol_ratio:.2f}x\n"
+                f"Structure: {struct}\n\n"
                 f"BTC 24h: {s.btc_24h_change_pct:+.2f}% ({s.btc_regime})\n"
                 f"{dispatch_line}"
                 f"Reason: {s.reason}\n\n"
@@ -2003,6 +2001,7 @@ class BinanceScanner:
         rows = self.read_csv(self.pending_file)
         confirmed: List[Signal] = []
         orb_confirmed_symbols: set = set()
+        acc_cont_confirmed_symbols: set = set()
 
         strategy_cfg = self.cfg.get("strategy", {})
 
@@ -2047,7 +2046,12 @@ class BinanceScanner:
 
             # ── No-retest path: long_accumulation_continuation ───────────────────
             if strategy == "long_accumulation_continuation":
+                if symbol in acc_cont_confirmed_symbols:
+                    self.close_pending(row.get("pending_id", ""), "REJECTED_RULE", "acc_cont_duplicate_dedup")
+                    continue
                 acc_signals = self._process_acc_cont_pending(row, risk_cfg)
+                if acc_signals:
+                    acc_cont_confirmed_symbols.add(symbol)
                 confirmed.extend(acc_signals)
                 continue
             # ────────────────────────────────────────────────────────────────────
@@ -2331,6 +2335,23 @@ class BinanceScanner:
         signal_open_time = int(row.get("signal_open_time") or 0)
         signal_id    = f"{symbol}-LONG-acc_cont-{signal_open_time}"
 
+        # Fetch funding and vol_24h live at confirmation time
+        try:
+            _binance_fr = self.funding(symbol)
+        except Exception:
+            _binance_fr = 0.0
+        try:
+            _bybit_fr = self.bybit_funding(symbol) if self.cfg.get("bybit", {}).get("enabled", True) else 0.0
+        except Exception:
+            _bybit_fr = 0.0
+        _funding_pct = _binance_fr + _bybit_fr
+
+        try:
+            _ticker = self.get("/fapi/v1/ticker/24hr", {"symbol": symbol})
+            _vol_24h_usdt = float(_ticker.get("quoteVolume", 0))
+        except Exception:
+            _vol_24h_usdt = 0.0
+
         signal = Signal(
             signal_id=signal_id,
             timestamp_ms=signal_open_time,
@@ -2348,8 +2369,9 @@ class BinanceScanner:
             tp2=tp2,
             price=signal_price,
             oi_jump_pct=float(row.get("oi_jump_pct") or 0),
-            funding_pct=float(row.get("funding_pct") or 0),
+            funding_pct=_funding_pct,
             vol_ratio=float(row.get("vol_ratio") or 0),
+            vol_24h_usdt=_vol_24h_usdt,
             retest_bars_waited=0,
             config_version=str(self.cfg.get("config_version", "")),
             strategy="long_accumulation_continuation",
@@ -2532,6 +2554,18 @@ class BinanceScanner:
                 return []
             current_low = float(kline[-2].get("low", current_price) or current_price)
 
+            # Vol 1h / MA20 — fetch 22 closed 1h bars (21 closed + 1 forming)
+            vol_ratio = 0.0
+            try:
+                klines_1h = self.klines(symbol, "1h", limit=22)
+                if klines_1h and len(klines_1h) >= 22:
+                    closed_vols = [float(b.get("volume", 0)) for b in klines_1h[:-1]]
+                    ma20 = sum(closed_vols[-20:]) / 20
+                    if ma20 > 0:
+                        vol_ratio = closed_vols[-1] / ma20
+            except Exception:
+                pass
+
             # Regime label from current_regime (set by scan_once before detection)
             regime_label = "unclear_mixed"
             if self.current_regime is not None:
@@ -2579,7 +2613,7 @@ class BinanceScanner:
                 signal_low=current_low,
                 oi_jump_pct=oi_delta_1h_pct,
                 funding_pct=0.0,
-                vol_ratio=0.0,
+                vol_ratio=vol_ratio,
                 score_oi=0.0,
                 score_breakout=float(acc_score),
                 regime_label=regime_label,
