@@ -31,7 +31,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "orb-vol-gate-vol20m-dispatch-clean-2026-04-23"
+CODE_BUILD_ID = "acc-cont-strategy-v1-2026-05-20"
 CODE_BUILD_SOURCE = "orb-final-tier-redesign"
 CODE_BUILD_NOTE = "ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch."
 
@@ -119,6 +119,24 @@ class Signal:
     cross_exchange_confirmed: str = "N"   # "Y"/"N" — Binance + Bybit both confirmed
     bybit_vol_24h_usdt: float = 0.0
     oi_delta_abs_1h: float = 0.0          # OI absolute USDT delta 60min, informational only
+    # long_accumulation_continuation specific fields
+    setup_quality_band: str = "not_evaluated"
+    accumulation_score: int = 0
+    pos_now: float = 0.0
+    acct_now: float = 0.0
+    gap_now: float = 0.0
+    retail_now: float = 0.0
+    taker_now: float = 0.0
+    pos_slope_30d: float = 0.0
+    gap_slope_30d: float = 0.0
+    retail_slope_30d: float = 0.0
+    pos_trend_3v14: float = 0.0
+    oi_trend_3v14: float = 0.0
+    pos_min_30d: float = 0.0
+    pos_recovery_from_min: float = 0.0
+    retail_min_30d: float = 0.0
+    retail_recovery: float = 0.0
+    taker_7d_avg: float = 0.0
 
 
 @dataclass
@@ -187,6 +205,23 @@ class PendingSetup:
     bybit_oi_delta_pct: float = 0.0
     bybit_vol_ok: str = "N"              # "Y"/"N"
     oi_delta_abs_1h: float = 0.0
+    # long_accumulation_continuation specific fields
+    accumulation_score: int = 0
+    pos_now: float = 0.0
+    acct_now: float = 0.0
+    gap_now: float = 0.0
+    retail_now: float = 0.0
+    taker_now: float = 0.0
+    pos_slope_30d: float = 0.0
+    gap_slope_30d: float = 0.0
+    retail_slope_30d: float = 0.0
+    pos_trend_3v14: float = 0.0
+    oi_trend_3v14: float = 0.0
+    pos_min_30d: float = 0.0
+    pos_recovery_from_min: float = 0.0
+    retail_min_30d: float = 0.0
+    retail_recovery: float = 0.0
+    taker_7d_avg: float = 0.0
 
 
 _ORB_REGIME_MULT = {
@@ -235,6 +270,8 @@ class BinanceScanner:
         self.pending_file = self.project_dir / "pending_setups.csv"
         self._top_marketcap_exclude: set = set()
         self._top_marketcap_fetched_ts: float = 0.0
+        self._tt_cache: dict = {}
+        self._tt_cache_ttl: int = 3600
 
         self.signal_fields = [
             "signal_id", "setup_id", "timestamp_ms", "symbol", "side", "score", "confidence",
@@ -254,6 +291,13 @@ class BinanceScanner:
             "oi_current", "oi_prev", "oi_delta_pct", "vol_ema20", "vol_24h_usdt",
             "cross_exchange_confirmed", "bybit_vol_24h_usdt",
             "oi_delta_abs_1h",
+            # long_accumulation_continuation specific fields
+            "setup_quality_band", "accumulation_score",
+            "pos_now", "acct_now", "gap_now", "retail_now", "taker_now",
+            "pos_slope_30d", "gap_slope_30d", "retail_slope_30d",
+            "pos_trend_3v14", "oi_trend_3v14",
+            "pos_min_30d", "pos_recovery_from_min",
+            "retail_min_30d", "retail_recovery", "taker_7d_avg",
         ]
         self.result_fields = [
             "signal_id", "setup_id", "timestamp_ms", "symbol", "side", "entry_ref", "stop",
@@ -294,6 +338,13 @@ class BinanceScanner:
             "atr_current", "atr_avg", "atr_ratio",
             "oi_current", "oi_prev", "oi_delta_pct", "oi_delta_abs_1h", "vol_ema20",
             "cross_exchange_confirmed", "bybit_oi_delta_pct", "bybit_vol_ok",
+            # long_accumulation_continuation specific fields
+            "accumulation_score",
+            "pos_now", "acct_now", "gap_now", "retail_now", "taker_now",
+            "pos_slope_30d", "gap_slope_30d", "retail_slope_30d",
+            "pos_trend_3v14", "oi_trend_3v14",
+            "pos_min_30d", "pos_recovery_from_min",
+            "retail_min_30d", "retail_recovery", "taker_7d_avg",
         ]
         self.table_specs = {
             "pending": {"logical": self.pending_file, "dir": self.pending_dir, "fieldnames": self.pending_fields, "ts_col": "created_ts_ms", "granularity": "day"},
@@ -637,6 +688,56 @@ class BinanceScanner:
             _logger_bybit.debug(f"[bybit_funding] {symbol} — {e}")
             return 0.0
 
+    # ── Top-trader / taker sentiment (long_accumulation_continuation) ──────────
+
+    def _tt_fetch_binance(self, endpoint: str, symbol: str, period: str, limit: int, value_key: str) -> list | None:
+        """Fetch and cache a top-trader/taker series from Binance futures data endpoint.
+
+        Returns [{ts: int, <value_key>: float}] sorted ascending, or None on error.
+        """
+        key = (symbol, endpoint, period, limit)
+        now = time.time()
+        cached = self._tt_cache.get(key)
+        if cached and now < cached["expires_at"]:
+            return cached["data"]
+        try:
+            raw = self.get(endpoint, {"symbol": symbol, "period": period, "limit": limit})
+            if not raw:
+                return None
+            rows = []
+            for item in raw:
+                ts = item.get("timestamp")
+                val = item.get(value_key)
+                if ts is None or val is None:
+                    continue
+                rows.append({"ts": int(ts), value_key: float(val)})
+            rows.sort(key=lambda x: x["ts"])
+            self._tt_cache[key] = {"data": rows, "expires_at": now + self._tt_cache_ttl}
+            return rows
+        except Exception as e:
+            print(f"[top_trader_fetch] {endpoint} {symbol}: {e}")
+            return None
+
+    def top_long_short_position_ratio(self, symbol: str, period: str = "1d", limit: int = 30) -> list | None:
+        return self._tt_fetch_binance(
+            "/futures/data/topLongShortPositionRatio", symbol, period, limit, "longAccount"
+        )
+
+    def top_long_short_account_ratio(self, symbol: str, period: str = "1d", limit: int = 30) -> list | None:
+        return self._tt_fetch_binance(
+            "/futures/data/topLongShortAccountRatio", symbol, period, limit, "longAccount"
+        )
+
+    def global_long_short_account_ratio(self, symbol: str, period: str = "1d", limit: int = 30) -> list | None:
+        return self._tt_fetch_binance(
+            "/futures/data/globalLongShortAccountRatio", symbol, period, limit, "longAccount"
+        )
+
+    def taker_long_short_ratio(self, symbol: str, period: str = "1d", limit: int = 30) -> list | None:
+        return self._tt_fetch_binance(
+            "/futures/data/takerlongshortRatio", symbol, period, limit, "buySellRatio"
+        )
+
     @staticmethod
     def _combine_oi_histories(binance_hist: list, bybit_hist: list, current_price: float) -> tuple:
         """
@@ -966,6 +1067,13 @@ class BinanceScanner:
     def _safe_orb_float(val, default: float = 0.0) -> float:
         try:
             return float(val) if val not in (None, "", "not_evaluated") else default
+        except (ValueError, TypeError):
+            return default
+
+    @staticmethod
+    def _safe_acc_int(val, default: int = 0) -> int:
+        try:
+            return int(float(val)) if val not in (None, "", "not_evaluated") else default
         except (ValueError, TypeError):
             return default
 
@@ -1326,7 +1434,7 @@ class BinanceScanner:
                 f"TP1: {s.tp1:.6g} ({s.tp1_distance_pct:.2f}%)\n"
                 f"TP2: {s.tp2:.6g} ({s.tp2_distance_pct:.2f}%)\n\n"
                 f"{oi_line}\n"
-                f"Vol 1h vs MA20: {vol_1h}x\n"
+                f"Vol 1h vs MA20: {'n/a' if vol_1h == 'n/a' else f'{vol_1h}x'}\n"
                 f"Participation: {participation}\n"
                 f"Structure: {struct} | Breakout vol: {s.vol_ratio:.2f}x\n"
                 f"BTC 24h: {s.btc_24h_change_pct:+.2f}% ({s.btc_regime})\n"
@@ -1878,6 +1986,12 @@ class BinanceScanner:
             )
             setups.extend(orb_setups)
 
+        if strategy_cfg.get("long_accumulation_continuation", {}).get("enabled", False):
+            acc_setups = self.build_pending_long_accumulation_continuation_setup(
+                symbol, oi_1h_history
+            )
+            setups.extend(acc_setups)
+
         return setups
 
     def process_pending_setups(self) -> List[Signal]:
@@ -2273,6 +2387,24 @@ class BinanceScanner:
             dispatch_confidence_band="not_evaluated",
             dispatch_reason="not_evaluated",
             status="OPEN",
+            # Acc-specific fields copied from pending row
+            setup_quality_band=row.get("setup_quality_band") or "not_evaluated",
+            accumulation_score=self._safe_acc_int(row.get("accumulation_score")),
+            pos_now=self._safe_orb_float(row.get("pos_now")),
+            acct_now=self._safe_orb_float(row.get("acct_now")),
+            gap_now=self._safe_orb_float(row.get("gap_now")),
+            retail_now=self._safe_orb_float(row.get("retail_now")),
+            taker_now=self._safe_orb_float(row.get("taker_now")),
+            pos_slope_30d=self._safe_orb_float(row.get("pos_slope_30d")),
+            gap_slope_30d=self._safe_orb_float(row.get("gap_slope_30d")),
+            retail_slope_30d=self._safe_orb_float(row.get("retail_slope_30d")),
+            pos_trend_3v14=self._safe_orb_float(row.get("pos_trend_3v14")),
+            oi_trend_3v14=self._safe_orb_float(row.get("oi_trend_3v14")),
+            pos_min_30d=self._safe_orb_float(row.get("pos_min_30d")),
+            pos_recovery_from_min=self._safe_orb_float(row.get("pos_recovery_from_min")),
+            retail_min_30d=self._safe_orb_float(row.get("retail_min_30d")),
+            retail_recovery=self._safe_orb_float(row.get("retail_recovery")),
+            taker_7d_avg=self._safe_orb_float(row.get("taker_7d_avg")),
         )
         self.close_pending(pending_id, "CONFIRMED", "acc_cont_immediate_confirm", bars_waited=0)
         return [signal]
@@ -2350,6 +2482,131 @@ class BinanceScanner:
 
         except Exception as e:
             print(f"[oi_range_breakout] {symbol} — {e}")
+            return []
+
+    def build_pending_long_accumulation_continuation_setup(
+        self,
+        symbol: str,
+        oi_1h_history: list | None,
+    ) -> list:
+        """Build pending setups for long_accumulation_continuation strategy.
+
+        Fetches 4 top-trader/taker series (cached), computes accumulation features,
+        applies hard gates, and returns [PendingSetup] if setup_detected or [] otherwise.
+        """
+        acc_cfg = self.cfg.get("long_accumulation_continuation", {})
+        period  = str(acc_cfg.get("history_period", "1d"))
+        limit   = int(acc_cfg.get("history_limit", 30))
+
+        try:
+            # Fetch 4 top-trader series (each individually cached per symbol+endpoint+TTL)
+            raw_pos    = self.top_long_short_position_ratio(symbol, period, limit)
+            raw_acct   = self.top_long_short_account_ratio(symbol, period, limit)
+            raw_retail = self.global_long_short_account_ratio(symbol, period, limit)
+            raw_taker  = self.taker_long_short_ratio(symbol, period, limit)
+
+            series_pos    = [r["longAccount"]    for r in raw_pos]    if raw_pos    else None
+            series_acct   = [r["longAccount"]    for r in raw_acct]   if raw_acct   else None
+            series_retail = [r["longAccount"]    for r in raw_retail] if raw_retail else None
+            series_taker  = [r["buySellRatio"]   for r in raw_taker]  if raw_taker  else None
+
+            # OI series from oi_1h_history (reuse ORB source, already fetched)
+            series_oi = None
+            if oi_1h_history and len(oi_1h_history) >= 2:
+                series_oi = [float(r.get("oi_value", 0)) for r in oi_1h_history]
+
+            # 1h OI delta — same formula as ORB (bar[-13] to bar[-1] at 5m = 60 min)
+            oi_delta_1h_pct = 0.0
+            if oi_1h_history and len(oi_1h_history) >= 13:
+                _prev = float(oi_1h_history[-13].get("oi_value", 0))
+                _cur  = float(oi_1h_history[-1].get("oi_value", 0))
+                if _prev > 0:
+                    oi_delta_1h_pct = (_cur - _prev) / _prev * 100.0
+
+            # Current price from last closed 5m bar
+            kline = self.klines(symbol, "5m", limit=2)
+            if not kline or len(kline) < 2:
+                return []
+            current_price = float(kline[-2].get("close", 0) or 0)
+            if current_price <= 0:
+                return []
+            current_low = float(kline[-2].get("low", current_price) or current_price)
+
+            # Regime label from current_regime (set by scan_once before detection)
+            regime_label = "unclear_mixed"
+            if self.current_regime is not None:
+                regime_label = getattr(self.current_regime, "regime_label", "unclear_mixed") or "unclear_mixed"
+
+            from scanner.strategies.long_accumulation_continuation import detect_long_accumulation_continuation
+
+            result = detect_long_accumulation_continuation(
+                symbol=symbol,
+                series_pos=series_pos,
+                series_acct=series_acct,
+                series_retail=series_retail,
+                series_taker=series_taker,
+                series_oi=series_oi,
+                oi_delta_1h_pct=oi_delta_1h_pct,
+                regime_label=regime_label,
+                config=acc_cfg,
+            )
+
+            if not result.get("setup_detected"):
+                return []
+
+            now_ms       = int(time.time() * 1000)
+            pending_id   = f"ACC-{symbol}-{now_ms}"
+            quality_band = result.get("setup_quality_band", "WEAK")
+            acc_score    = int(result.get("accumulation_score", 0))
+            reason_tags  = ";".join(result.get("setup_reason_tags", []))
+            gap          = result.get("gap_now", 0.0)
+            pos          = result.get("pos_now", 0.0)
+
+            return [PendingSetup(
+                pending_id=pending_id,
+                symbol=symbol,
+                side="LONG",
+                strategy="long_accumulation_continuation",
+                created_ts_ms=now_ms,
+                signal_open_time=now_ms,
+                score=float(acc_score),
+                confidence=float(acc_score) / 100.0,
+                reason=f"Acc:{quality_band} gap={gap:.2f} pos={pos:.2f} OI={oi_delta_1h_pct:+.1f}%",
+                reason_tags=reason_tags,
+                breakout_level=current_price,
+                signal_price=current_price,
+                signal_high=current_price,
+                signal_low=current_low,
+                oi_jump_pct=oi_delta_1h_pct,
+                funding_pct=0.0,
+                vol_ratio=0.0,
+                score_oi=0.0,
+                score_breakout=float(acc_score),
+                regime_label=regime_label,
+                regime_fit_for_strategy=self._derive_regime_fit_for_strategy(
+                    "long_accumulation_continuation", "LONG", regime_label
+                ),
+                setup_quality_band=quality_band,
+                accumulation_score=acc_score,
+                pos_now=result.get("pos_now", 0.0),
+                acct_now=result.get("acct_now", 0.0),
+                gap_now=result.get("gap_now", 0.0),
+                retail_now=result.get("retail_now", 0.0),
+                taker_now=result.get("taker_now", 0.0),
+                pos_slope_30d=result.get("pos_slope_30d", 0.0),
+                gap_slope_30d=result.get("gap_slope_30d", 0.0),
+                retail_slope_30d=result.get("retail_slope_30d", 0.0),
+                pos_trend_3v14=result.get("pos_trend_3v14", 0.0),
+                oi_trend_3v14=result.get("oi_trend_3v14", 0.0),
+                pos_min_30d=result.get("pos_min_30d", 0.0),
+                pos_recovery_from_min=result.get("pos_recovery_from_min", 0.0),
+                retail_min_30d=result.get("retail_min_30d", 0.0),
+                retail_recovery=result.get("retail_recovery", 0.0),
+                taker_7d_avg=result.get("taker_7d_avg", 0.0),
+            )]
+
+        except Exception as e:
+            print(f"[acc_cont build] {symbol} — {e}")
             return []
 
     def _wrap_oi_range_breakout_signal(self, signal_dict: dict):
@@ -3328,11 +3585,15 @@ class BinanceScanner:
 
         for sym in symbols:
             try:
-                # Fetch 5m OI history (13 bars = 65 min span) for oi_range_breakout
+                # Fetch 5m OI history (13 bars = 65 min span) for oi_range_breakout and long_accumulation_continuation
                 oi_1h_history = None
                 _bybit_oi_ok = False
                 _bybit_aligned_coins: list = []
-                if self.cfg.get("strategy", {}).get("oi_range_breakout", {}).get("enabled", False):
+                _need_oi_hist = (
+                    self.cfg.get("strategy", {}).get("oi_range_breakout", {}).get("enabled", False)
+                    or self.cfg.get("strategy", {}).get("long_accumulation_continuation", {}).get("enabled", False)
+                )
+                if _need_oi_hist:
                     try:
                         oi_binance = self.oi_hist(sym, "5m", 13)
                     except Exception as e:

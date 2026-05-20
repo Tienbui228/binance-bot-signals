@@ -1,3 +1,5 @@
+import logging
+import time
 from typing import Dict, List, Optional
 
 import requests
@@ -5,12 +7,16 @@ import requests
 BASE_FAPI = "https://fapi.binance.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
+_logger_tt = logging.getLogger("binance_client.top_trader")
+
 
 class BinanceClient:
     def __init__(self, cfg: Dict):
         self.cfg = cfg
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
+        self._tt_cache: dict = {}
+        self._tt_cache_ttl: int = 3600
 
     def get(self, path: str, params: Optional[Dict] = None):
         url = BASE_FAPI + path
@@ -133,3 +139,58 @@ class BinanceClient:
         if previous <= 0:
             return None
         return (current - previous) / previous * 100.0
+
+    # ── Top-trader / taker sentiment (long_accumulation_continuation) ──────────
+
+    def _tt_fetch(self, endpoint: str, symbol: str, period: str, limit: int, value_key: str) -> list | None:
+        """Fetch and cache a top-trader/taker sentiment series from Binance futures data.
+
+        Returns list of {ts: int, <value_key>: float} sorted ascending by ts, or None on error.
+        Cache TTL is self._tt_cache_ttl seconds.
+        """
+        key = (symbol, endpoint, period, limit)
+        now = time.time()
+        cached = self._tt_cache.get(key)
+        if cached and now < cached["expires_at"]:
+            return cached["data"]
+        try:
+            raw = self.get(endpoint, {"symbol": symbol, "period": period, "limit": limit})
+            if not raw:
+                return None
+            rows = []
+            for item in raw:
+                ts = item.get("timestamp")
+                val = item.get(value_key)
+                if ts is None or val is None:
+                    continue
+                rows.append({"ts": int(ts), value_key: float(val)})
+            rows.sort(key=lambda x: x["ts"])
+            self._tt_cache[key] = {"data": rows, "expires_at": now + self._tt_cache_ttl}
+            return rows
+        except Exception as e:
+            _logger_tt.warning("[top_trader_fetch] %s %s: %s", endpoint, symbol, e)
+            return None
+
+    def top_long_short_position_ratio(self, symbol: str, period: str = "1d", limit: int = 30) -> list | None:
+        """Top trader POSITION long/short ratio. Returns [{ts, long_account}] sorted asc, or None."""
+        return self._tt_fetch(
+            "/futures/data/topLongShortPositionRatio", symbol, period, limit, "longAccount"
+        )
+
+    def top_long_short_account_ratio(self, symbol: str, period: str = "1d", limit: int = 30) -> list | None:
+        """Top trader ACCOUNT long/short ratio. Returns [{ts, long_account}] sorted asc, or None."""
+        return self._tt_fetch(
+            "/futures/data/topLongShortAccountRatio", symbol, period, limit, "longAccount"
+        )
+
+    def global_long_short_account_ratio(self, symbol: str, period: str = "1d", limit: int = 30) -> list | None:
+        """Global (retail) account long/short ratio. Returns [{ts, long_account}] sorted asc, or None."""
+        return self._tt_fetch(
+            "/futures/data/globalLongShortAccountRatio", symbol, period, limit, "longAccount"
+        )
+
+    def taker_long_short_ratio(self, symbol: str, period: str = "1d", limit: int = 30) -> list | None:
+        """Taker buy/sell volume ratio. Returns [{ts, buy_sell_ratio}] sorted asc, or None."""
+        return self._tt_fetch(
+            "/futures/data/takerlongshortRatio", symbol, period, limit, "buySellRatio"
+        )

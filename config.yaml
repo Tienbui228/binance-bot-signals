@@ -22,6 +22,8 @@ strategy:
     enabled: true
   oi_range_breakout:
     enabled: true
+  long_accumulation_continuation:
+    enabled: false   # set true to activate
 thresholds:
   oi_jump_pct_5m: 2.0
   breakout_lookback_bars: 20
@@ -73,7 +75,7 @@ short_exhaustion_retest:
   score_strong_signal: 80
   score_high_conviction: 90
 tracking:
-  max_bars_after_entry: 36
+  max_bars_after_entry: 144
 btc_sentiment:
   bullish_threshold_pct: 1.0
   bearish_threshold_pct: -1.0
@@ -146,6 +148,36 @@ oi_range_breakout:
 
   # Ops
   max_pending_bars_5m: 48         # timeout before confirm (4h = 48×5m)
+
+long_accumulation_continuation:
+  # Gate thresholds (locked per spec V1)
+  pos_trend_min: 0.0         # pos_trend_3v14 must be strictly positive
+  pos_now_high: 0.68         # whale loaded threshold (OR-gate with pos_trend)
+  oi_delta_min_pct: 5.0      # 1h OI delta floor (reuse ORB oi_1h_history source)
+  retail_max: 0.70           # retail FOMO cap (hard gate, Option A)
+
+  # Pending expiry
+  stop_buffer_pct: 0.0015    # stop = signal_low * (1 - stop_buffer_pct), widened 1.30x
+  max_pending_bars_5m: 3     # expire if not confirmed within 3×5m = 15 min
+
+  # Data fetch config
+  history_period: "1d"
+  history_limit: 30
+  cache_ttl_seconds: 3600
+
+  # Score weight reference (weights baked into code, listed here for audit)
+  # gap=30, pos_now=20, pos_trend=20, btc_regime=30 → sum=100
+  btc_regime_score_map:
+    bull:
+      - "trend_continuation_friendly"
+    neutral:
+      - "unclear_mixed"
+    bearish:
+      - "broad_weakness_sell_pressure"
+
+  # Quality band thresholds
+  quality_band_strong_min: 70
+  quality_band_moderate_min: 40
 
 bybit:
   enabled: true                   # kill switch — false disables all Bybit fetching
