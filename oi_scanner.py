@@ -1421,7 +1421,7 @@ class BinanceScanner:
             )
             _oi_str = next(
                 (t.split("=", 1)[1] for t in _tags if t.startswith("oi_vs_baseline=")),
-                f"{s.oi_jump_pct:+.2f}%"
+                f"{s.oi_jump_pct:.2f}%"
             )
             return (
                 f"{side_icon} #{s.symbol} | ${s.price:.6g} | Score {s.score/10:.1f}/10\n\n"
