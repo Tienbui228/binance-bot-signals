@@ -19,11 +19,11 @@ scanner:
   - ETHUSDT
 strategy:
   short_exhaustion_retest:
-    enabled: true
+    enabled: false
   oi_range_breakout:
     enabled: true
   long_accumulation_continuation:
-    enabled: false   # set true to activate
+    enabled: true # set true to activate
 thresholds:
   oi_jump_pct_5m: 2.0
   breakout_lookback_bars: 20
@@ -154,7 +154,7 @@ long_accumulation_continuation:
   # Gate thresholds (locked per spec V1)
   pos_trend_min: 0.0         # pos_trend_3v14 must be strictly positive
   pos_now_high: 0.68         # whale loaded threshold (OR-gate with pos_trend)
-  oi_delta_min_pct: 5.0      # 1h OI delta floor (reuse ORB oi_1h_history source)
+  oi_delta_min_pct: 5.0        # 1h OI delta floor (reuse ORB oi_1h_history source)
   retail_max: 0.70           # retail FOMO cap (hard gate, Option A)
 
   # Pending expiry

@@ -2640,9 +2640,7 @@ class BinanceScanner:
             )]
 
         except Exception as e:
-            import traceback
             print(f"[acc_cont build] {symbol} — {e}")
-            traceback.print_exc()
             return []
 
     def _wrap_oi_range_breakout_signal(self, signal_dict: dict):
