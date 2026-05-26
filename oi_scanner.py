@@ -31,7 +31,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "acc-cont-sr-tpsl-2026-05-26"
+CODE_BUILD_ID = "acc-cont-sr-tpsl-clean-2026-05-26"
 CODE_BUILD_SOURCE = "orb-final-tier-redesign"
 CODE_BUILD_NOTE = "ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch."
 
@@ -1453,9 +1453,6 @@ class BinanceScanner:
             _tags = (s.reason_tags or "").split(";")
             participation = next(
                 (t.split("=", 1)[1] for t in _tags if t.startswith("participation=")), "n/a"
-            )
-            struct = next(
-                (t.split("=", 1)[1] for t in _tags if t.startswith("structure_score=")), "n/a"
             )
             _oi_str = next(
                 (t.split("=", 1)[1] for t in _tags if t.startswith("oi_vs_baseline=")),
