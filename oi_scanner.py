@@ -31,7 +31,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "acc-cont-vol-dedup-fix-2026-05-20"
+CODE_BUILD_ID = "acc-cont-chart-tpsl-2026-05-26"
 CODE_BUILD_SOURCE = "orb-final-tier-redesign"
 CODE_BUILD_NOTE = "ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch."
 
@@ -2295,10 +2295,12 @@ class BinanceScanner:
         breakout_lvl = float(row.get("breakout_level") or 0)
 
         acc_cfg          = self.cfg.get("long_accumulation_continuation", {})
-        stop_buffer_pct  = float(acc_cfg.get("stop_buffer_pct", 0.0015))
+        stop_buffer_pct  = float(acc_cfg.get("stop_buffer_pct", 0.3))
+        tp1_mult         = float(acc_cfg.get("tp1_range_multiplier", 1.0))
+        tp2_mult         = float(acc_cfg.get("tp2_range_multiplier", 2.0))
+        min_risk_pct     = float(acc_cfg.get("min_risk_pct", 1.0)) / 100.0
+        max_risk_pct     = float(acc_cfg.get("max_risk_pct", 30.0)) / 100.0
         max_pending_bars = int(acc_cfg.get("max_pending_bars_5m", 3))
-        tp1_r = float(risk_cfg.get("tp1_r_multiple", 2.0))
-        tp2_r = float(risk_cfg.get("tp2_r_multiple", 3.0))
 
         now_ms    = int(time.time() * 1000)
         expiry_ms = max_pending_bars * 5 * 60 * 1000
@@ -2307,18 +2309,24 @@ class BinanceScanner:
             self.close_pending(pending_id, "EXPIRED_WAIT", "acc_cont_expired", max_pending_bars)
             return []
 
-        base     = signal_low if signal_low > 0 else breakout_lvl
-        stop_raw = base * (1.0 - stop_buffer_pct)
-        risk_raw = signal_price - stop_raw
-        if risk_raw <= 0 or signal_price <= 0:
+        range_height = float(row.get("range_height") or 0)
+        base = signal_low if signal_low > 0 else breakout_lvl
+        stop = base * (1.0 - stop_buffer_pct / 100.0)
+        risk = signal_price - stop
+        if risk <= 0 or signal_price <= 0 or range_height <= 0:
             self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_bad_risk")
             return []
 
-        # Widen natural stop by 1.30× so TP/SL have meaningful room
-        risk = risk_raw * 1.30
-        stop = signal_price - risk
-        tp1  = signal_price + risk * tp1_r
-        tp2  = signal_price + risk * tp2_r
+        risk_pct = risk / signal_price
+        if risk_pct < min_risk_pct:
+            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_risk_too_tight")
+            return []
+        if risk_pct > max_risk_pct:
+            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_risk_too_wide")
+            return []
+
+        tp1 = signal_price + tp1_mult * range_height
+        tp2 = signal_price + tp2_mult * range_height
 
         if self.already_open_signal(symbol, "LONG"):
             self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_open_collision")
@@ -2554,15 +2562,27 @@ class BinanceScanner:
                 return []
             current_low = float(kline[-2].get("low", current_price) or current_price)
 
-            # Vol 1h / MA20 — fetch 22 closed 1h bars (21 closed + 1 forming)
-            vol_ratio = 0.0
+            # Fetch 1h klines — used for vol MA20 AND chart-based SL/TP structure
+            vol_ratio       = 0.0
+            recent_low_1h   = current_low   # fallback to 5m bar low
+            recent_high_1h  = current_price
+            range_height_1h = 0.0
             try:
-                klines_1h = self.klines(symbol, "1h", limit=22)
-                if klines_1h and len(klines_1h) >= 22:
-                    closed_vols = [float(b.get("volume", 0)) for b in klines_1h[:-1]]
-                    ma20 = sum(closed_vols[-20:]) / 20
-                    if ma20 > 0:
-                        vol_ratio = closed_vols[-1] / ma20
+                _lookback = int(acc_cfg.get("range_lookback_bars_1h", 14))
+                klines_1h = self.klines(symbol, "1h", limit=max(22, _lookback + 2))
+                if klines_1h and len(klines_1h) >= 2:
+                    closed_1h = klines_1h[:-1]  # exclude currently forming bar
+                    # Vol MA20
+                    vols = [float(b.get("volume", 0)) for b in closed_1h]
+                    if len(vols) >= 20:
+                        ma20 = sum(vols[-20:]) / 20
+                        if ma20 > 0:
+                            vol_ratio = vols[-1] / ma20
+                    # Chart structure: recent N-bar high/low for SL anchor and TP unit
+                    n = min(_lookback, len(closed_1h))
+                    recent_low_1h  = min(float(b["low"])  for b in closed_1h[-n:])
+                    recent_high_1h = max(float(b["high"]) for b in closed_1h[-n:])
+                    range_height_1h = recent_high_1h - recent_low_1h
             except Exception:
                 pass
 
@@ -2610,7 +2630,8 @@ class BinanceScanner:
                 breakout_level=current_price,
                 signal_price=current_price,
                 signal_high=current_price,
-                signal_low=current_low,
+                signal_low=recent_low_1h,
+                range_height=range_height_1h,
                 oi_jump_pct=oi_delta_1h_pct,
                 funding_pct=0.0,
                 vol_ratio=vol_ratio,
