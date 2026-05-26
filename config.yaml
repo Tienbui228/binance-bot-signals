@@ -157,13 +157,14 @@ long_accumulation_continuation:
   oi_delta_min_pct: 5.0        # 1h OI delta floor (reuse ORB oi_1h_history source)
   retail_max: 0.70           # retail FOMO cap (hard gate, Option A)
 
-  # Chart-based TP/SL (ORB convention: stop_buffer_pct is %, not fraction)
-  stop_buffer_pct: 0.3       # stop = range_low * (1 - 0.3/100)
-  tp1_range_multiplier: 1.0  # TP1 = entry + 1.0 × range_height
-  tp2_range_multiplier: 2.0  # TP2 = entry + 2.0 × range_height
-  range_lookback_bars_1h: 14 # 1h bars for range_low/high detection
-  min_risk_pct: 2.0          # reject if SL distance < 2%
-  max_risk_pct: 30.0         # reject if SL distance > 30%
+  # Chart-based S/R levels (two separate lookbacks)
+  stop_buffer_pct: 0.3          # stop = range_low * (1 - 0.3/100)
+  range_lookback_bars_1h: 14    # SL anchor: tight accumulation zone low (14h)
+  tp_lookback_bars_1h: 48       # TP anchor: swing high / resistance above (48h = 2 days)
+  tp2_extension_pct: 1.0        # TP2 = swing_high * (1 + 1.0/100) — just beyond resistance
+  min_tp1_distance_pct: 3.0     # TP1 must be ≥ 3% above entry
+  min_risk_pct: 0.5             # minimal SL floor (structure-based, not % from entry)
+  max_risk_pct: 35.0            # reject if SL > 35% below entry
 
   # Pending expiry
   max_pending_bars_5m: 3     # expire if not confirmed within 3×5m = 15 min

@@ -31,7 +31,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "acc-cont-msg-cleanup-2026-05-26"
+CODE_BUILD_ID = "acc-cont-sr-tpsl-2026-05-26"
 CODE_BUILD_SOURCE = "orb-final-tier-redesign"
 CODE_BUILD_NOTE = "ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch."
 
@@ -2332,10 +2332,10 @@ class BinanceScanner:
 
         acc_cfg          = self.cfg.get("long_accumulation_continuation", {})
         stop_buffer_pct  = float(acc_cfg.get("stop_buffer_pct", 0.3))
-        tp1_mult         = float(acc_cfg.get("tp1_range_multiplier", 1.0))
-        tp2_mult         = float(acc_cfg.get("tp2_range_multiplier", 2.0))
-        min_risk_pct     = float(acc_cfg.get("min_risk_pct", 1.0)) / 100.0
-        max_risk_pct     = float(acc_cfg.get("max_risk_pct", 30.0)) / 100.0
+        tp2_ext_pct      = float(acc_cfg.get("tp2_extension_pct", 1.0))
+        min_tp1_dist     = float(acc_cfg.get("min_tp1_distance_pct", 3.0)) / 100.0
+        min_risk_pct     = float(acc_cfg.get("min_risk_pct", 0.5)) / 100.0
+        max_risk_pct     = float(acc_cfg.get("max_risk_pct", 35.0)) / 100.0
         max_pending_bars = int(acc_cfg.get("max_pending_bars_5m", 3))
 
         now_ms    = int(time.time() * 1000)
@@ -2345,12 +2345,25 @@ class BinanceScanner:
             self.close_pending(pending_id, "EXPIRED_WAIT", "acc_cont_expired", max_pending_bars)
             return []
 
-        range_height = float(row.get("range_height") or 0)
-        base = signal_low if signal_low > 0 else breakout_lvl
-        stop = base * (1.0 - stop_buffer_pct / 100.0)
-        risk = signal_price - stop
-        if risk <= 0 or signal_price <= 0 or range_height <= 0:
+        # Chart-based S/R levels stored at detection time
+        swing_high = float(row.get("range_high") or 0)   # 48-bar resistance (TP anchor)
+        base       = signal_low if signal_low > 0 else breakout_lvl
+        stop       = base * (1.0 - stop_buffer_pct / 100.0)
+        risk       = signal_price - stop
+
+        if risk <= 0 or signal_price <= 0 or swing_high <= 0:
             self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_bad_risk")
+            return []
+        if swing_high <= signal_price:
+            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_no_upside")
+            return []
+
+        tp1 = swing_high
+        tp2 = swing_high * (1.0 + tp2_ext_pct / 100.0)
+
+        _tp1_dist_frac = (tp1 - signal_price) / signal_price
+        if _tp1_dist_frac < min_tp1_dist:
+            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_tp1_too_close")
             return []
 
         risk_pct = risk / signal_price
@@ -2360,9 +2373,6 @@ class BinanceScanner:
         if risk_pct > max_risk_pct:
             self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_risk_too_wide")
             return []
-
-        tp1 = signal_price + tp1_mult * range_height
-        tp2 = signal_price + tp2_mult * range_height
 
         if self.already_open_signal(symbol, "LONG"):
             self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_open_collision")
@@ -2601,11 +2611,12 @@ class BinanceScanner:
             # Fetch 1h klines — used for vol MA20 AND chart-based SL/TP structure
             vol_ratio       = 0.0
             recent_low_1h   = current_low   # fallback to 5m bar low
-            recent_high_1h  = current_price
+            swing_high_1h   = current_price  # fallback
             range_height_1h = 0.0
             try:
-                _lookback = int(acc_cfg.get("range_lookback_bars_1h", 14))
-                klines_1h = self.klines(symbol, "1h", limit=max(22, _lookback + 2))
+                _sl_lookback = int(acc_cfg.get("range_lookback_bars_1h", 14))  # SL: tight accumulation zone
+                _tp_lookback = int(acc_cfg.get("tp_lookback_bars_1h", 48))     # TP: swing high / resistance
+                klines_1h = self.klines(symbol, "1h", limit=max(22, _tp_lookback + 2))
                 if klines_1h and len(klines_1h) >= 2:
                     closed_1h = klines_1h[:-1]  # exclude currently forming bar
                     # Vol MA20
@@ -2614,11 +2625,13 @@ class BinanceScanner:
                         ma20 = sum(vols[-20:]) / 20
                         if ma20 > 0:
                             vol_ratio = vols[-1] / ma20
-                    # Chart structure: recent N-bar high/low for SL anchor and TP unit
-                    n = min(_lookback, len(closed_1h))
-                    recent_low_1h  = min(float(b["low"])  for b in closed_1h[-n:])
-                    recent_high_1h = max(float(b["high"]) for b in closed_1h[-n:])
-                    range_height_1h = recent_high_1h - recent_low_1h
+                    # SL anchor: bottom of current accumulation zone (short lookback)
+                    n_sl = min(_sl_lookback, len(closed_1h))
+                    recent_low_1h = min(float(b["low"]) for b in closed_1h[-n_sl:])
+                    # TP anchor: swing high / resistance above (longer lookback)
+                    n_tp = min(_tp_lookback, len(closed_1h))
+                    swing_high_1h = max(float(b["high"]) for b in closed_1h[-n_tp:])
+                    range_height_1h = swing_high_1h - recent_low_1h
             except Exception:
                 pass
 
@@ -2667,6 +2680,7 @@ class BinanceScanner:
                 signal_price=current_price,
                 signal_high=current_price,
                 signal_low=recent_low_1h,
+                range_high=swing_high_1h,
                 range_height=range_height_1h,
                 oi_jump_pct=oi_delta_1h_pct,
                 funding_pct=0.0,
