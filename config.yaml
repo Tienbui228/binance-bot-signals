@@ -162,7 +162,7 @@ long_accumulation_continuation:
   tp1_range_multiplier: 1.0  # TP1 = entry + 1.0 × range_height
   tp2_range_multiplier: 2.0  # TP2 = entry + 2.0 × range_height
   range_lookback_bars_1h: 14 # 1h bars for range_low/high detection
-  min_risk_pct: 1.0          # reject if SL distance < 1%
+  min_risk_pct: 2.0          # reject if SL distance < 2%
   max_risk_pct: 30.0         # reject if SL distance > 30%
 
   # Pending expiry

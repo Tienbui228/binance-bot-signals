@@ -31,7 +31,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "acc-cont-close-notify-2026-05-26"
+CODE_BUILD_ID = "acc-cont-msg-cleanup-2026-05-26"
 CODE_BUILD_SOURCE = "orb-final-tier-redesign"
 CODE_BUILD_NOTE = "ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch."
 
@@ -1471,10 +1471,8 @@ class BinanceScanner:
                 f"Volume 24h: ${getattr(s, 'vol_24h_usdt', 0)/1_000_000:.1f}M\n"
                 f"Funding: {s.funding_pct:+.4f}% (B+B)\n"
                 f"OI Delta 1h: +{_oi_str}\n"
-                f"Participation: {participation}\n"
-                f"Structure: {struct}\n\n"
+                f"Participation: {participation}\n\n"
                 f"BTC 24h: {s.btc_24h_change_pct:+.2f}% ({s.btc_regime})\n"
-                f"{dispatch_line}"
                 f"Reason: {s.reason}\n\n"
                 f"{side_tag} #{s.symbol} #BINANCE"
             )
