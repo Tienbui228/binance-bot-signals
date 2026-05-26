@@ -31,7 +31,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "acc-cont-sr-tpsl-clean-2026-05-26"
+CODE_BUILD_ID = "acc-cont-dispatch-dedup-2026-05-26"
 CODE_BUILD_SOURCE = "orb-final-tier-redesign"
 CODE_BUILD_NOTE = "ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch."
 
@@ -3560,16 +3560,22 @@ class BinanceScanner:
 
         if confirmed:
             confirmed.sort(key=lambda x: x.score, reverse=True)
-            # Final dispatch-level dedup for ORB: if 2+ ORB signals for same symbol slipped
-            # through process_pending_setups dedup, drop duplicates here before any dispatch.
+            # Dispatch-level dedup: drop duplicate same-symbol signals per strategy.
             _seen_orb: set = set()
+            _seen_acc: set = set()
             _deduped: list = []
             for _s in confirmed:
-                if getattr(_s, "strategy", "") == "oi_range_breakout":
+                _strat = getattr(_s, "strategy", "")
+                if _strat == "oi_range_breakout":
                     if _s.symbol in _seen_orb:
-                        print(f"[dispatch dedup] {_s.symbol} ORB — duplicate dropped at dispatch level")
+                        print(f"[dispatch dedup] {_s.symbol} ORB — duplicate dropped")
                         continue
                     _seen_orb.add(_s.symbol)
+                elif _strat == "long_accumulation_continuation":
+                    if _s.symbol in _seen_acc:
+                        print(f"[dispatch dedup] {_s.symbol} acc_cont — duplicate dropped")
+                        continue
+                    _seen_acc.add(_s.symbol)
                 _deduped.append(_s)
             confirmed = _deduped
 
