@@ -31,7 +31,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "acc-cont-chart-tpsl-2026-05-26"
+CODE_BUILD_ID = "acc-cont-close-notify-2026-05-26"
 CODE_BUILD_SOURCE = "orb-final-tier-redesign"
 CODE_BUILD_NOTE = "ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch."
 
@@ -1237,14 +1237,52 @@ class BinanceScanner:
             self.write_csv(self.pending_file, rows, fieldnames=self.pending_fields)
         return changed
 
-    def format_close_message(self, signal_row: Dict, outcome: str, r_multiple: float, close_reason: str) -> str:
-        side = signal_row.get("side", "UNKNOWN")
-        side_icon = "[LONG]" if side == "LONG" else "[SHORT]"
-        symbol = signal_row.get("symbol", "")
+    def format_close_message(self, signal_row: Dict, outcome: str, r_multiple: float, close_reason: str, mfe_pct: float = 0.0, mae_pct: float = 0.0) -> str:
+        side    = signal_row.get("side", "UNKNOWN")
+        symbol  = signal_row.get("symbol", "")
+        strategy = signal_row.get("strategy", "unknown")
+
+        outcome_icon = {
+            "WIN_TP2":   "🎯🎯",
+            "WIN_TP1":   "🎯",
+            "LOSS_STOP": "❌",
+            "EXPIRED":   "⌛",
+        }.get(outcome, "🔔")
+
+        outcome_label = {
+            "WIN_TP2":   "TP2 Hit",
+            "WIN_TP1":   "TP1 Hit",
+            "LOSS_STOP": "Stop Hit",
+            "EXPIRED":   "Expired",
+        }.get(outcome, outcome)
+
+        side_tag = "LONG" if side == "LONG" else "SHORT"
+
+        try:
+            entry = float(signal_row.get("entry_ref") or 0)
+            stop  = float(signal_row.get("stop") or 0)
+            tp1   = float(signal_row.get("tp1") or 0)
+            tp2   = float(signal_row.get("tp2") or 0)
+            sl_pct  = float(signal_row.get("sl_distance_pct") or 0)
+            tp1_pct = float(signal_row.get("tp1_distance_pct") or 0)
+            tp2_pct = float(signal_row.get("tp2_distance_pct") or 0)
+            levels_line = (
+                f"Entry: {entry:.6g}\n"
+                f"Stop: {stop:.6g} ({sl_pct:.2f}%)\n"
+                f"TP1: {tp1:.6g} ({tp1_pct:.2f}%)\n"
+                f"TP2: {tp2:.6g} ({tp2_pct:.2f}%)\n"
+            )
+        except Exception:
+            levels_line = ""
+
+        mfe_mae_line = f"MFE: {mfe_pct:.2f}% | MAE: {mae_pct:.2f}%\n" if (mfe_pct or mae_pct) else ""
+
         return (
-            f"✅ CLOSED {side_icon} #{symbol} | {outcome} | R={r_multiple:.2f}\n"
-            f"Reason: {close_reason}\n"
-            f"Strategy: {signal_row.get('strategy', '')}"
+            f"{outcome_icon} {outcome_label} | {side_tag} #{symbol} | R={r_multiple:+.2f}\n\n"
+            f"{levels_line}"
+            f"\n{mfe_mae_line}"
+            f"Strategy: {strategy}\n"
+            f"#{symbol} #BINANCE"
         )
 
     def close_pending(self, pending_id: str, status: str, close_reason: str, bars_waited: int = 0):
@@ -1367,7 +1405,7 @@ class BinanceScanner:
         print(f"[close] {signal_row.get('symbol','')} {signal_row.get('side','')} | {outcome} | r={r_multiple:.2f} | {close_reason}")
         if self.cfg.get("telegram", {}).get("send_close_notifications", True):
             try:
-                self.telegram_send(self.format_close_message(signal_row, outcome, r_multiple, close_reason))
+                self.telegram_send(self.format_close_message(signal_row, outcome, r_multiple, close_reason, mfe_pct=mfe_pct, mae_pct=mae_pct))
             except Exception as e:
                 print(f"[telegram close error] {e}")
 
