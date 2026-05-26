@@ -177,6 +177,7 @@ def detect_long_accumulation_continuation(
     gate1 = (pos_trend_3v14 > pos_trend_min) or (pos_now >= pos_now_high)
     gate2 = oi_delta_1h_pct >= oi_delta_min
     gate3 = retail_now < retail_max
+    gate4 = score >= moderate_min  # score >= 40 (MODERATE or STRONG)
 
     reason_tags: list[str] = []
     failed_gates: list[str] = []
@@ -196,9 +197,14 @@ def detect_long_accumulation_continuation(
     else:
         failed_gates.append("gate3_fail_retail_fomo")
 
+    if gate4:
+        reason_tags.append("gate4_pass")
+    else:
+        failed_gates.append("gate4_fail_score_too_low")
+
     reason_tags.extend(failed_gates)
 
-    setup_detected = gate1 and gate2 and gate3
+    setup_detected = gate1 and gate2 and gate3 and gate4
 
     if setup_detected:
         # Key=value tags required by format_signal (parsed from reason_tags string)
