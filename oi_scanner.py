@@ -1460,6 +1460,8 @@ class BinanceScanner:
                 (t.split("=", 1)[1] for t in _tags if t.startswith("oi_vs_baseline=")),
                 f"{s.oi_jump_pct:.2f}%"
             )
+            _mc = getattr(s, "market_cap_usd", 0) or 0
+            _mc_str = f"${_mc / 1_000_000:.0f}M" if _mc > 0 else "N/A"
             return (
                 f"{side_icon} #{s.symbol} | ${s.price:.6g} | Score {s.score/10:.1f}/10\n\n"
                 f"Entry: {s.entry_ref:.6g}\n"
@@ -1468,7 +1470,7 @@ class BinanceScanner:
                 f"TP2: {s.tp2:.6g} ({s.tp2_distance_pct:.2f}%)\n\n"
                 f"Volume 1h: {s.vol_ratio:.2f}x EMA20\n"
                 f"Volume 24h: ${getattr(s, 'vol_24h_usdt', 0)/1_000_000:.1f}M\n"
-                f"Market Cap: ${getattr(s, 'market_cap_usd', 0)/1_000_000:.0f}M\n"
+                f"Market Cap: {_mc_str}\n"
                 f"Funding: {s.funding_pct:+.4f}% (B+B)\n"
                 f"OI Delta 1h: +{_oi_str}\n"
                 f"Participation: {participation}\n\n"

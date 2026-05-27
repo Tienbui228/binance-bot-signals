@@ -101,7 +101,7 @@ def detect_long_accumulation_continuation(
     retail_max      = float(config.get("retail_max",     0.70))
     strong_min      = int(config.get("quality_band_strong_min",   70))
     moderate_min    = int(config.get("quality_band_moderate_min", 40))
-    gate_min_score  = int(config.get("gate", {}).get("min_score", 60))
+    gate_min_score  = int((config.get("gate") or {}).get("min_score", 60))
 
     # ── Feature computation ─────────────────────────────────────────────────
     feat_result = compute_accumulation_features(
