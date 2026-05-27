@@ -31,7 +31,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "acc-cont-dispatch-dedup-2026-05-26"
+CODE_BUILD_ID = "acc-cont-marketcap-scoregate-2026-05-27"
 CODE_BUILD_SOURCE = "orb-final-tier-redesign"
 CODE_BUILD_NOTE = "ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch."
 
@@ -137,6 +137,7 @@ class Signal:
     retail_min_30d: float = 0.0
     retail_recovery: float = 0.0
     taker_7d_avg: float = 0.0
+    market_cap_usd: float = 0.0
 
 
 @dataclass
@@ -298,6 +299,7 @@ class BinanceScanner:
             "pos_trend_3v14", "oi_trend_3v14",
             "pos_min_30d", "pos_recovery_from_min",
             "retail_min_30d", "retail_recovery", "taker_7d_avg",
+            "market_cap_usd",
         ]
         self.result_fields = [
             "signal_id", "setup_id", "timestamp_ms", "symbol", "side", "entry_ref", "stop",
@@ -1466,6 +1468,7 @@ class BinanceScanner:
                 f"TP2: {s.tp2:.6g} ({s.tp2_distance_pct:.2f}%)\n\n"
                 f"Volume 1h: {s.vol_ratio:.2f}x EMA20\n"
                 f"Volume 24h: ${getattr(s, 'vol_24h_usdt', 0)/1_000_000:.1f}M\n"
+                f"Market Cap: ${getattr(s, 'market_cap_usd', 0)/1_000_000:.0f}M\n"
                 f"Funding: {s.funding_pct:+.4f}% (B+B)\n"
                 f"OI Delta 1h: +{_oi_str}\n"
                 f"Participation: {participation}\n\n"
@@ -2403,6 +2406,12 @@ class BinanceScanner:
         except Exception:
             _vol_24h_usdt = 0.0
 
+        try:
+            from scanner.strategies.oi_range_breakout import fetch_market_cap as _fetch_mc
+            _market_cap = _fetch_mc(symbol) or 0.0
+        except Exception:
+            _market_cap = 0.0
+
         signal = Signal(
             signal_id=signal_id,
             timestamp_ms=signal_open_time,
@@ -2478,6 +2487,7 @@ class BinanceScanner:
             retail_min_30d=self._safe_orb_float(row.get("retail_min_30d")),
             retail_recovery=self._safe_orb_float(row.get("retail_recovery")),
             taker_7d_avg=self._safe_orb_float(row.get("taker_7d_avg")),
+            market_cap_usd=_market_cap,
         )
         self.close_pending(pending_id, "CONFIRMED", "acc_cont_immediate_confirm", bars_waited=0)
         return [signal]

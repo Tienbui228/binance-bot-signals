@@ -101,6 +101,7 @@ def detect_long_accumulation_continuation(
     retail_max      = float(config.get("retail_max",     0.70))
     strong_min      = int(config.get("quality_band_strong_min",   70))
     moderate_min    = int(config.get("quality_band_moderate_min", 40))
+    gate_min_score  = int(config.get("gate", {}).get("min_score", 60))
 
     # ── Feature computation ─────────────────────────────────────────────────
     feat_result = compute_accumulation_features(
@@ -177,7 +178,7 @@ def detect_long_accumulation_continuation(
     gate1 = (pos_trend_3v14 > pos_trend_min) or (pos_now >= pos_now_high)
     gate2 = oi_delta_1h_pct >= oi_delta_min
     gate3 = retail_now < retail_max
-    gate4 = score >= moderate_min  # score >= 40 (MODERATE or STRONG)
+    gate4 = score >= gate_min_score  # score >= gate.min_score from config (default 60)
 
     reason_tags: list[str] = []
     failed_gates: list[str] = []

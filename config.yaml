@@ -188,6 +188,10 @@ long_accumulation_continuation:
   quality_band_strong_min: 70
   quality_band_moderate_min: 40
 
+  # Hard gate: score must reach this threshold (0-100 scale) to trigger signal
+  gate:
+    min_score: 60
+
 bybit:
   enabled: true                   # kill switch — false disables all Bybit fetching
 
