@@ -31,7 +31,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "acc-cont-marketcap-scoregate-2026-05-27"
+CODE_BUILD_ID = "acc-cont-gate5-pos-floor-2026-05-29"
 CODE_BUILD_SOURCE = "orb-final-tier-redesign"
 CODE_BUILD_NOTE = "ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch."
 

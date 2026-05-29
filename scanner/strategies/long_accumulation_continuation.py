@@ -1,7 +1,7 @@
 """Strategy detection for long_accumulation_continuation.
 
 Detects concentrated top-trader positioning with OI confirmation and retail cap.
-Score is informational only — never a gate. All 3 hard gates must pass for setup_detected=True.
+All 5 hard gates must pass for setup_detected=True. Score is gate4.
 """
 
 import logging
@@ -92,11 +92,12 @@ def detect_long_accumulation_continuation(
     """Detect long_accumulation_continuation setup.
 
     Returns the full output contract dict regardless of gate outcome.
-    setup_detected=False when insufficient_history or any gate fails.
+    setup_detected=False when insufficient_history or any of the 5 gates fails.
     Score is computed even when gates fail (diagnostic).
     """
     pos_trend_min   = float(config.get("pos_trend_min",  0.0))
     pos_now_high    = float(config.get("pos_now_high",   0.68))
+    pos_now_min     = float(config.get("pos_now_min",    0.65))
     oi_delta_min    = float(config.get("oi_delta_min_pct", 5.0))
     retail_max      = float(config.get("retail_max",     0.70))
     strong_min      = int(config.get("quality_band_strong_min",   70))
@@ -179,6 +180,7 @@ def detect_long_accumulation_continuation(
     gate2 = oi_delta_1h_pct >= oi_delta_min
     gate3 = retail_now < retail_max
     gate4 = score >= gate_min_score  # score >= gate.min_score from config (default 60)
+    gate5 = pos_now >= pos_now_min   # whale position floor (default 0.65)
 
     reason_tags: list[str] = []
     failed_gates: list[str] = []
@@ -203,9 +205,14 @@ def detect_long_accumulation_continuation(
     else:
         failed_gates.append("gate4_fail_score_too_low")
 
+    if gate5:
+        reason_tags.append("gate5_pass")
+    else:
+        failed_gates.append("gate5_fail_pos_too_low")
+
     reason_tags.extend(failed_gates)
 
-    setup_detected = gate1 and gate2 and gate3 and gate4
+    setup_detected = gate1 and gate2 and gate3 and gate4 and gate5
 
     if setup_detected:
         # Key=value tags required by format_signal (parsed from reason_tags string)

@@ -154,7 +154,8 @@ long_accumulation_continuation:
   # Gate thresholds (locked per spec V1)
   pos_trend_min: 0.0         # pos_trend_3v14 must be strictly positive
   pos_now_high: 0.68         # whale loaded threshold (OR-gate with pos_trend)
-  oi_delta_min_pct: 5.0        # 1h OI delta floor (reuse ORB oi_1h_history source)
+  pos_now_min: 0.65          # whale position floor — gate5 hard minimum
+  oi_delta_min_pct: 3       # 1h OI delta floor (reuse ORB oi_1h_history source)
   retail_max: 0.70           # retail FOMO cap (hard gate, Option A)
 
   # Chart-based S/R levels (two separate lookbacks)
@@ -190,7 +191,7 @@ long_accumulation_continuation:
 
   # Hard gate: score must reach this threshold (0-100 scale) to trigger signal
   gate:
-    min_score: 60
+    min_score: 65
 
 bybit:
   enabled: true                   # kill switch — false disables all Bybit fetching
