@@ -31,7 +31,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "acc-cont-gate5-pos-floor-2026-05-29"
+CODE_BUILD_ID = "acc-cont-daily-dedup-2026-05-31"
 CODE_BUILD_SOURCE = "orb-final-tier-redesign"
 CODE_BUILD_NOTE = "ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch."
 
@@ -257,6 +257,8 @@ class BinanceScanner:
         self.current_regime = None
         self._orb_sent_today: set = set()   # symbols sent to Telegram today, reset daily
         self._orb_sent_today_date: str = ""  # "YYYY-MM-DD" of last reset
+        self._acc_sent_today: set = set()   # acc_cont symbols sent today, reset daily
+        self._acc_sent_today_date: str = ""  # "YYYY-MM-DD" of last reset
 
         self.project_dir = Path(__file__).resolve().parent
         storage_cfg = self.cfg.get("storage", {})
@@ -1999,6 +2001,26 @@ class BinanceScanner:
                 return True
         return False
 
+    def _acc_already_signaled_today(self, symbol: str) -> bool:
+        if symbol in self._acc_sent_today:
+            return True
+        today_start_ms = int(datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+        try:
+            for row in self.read_csv(self.signals_file):
+                if row.get("symbol") != symbol:
+                    continue
+                if row.get("strategy") != "long_accumulation_continuation":
+                    continue
+                try:
+                    ts = int(float(row.get("timestamp_ms") or 0))
+                except (ValueError, TypeError):
+                    continue
+                if ts >= today_start_ms:
+                    return True
+        except Exception:
+            pass
+        return False
+
     def build_pending_setups_for_symbol(
         self,
         symbol: str,
@@ -2579,6 +2601,9 @@ class BinanceScanner:
         Fetches 4 top-trader/taker series (cached), computes accumulation features,
         applies hard gates, and returns [PendingSetup] if setup_detected or [] otherwise.
         """
+        if self._acc_already_signaled_today(symbol):
+            return []
+
         acc_cfg = self.cfg.get("long_accumulation_continuation", {})
         period  = str(acc_cfg.get("history_period", "1d"))
         limit   = int(acc_cfg.get("history_limit", 30))
@@ -3548,6 +3573,24 @@ class BinanceScanner:
                 pass
             print(f"[orb dedup] daily sent-set reset for {_today_str}, loaded={len(self._orb_sent_today)} from signals")
 
+        # Reset daily acc_cont sent-today set at UTC midnight, repopulate from signals CSV
+        if _today_str != self._acc_sent_today_date:
+            self._acc_sent_today.clear()
+            self._acc_sent_today_date = _today_str
+            _today_start_ms = int(datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+            try:
+                for _row in self.read_csv(self.signals_file):
+                    if _row.get("strategy") == "long_accumulation_continuation":
+                        try:
+                            _ts = int(float(_row.get("timestamp_ms") or 0))
+                            if _ts >= _today_start_ms:
+                                self._acc_sent_today.add(_row.get("symbol", ""))
+                        except (ValueError, TypeError):
+                            pass
+            except Exception:
+                pass
+            print(f"[acc dedup] daily sent-set reset for {_today_str}, loaded={len(self._acc_sent_today)} from signals")
+
         # Refresh top-N market cap exclusion list once per day
         n_exclude = int(self.cfg.get("scanner", {}).get("top_marketcap_exclude_n", 100))
         if n_exclude > 0 and (time.time() - self._top_marketcap_fetched_ts) > 86400:
@@ -3645,13 +3688,19 @@ class BinanceScanner:
                         continue
 
                 if s.dispatch_action == "MAIN_SIGNAL":
-                    # Belt-and-suspenders: ORB same-symbol dedup within same UTC day
+                    # Belt-and-suspenders: daily dedup per strategy
                     if getattr(s, "strategy", "") == "oi_range_breakout":
                         if s.symbol in self._orb_sent_today:
                             print(f"[orb dedup] {s.symbol} — already sent today, skipped")
                             no_send_count += 1
                             continue
                         self._orb_sent_today.add(s.symbol)
+                    elif getattr(s, "strategy", "") == "long_accumulation_continuation":
+                        if s.symbol in self._acc_sent_today:
+                            print(f"[acc dedup] {s.symbol} — already sent today, skipped")
+                            no_send_count += 1
+                            continue
+                        self._acc_sent_today.add(s.symbol)
                     self.save_signal(s)
                     self._update_pending_dispatch_trace(
                         s.setup_id,
