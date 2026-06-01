@@ -151,14 +151,21 @@ oi_range_breakout:
   max_pending_bars_5m: 48         # timeout before confirm (4h = 48×5m)
 
 long_accumulation_continuation:
-  # Gate thresholds (locked per spec V1)
-  pos_trend_min: 0.0         # pos_trend_3v14 must be strictly positive
-  pos_now_high: 0.68         # whale loaded threshold (OR-gate with pos_trend)
-  pos_now_min: 0.65          # whale position floor — gate5 hard minimum
-  oi_delta_min_pct: 3       # 1h OI delta floor (reuse ORB oi_1h_history source)
-  retail_max: 0.70           # retail FOMO cap (hard gate, Option A)
+  # ── Hard gates (all 8 thresholds) ──────────────────────────────────────────
+  pos_trend_min: 0.0         # Gate 1: pos_trend_3v14 must be strictly positive
+  pos_now_high: 0.68         # Gate 1: whale loaded threshold (OR-gate with pos_trend)
+  pos_now_min: 0.65          # Gate 5: whale position floor — hard minimum
+  oi_delta_min_pct: 3        # Gate 2: 1h OI delta floor
+  retail_max: 0.70           # Gate 3: retail FOMO cap
+  gate:
+    min_score: 65            # Gate 4: composite score minimum (0-100 scale)
+  # v2.0.1 light gates — shadow mode (activate Day 30 = 2026-06-18)
+  gates_v201_enabled: false
+  price_vs_baseline_min: -0.02     # Gate 6 (T): 30d price trend floor (-2% tolerance)
+  price_trend_7v30_min: -0.02      # Gate 7 (T): 7d momentum floor (-2% tolerance)
+  funding_8h_pct_max: 0.03         # Gate 8 (F): crowded-long cap (per-8h Binance %, 0.03 = 0.03%)
 
-  # Chart-based S/R levels (two separate lookbacks)
+  # ── Chart-based S/R levels ──────────────────────────────────────────────────
   stop_buffer_pct: 0.3          # stop = range_low * (1 - 0.3/100)
   range_lookback_bars_1h: 14    # SL anchor: tight accumulation zone low (14h)
   tp_lookback_bars_1h: 48       # TP anchor: swing high / resistance above (48h = 2 days)
@@ -167,15 +174,15 @@ long_accumulation_continuation:
   min_risk_pct: 0.5             # minimal SL floor (structure-based, not % from entry)
   max_risk_pct: 35.0            # reject if SL > 35% below entry
 
-  # Pending expiry
+  # ── Pending expiry ──────────────────────────────────────────────────────────
   max_pending_bars_5m: 3     # expire if not confirmed within 3×5m = 15 min
 
-  # Data fetch config
+  # ── Data fetch ──────────────────────────────────────────────────────────────
   history_period: "1d"
   history_limit: 30
   cache_ttl_seconds: 3600
 
-  # Score weight reference (weights baked into code, listed here for audit)
+  # ── Score weights (baked into code — audit reference only) ──────────────────
   # gap=30, pos_now=20, pos_trend=20, btc_regime=30 → sum=100
   btc_regime_score_map:
     bull:
@@ -185,19 +192,9 @@ long_accumulation_continuation:
     bearish:
       - "broad_weakness_sell_pressure"
 
-  # Quality band thresholds
+  # ── Quality band thresholds ─────────────────────────────────────────────────
   quality_band_strong_min: 70
   quality_band_moderate_min: 40
-
-  # Hard gate: score must reach this threshold (0-100 scale) to trigger signal
-  gate:
-    min_score: 65
-
-  # v2.0.1 light gates (shadow mode — activate Day 30 = 2026-06-18)
-  gates_v201_enabled: false
-  price_vs_baseline_min: -0.02     # Gate T: 30d price trend floor (-2% tolerance)
-  price_trend_7v30_min: -0.02      # Gate T: 7d momentum floor (-2% tolerance)
-  funding_8h_pct_max: 0.03         # Gate F: crowded-long cap (Binance per-8h %, 0.03 = 0.03%)
 
 bybit:
   enabled: true                   # kill switch — false disables all Bybit fetching
