@@ -29,6 +29,7 @@ def compute_accumulation_features(
     series_retail: list[float],
     series_taker: list[float],
     series_oi: list[float],
+    series_close: list[float] | None = None,
 ) -> dict:
     """Compute all scalar features for the accumulation strategy.
 
@@ -92,6 +93,19 @@ def compute_accumulation_features(
     # Taker 7-day average (last 7 observations)
     taker_7d_avg = _mean(series_taker[-7:])
 
+    # Price trend fields for v2.0.1 Gate T (spec §2.3)
+    price_vs_baseline = 0.0
+    price_trend_7v30  = 0.0
+    if series_close and len(series_close) >= 14:
+        _base = _mean(series_close)
+        if _base > 0:
+            price_vs_baseline = series_close[-1] / _base - 1.0
+        _n   = len(series_close)
+        _m7  = _mean(series_close[-min(7, _n):])
+        _m30 = _mean(series_close[-min(30, _n):])
+        if _m30 > 0:
+            price_trend_7v30 = _m7 / _m30 - 1.0
+
     return {
         "insufficient_history": False,
         "partial_history": partial,
@@ -111,5 +125,7 @@ def compute_accumulation_features(
             "retail_min_30d":     retail_min_30d,
             "retail_recovery":    retail_recovery,
             "taker_7d_avg":       taker_7d_avg,
+            "price_vs_baseline":  price_vs_baseline,
+            "price_trend_7v30":   price_trend_7v30,
         },
     }

@@ -88,6 +88,8 @@ def detect_long_accumulation_continuation(
     oi_delta_1h_pct: float,
     regime_label: str,
     config: dict,
+    series_close: list | None = None,
+    funding_8h_pct: float = 0.0,
 ) -> dict:
     """Detect long_accumulation_continuation setup.
 
@@ -103,10 +105,15 @@ def detect_long_accumulation_continuation(
     strong_min      = int(config.get("quality_band_strong_min",   70))
     moderate_min    = int(config.get("quality_band_moderate_min", 40))
     gate_min_score  = int((config.get("gate") or {}).get("min_score", 60))
+    gates_v201_enabled   = bool(config.get("gates_v201_enabled", False))
+    price_vs_base_min    = float(config.get("price_vs_baseline_min", -0.02))
+    price_trend_7v30_min = float(config.get("price_trend_7v30_min",  -0.02))
+    funding_8h_pct_max   = float(config.get("funding_8h_pct_max",    0.03))
 
     # ── Feature computation ─────────────────────────────────────────────────
     feat_result = compute_accumulation_features(
-        series_pos, series_acct, series_retail, series_taker, series_oi
+        series_pos, series_acct, series_retail, series_taker, series_oi,
+        series_close=series_close,
     )
 
     insufficient = feat_result["insufficient_history"]
@@ -133,6 +140,9 @@ def detect_long_accumulation_continuation(
             "retail_min_30d": 0.0, "retail_recovery": 0.0,
             "taker_7d_avg": 0.0,
             "oi_delta_1h_pct": oi_delta_1h_pct,
+            "price_vs_baseline": 0.0,
+            "price_trend_7v30":  0.0,
+            "funding_8h_pct":    funding_8h_pct,
         }
 
     f = feat_result["features"]
@@ -151,6 +161,8 @@ def detect_long_accumulation_continuation(
     retail_min_30d     = f["retail_min_30d"]
     retail_recovery    = f["retail_recovery"]
     taker_7d_avg       = f["taker_7d_avg"]
+    price_vs_baseline  = f.get("price_vs_baseline", 0.0)
+    price_trend_7v30   = f.get("price_trend_7v30",  0.0)
 
     # ── Score (always computed) ─────────────────────────────────────────────
     s_gap      = _score_gap(gap_now)
@@ -212,7 +224,29 @@ def detect_long_accumulation_continuation(
 
     reason_tags.extend(failed_gates)
 
-    setup_detected = gate1 and gate2 and gate3 and gate4 and gate5
+    # ── v2.0.1 gates (Gate T: price-trend-floor, Gate F: funding-neutral) ───
+    gate6 = price_vs_baseline >= price_vs_base_min     # Gate T: 30d trend floor
+    gate7 = price_trend_7v30  >= price_trend_7v30_min  # Gate T: 7d momentum floor
+    gate8 = funding_8h_pct    <  funding_8h_pct_max    # Gate F: crowded-long cap
+
+    # Tags always written (shadow + live) so CSV can diff would-be-blocked set
+    if gate6:
+        reason_tags.append("gate6_pass")
+    else:
+        reason_tags.append("gate6_fail_v201_price_30d")
+    if gate7:
+        reason_tags.append("gate7_pass")
+    else:
+        reason_tags.append("gate7_fail_v201_price_7d")
+    if gate8:
+        reason_tags.append("gate8_pass")
+    else:
+        reason_tags.append("gate8_fail_v201_funding_crowded")
+
+    if gates_v201_enabled:
+        setup_detected = gate1 and gate2 and gate3 and gate4 and gate5 and gate6 and gate7 and gate8
+    else:
+        setup_detected = gate1 and gate2 and gate3 and gate4 and gate5
 
     if setup_detected:
         # Key=value tags required by format_signal (parsed from reason_tags string)
@@ -251,4 +285,7 @@ def detect_long_accumulation_continuation(
         "retail_recovery":    retail_recovery,
         "taker_7d_avg":       taker_7d_avg,
         "oi_delta_1h_pct":    oi_delta_1h_pct,
+        "price_vs_baseline":  price_vs_baseline,
+        "price_trend_7v30":   price_trend_7v30,
+        "funding_8h_pct":     funding_8h_pct,
     }

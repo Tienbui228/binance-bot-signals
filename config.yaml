@@ -21,7 +21,7 @@ strategy:
   short_exhaustion_retest:
     enabled: false
   oi_range_breakout:
-    enabled: true
+    enabled: false
   long_accumulation_continuation:
     enabled: true # set true to activate
 thresholds:
@@ -192,6 +192,12 @@ long_accumulation_continuation:
   # Hard gate: score must reach this threshold (0-100 scale) to trigger signal
   gate:
     min_score: 65
+
+  # v2.0.1 light gates (shadow mode — activate Day 30 = 2026-06-18)
+  gates_v201_enabled: false
+  price_vs_baseline_min: -0.02     # Gate T: 30d price trend floor (-2% tolerance)
+  price_trend_7v30_min: -0.02      # Gate T: 7d momentum floor (-2% tolerance)
+  funding_8h_pct_max: 0.03         # Gate F: crowded-long cap (Binance per-8h %, 0.03 = 0.03%)
 
 bybit:
   enabled: true                   # kill switch — false disables all Bybit fetching

@@ -223,6 +223,10 @@ class PendingSetup:
     retail_min_30d: float = 0.0
     retail_recovery: float = 0.0
     taker_7d_avg: float = 0.0
+    # v2.0.1 gate fields
+    price_vs_baseline: float = 0.0
+    price_trend_7v30: float = 0.0
+    funding_8h_pct: float = 0.0
 
 
 _ORB_REGIME_MULT = {
@@ -302,6 +306,8 @@ class BinanceScanner:
             "pos_min_30d", "pos_recovery_from_min",
             "retail_min_30d", "retail_recovery", "taker_7d_avg",
             "market_cap_usd",
+            # v2.0.1 gate fields
+            "price_vs_baseline", "price_trend_7v30", "funding_8h_pct",
         ]
         self.result_fields = [
             "signal_id", "setup_id", "timestamp_ms", "symbol", "side", "entry_ref", "stop",
@@ -349,6 +355,8 @@ class BinanceScanner:
             "pos_trend_3v14", "oi_trend_3v14",
             "pos_min_30d", "pos_recovery_from_min",
             "retail_min_30d", "retail_recovery", "taker_7d_avg",
+            # v2.0.1 gate fields
+            "price_vs_baseline", "price_trend_7v30", "funding_8h_pct",
         ]
         self.table_specs = {
             "pending": {"logical": self.pending_file, "dir": self.pending_dir, "fieldnames": self.pending_fields, "ts_col": "created_ts_ms", "granularity": "day"},
@@ -2669,6 +2677,24 @@ class BinanceScanner:
             except Exception:
                 pass
 
+            # Fetch daily close for Gate T price trend (v2.0.1)
+            # klines() returns list of dicts with string keys; limit=31 + [:-1] = 30 complete bars
+            series_close: list = []
+            try:
+                klines_1d_price = self.klines(symbol, "1d", limit=31)
+                if klines_1d_price and len(klines_1d_price) >= 2:
+                    series_close = [float(k["close"]) for k in klines_1d_price[:-1] if k.get("close")]
+            except Exception:
+                pass
+
+            # Fetch Binance funding for Gate F (v2.0.1)
+            # funding() returns percent (lastFundingRate × 100). BSB 0.035% → 0.035.
+            funding_8h_pct = 0.0
+            try:
+                funding_8h_pct = self.funding(symbol)
+            except Exception:
+                pass
+
             # Regime label from current_regime (set by scan_once before detection)
             regime_label = "unclear_mixed"
             if self.current_regime is not None:
@@ -2686,6 +2712,8 @@ class BinanceScanner:
                 oi_delta_1h_pct=oi_delta_1h_pct,
                 regime_label=regime_label,
                 config=acc_cfg,
+                series_close=series_close,
+                funding_8h_pct=funding_8h_pct,
             )
 
             if not result.get("setup_detected"):
@@ -2742,6 +2770,9 @@ class BinanceScanner:
                 retail_min_30d=result.get("retail_min_30d", 0.0),
                 retail_recovery=result.get("retail_recovery", 0.0),
                 taker_7d_avg=result.get("taker_7d_avg", 0.0),
+                price_vs_baseline=result.get("price_vs_baseline", 0.0),
+                price_trend_7v30=result.get("price_trend_7v30", 0.0),
+                funding_8h_pct=result.get("funding_8h_pct", 0.0),
             )]
 
         except Exception as e:
