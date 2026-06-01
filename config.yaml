@@ -199,6 +199,41 @@ long_accumulation_continuation:
 bybit:
   enabled: true                   # kill switch — false disables all Bybit fetching
 
+# ——— HL Whale Accumulation (standalone hl_scanner.py process) ———
+hl_whale_accum:
+  enabled: false               # kill switch — false = process exits immediately on start
+  hl_gates_enabled: false      # shadow mode; true only after §13 validation + threshold calibration
+  fills_poll_interval_sec: 300 # background fills ingestion cadence
+  universe:
+    mc_source: coingecko
+    mc_cap_usd: 500_000_000    # pragmatic cap — NOT a validated edge boundary
+    mc_basis: circulating
+    mc_unknown_policy: exclude
+    refresh_day: monday
+    log_excluded: true
+  registry_entry:
+    single_fill_notional_min: 100_000
+    rolling_1h_notional_min: 150_000
+    rolling_24h_notional_min: 300_000
+    position_value_min: 100_000
+  warmup_days: 5               # no signals until this many days after process start
+  coverage_min: 0.30           # CALIBRATE in §13 — do not tune until §13 data exists
+  top_n: 10
+  conc_min: 0.15               # CALIBRATE in §13
+  jaccard_min: 0.50            # CALIBRATE in §13
+  window_snapshots: 14         # rolling window for trend/delta (snapshot-count based)
+  price_vs_baseline_min: -0.02
+  price_trend_7v30_min: -0.02
+  funding_8h_pct_max: 0.03     # Gate F; unit verified 2026-06-01 (hourly rate × 8 × 100)
+  cluster_enabled: true
+  registry_stale_days: 5
+  scan_interval_tier_a_min: 10
+  scan_interval_tier_b_min: 60
+  scan_interval_tier_c_min: 360
+  http_delay_sec: 0.3
+  http_timeout_sec: 10
+  data_dir: data/hl_whale_accum
+
 # ——— Universe filter (shared — áp dụng cho tất cả strategies) ———
 universe_filter:
   enabled: true
