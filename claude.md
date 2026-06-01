@@ -313,17 +313,21 @@ Phase R1 is a **separate downstream research pipeline**. It must never wire into
 
 ## 12. Key docs (read-only, do not modify)
 
+**Reading index with quick-lookup-by-task:** [`docs/CLAUDE.md`](docs/CLAUDE.md) — read this to find which doc applies to your task.
+
 Located in `docs/` or project root:
 
 | Doc | Purpose |
 |---|---|
+| `docs/CLAUDE.md` | Reading index — quick-lookup-by-task, reading order for new contributors |
+| `docs/CURRENT_CODE_TO_TARGET_MAPPING_REPORT_V2_1.md` | Report V2 implementation map + real owner map for all layers (updated 2026-04-28) |
+| `STRATEGY_SPEC_long_accumulation_continuation_V1_2.md` | Full spec for acc_cont — all 8 gates, features, config, shadow mode v2.0.1 |
 | `Binance_Bot_Architecture_Blueprint_V1_4.md` | North-star architecture, deferred items |
 | `IMPLEMENTATION_CONTRACT_V1_1.md` | Invariants, layer contracts, priority lock |
 | `REVIEW_SYSTEM_SEMANTIC_SPEC_V2_5.md` | Stage semantics, Report V2 rules |
 | `FIELD_PROPAGATION_MAP_V1.md` | Where each field is decided / propagated / persisted / rendered |
 | `binance_bot_detailed_code_mapping_audit_2026-04-05.md` | Real owner vs target owner per layer |
 | `CODE_OWNERSHIP_AND_CHANGE_IMPACT_MAP_V1.md` | Full repo change-impact map |
-| `CURRENT_CODE_TO_TARGET_MAPPING_REPORT_V2_1.md` | Report V2 implementation map + real owner map for all layers (updated 2026-04-28) |
 | `RUNTIME_DEPLOY_TEST_GUARDRAILS.md` | Runtime patch validation rules |
 | `POST_PATCH_CHECKLIST.md` | Mandatory checklist after any runtime patch |
 | `WORKED_EXAMPLES_V1_1.md` | Concrete semantic examples for Report V2 |
