@@ -1602,48 +1602,6 @@ class BinanceScanner:
             "manual_trade_note": "good_for_manual",
         }
 
-    def find_retest_long(
-        self,
-        breakout_level: float,
-        future_bars: List[Dict],
-        tolerance_pct: float,
-        reject_confirm_ratio: float,
-        max_deep_retest_pct: float,
-    ):
-        tol = breakout_level * self._pct_to_fraction(tolerance_pct)
-        max_deep = breakout_level * self._pct_to_fraction(max_deep_retest_pct)
-        zone_low = breakout_level - tol
-        zone_high = breakout_level + tol
-        invalid_low = breakout_level - max_deep
-
-        for idx, bar in enumerate(future_bars, start=1):
-            if bar["low"] < invalid_low and bar["close"] < breakout_level:
-                return {"state": "INVALIDATED", "bar_index": idx}
-
-            touched = bar["low"] <= zone_high and bar["high"] >= zone_low
-            if not touched:
-                continue
-
-            total = max(bar["high"] - bar["low"], 1e-12)
-            close_reject = (bar["close"] - bar["low"]) / total
-            if bar["low"] < invalid_low:
-                return {"state": "INVALIDATED", "bar_index": idx}
-
-            if bar["close"] >= breakout_level and close_reject >= reject_confirm_ratio:
-                return {
-                    "state": "CONFIRMED",
-                    "bar_index": idx,
-                    "entry_ref": bar["close"],
-                    "entry_low": zone_low,
-                    "entry_high": zone_high,
-                    "retest_low": bar["low"],
-                }
-
-            if bar["close"] < breakout_level:
-                return {"state": "INVALIDATED", "bar_index": idx}
-
-        return {"state": "WAITING"}
-
     def infer_legacy_strategy(self, row: Dict) -> str:
         strategy = row.get("strategy", "").strip()
         if strategy:
