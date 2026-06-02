@@ -373,7 +373,7 @@ class BinanceScanner:
         label = self._normalize_regime_label_value(regime_label)
         strategy_l = str(strategy or "").lower()
         side_u = str(side or "").upper()
-        is_short = side_u == "SHORT" or "short_exhaustion_retest" in strategy_l
+        is_short = side_u == "SHORT"
         if label == "trend_continuation_friendly":
             return "LOW" if is_short else "HIGH"
         if label == "broad_weakness_sell_pressure":
@@ -1991,7 +1991,6 @@ class BinanceScanner:
     def process_pending_setups(self) -> List[Signal]:
         retest_cfg = self.cfg["retest"]
         risk_cfg = self.cfg["risk"]
-        short_cfg = self.cfg.get("short_exhaustion_retest", {})
         long_oi_cfg = self.cfg.get("long_breakout_retest", self.cfg.get("legacy_5m_retest", {}))
 
         rows = self.read_csv(self.pending_file)
@@ -2019,7 +2018,7 @@ class BinanceScanner:
             strategy = self.infer_legacy_strategy(row)
 
             # Skip strategies that are disabled in config
-            if strategy in ("short_exhaustion_retest", "long_breakout_retest", "long_accumulation_continuation"):
+            if strategy in ("long_breakout_retest", "long_accumulation_continuation"):
                 if not strategy_cfg.get(strategy, {}).get("enabled", True):
                     continue
             score_oi = float(row.get("score_oi") or 0.0)
@@ -2053,28 +2052,17 @@ class BinanceScanner:
             # ────────────────────────────────────────────────────────────────────
 
             try:
-                if strategy == "short_exhaustion_retest":
-                    max_bars = int(short_cfg.get("retest_15m_max_bars", 3))
-                    tolerance_pct = float(short_cfg.get("retest_15m_tolerance_pct", 0.20))
-                    reject_confirm_ratio = float(short_cfg.get("retest_15m_reject_confirm_ratio", 0.35))
-                    stop_buffer_pct = float(short_cfg.get("stop_buffer_pct", 0.30))
-                    max_deep_retest_pct = float(short_cfg.get("retest_15m_max_deep_retest_pct", 0.25))
-                    min_risk_pct = float(short_cfg.get("min_risk_pct", risk_cfg["min_risk_pct"])) / 100.0
-                    tp1_r = float(short_cfg.get("tp1_r_multiple", risk_cfg["tp1_r_multiple"]))
-                    tp2_r = float(short_cfg.get("tp2_r_multiple", risk_cfg["tp2_r_multiple"]))
-                    bars_all = self.klines(symbol, self.cfg["scanner"]["interval_15m"], limit=max_bars + 20)
-                else:
-                    cfg_retest_max = int(retest_cfg["retest_max_bars"])
-                    hard_max_bars = int(long_oi_cfg.get("hard_max_retest_wait_bars", 8))
-                    max_bars = min(cfg_retest_max, max(hard_max_bars, 1))
-                    tolerance_pct = float(retest_cfg["retest_tolerance_pct"])
-                    reject_confirm_ratio = float(retest_cfg["retest_reject_confirm_ratio"])
-                    stop_buffer_pct = float(retest_cfg["stop_buffer_pct"])
-                    max_deep_retest_pct = float(retest_cfg.get("max_deep_retest_pct", tolerance_pct))
-                    min_risk_pct = float(risk_cfg["min_risk_pct"]) / 100.0
-                    tp1_r = float(risk_cfg["tp1_r_multiple"])
-                    tp2_r = float(risk_cfg["tp2_r_multiple"])
-                    bars_all = self.klines(symbol, self.cfg["scanner"]["interval_5m"], limit=max_bars + 30)
+                cfg_retest_max = int(retest_cfg["retest_max_bars"])
+                hard_max_bars = int(long_oi_cfg.get("hard_max_retest_wait_bars", 8))
+                max_bars = min(cfg_retest_max, max(hard_max_bars, 1))
+                tolerance_pct = float(retest_cfg["retest_tolerance_pct"])
+                reject_confirm_ratio = float(retest_cfg["retest_reject_confirm_ratio"])
+                stop_buffer_pct = float(retest_cfg["stop_buffer_pct"])
+                max_deep_retest_pct = float(retest_cfg.get("max_deep_retest_pct", tolerance_pct))
+                min_risk_pct = float(risk_cfg["min_risk_pct"]) / 100.0
+                tp1_r = float(risk_cfg["tp1_r_multiple"])
+                tp2_r = float(risk_cfg["tp2_r_multiple"])
+                bars_all = self.klines(symbol, self.cfg["scanner"]["interval_5m"], limit=max_bars + 30)
 
                 closed_bars = bars_all[:-1]
                 future_bars = [b for b in closed_bars if b["open_time"] > signal_open_time][:max_bars]
@@ -2181,24 +2169,11 @@ class BinanceScanner:
                     score = min(100.0, score_oi + score_breakout + score_retest)
                     confidence = max(0.0, min(0.99, score / 100.0))
                 else:
-                    raw_stop = float(retest["retest_high"]) * (1 + stop_buffer_pct / 100.0)
-                    max_stop = entry_ref * (1 + min_risk_pct)
-                    stop = max(raw_stop, max_stop)
-                    stop_was_forced_min_risk = "yes" if stop == max_stop and abs(max_stop - raw_stop) > 1e-12 else "no"
-                    risk = max(stop - entry_ref, 1e-12)
-                    tp1 = entry_ref - tp1_r * risk
-                    tp2 = entry_ref - tp2_r * risk
-                    retest_depth_pct = max((float(retest["retest_high"]) - breakout_level) / max(breakout_level, 1e-12) * 100.0, 0.0)
-                    if strategy == "short_exhaustion_retest":
-                        score_retest = 35.0
-                        score = min(100.0, score_exhaustion + score_breakout + score_retest)
-                        confidence = max(0.0, min(0.99, score / 100.0))
-                        final_reason = reason.replace("pending", "retest fail") + f" + 15m retest {score_retest:.0f}/35"
-                    else:
-                        score_retest = 25.0
-                        score = min(100.0, max(score, score_breakout + score_retest))
-                        confidence = max(0.0, min(0.99, score / 100.0))
-                        final_reason = reason.replace("pending", "retest reject")
+                    retest_depth_pct = 0.0
+                    score_retest = 25.0
+                    score = min(100.0, max(score, score_breakout + score_retest))
+                    confidence = max(0.0, min(0.99, score / 100.0))
+                    final_reason = reason.replace("pending", "retest reject")
 
                 signal_id = f"{symbol}-{side}-{signal_open_time}-{retest_bars_waited}"
                 btc_ctx = self.get_btc_context()
@@ -2265,11 +2240,6 @@ class BinanceScanner:
                     dispatch_reason="not_evaluated",
                     status="OPEN",
                 )
-                if strategy == "short_exhaustion_retest":
-                    min_send = float(short_cfg.get("score_min_send", 70.0))
-                    if signal.score < min_send:
-                        self.close_pending(row["pending_id"], "REJECTED_SCORE", f"score below min_send {min_send}", retest_bars_waited)
-                        continue
                 confirmed.append(signal)
                 self.close_pending(row["pending_id"], "CONFIRMED", "signal confirmed", retest_bars_waited)
             except Exception as e:
@@ -2911,7 +2881,7 @@ class BinanceScanner:
 
                 # Silently expire OPEN signals of disabled strategies — no Telegram
                 _strategy_cfg = self.cfg.get("strategy", {})
-                if strategy in ("short_exhaustion_retest", "long_breakout_retest", "long_accumulation_continuation"):
+                if strategy in ("long_breakout_retest", "long_accumulation_continuation"):
                     if not _strategy_cfg.get(strategy, {}).get("enabled", True):
                         _sigs = self.read_csv(self.signals_file)
                         for _s in _sigs:
@@ -2921,10 +2891,7 @@ class BinanceScanner:
                         print(f"[eval skip] {symbol} {strategy} disabled — expired {row.get('signal_id')}")
                         continue
 
-                if strategy == "short_exhaustion_retest":
-                    interval = self.cfg["scanner"]["interval_15m"]
-                    _max_bars = max_bars_after_entry
-                elif strategy == "long_accumulation_continuation":
+                if strategy == "long_accumulation_continuation":
                     interval = self.cfg["scanner"]["interval_1h"]
                     _max_bars = int(tracking_cfg.get("acc_cont_max_bars_1h", 168))
                 else:
@@ -3560,7 +3527,7 @@ class BinanceScanner:
         self.current_regime = regime
         print(
             f"Regime | label={regime.regime_label} | conf={regime.regime_confidence} | "
-            f"long_fit={regime.regime_fit_long_breakout} | short_fit={regime.regime_fit_short_exhaustion} | "
+            f"long_fit={regime.regime_fit_long_breakout} | "
             f"note={regime.regime_note}"
         )
 
@@ -3763,8 +3730,6 @@ class BinanceScanner:
                     p.regime_label = regime.regime_label
                     if p.side == "LONG":
                         p.regime_fit_for_strategy = regime.regime_fit_long_breakout
-                    elif p.side == "SHORT":
-                        p.regime_fit_for_strategy = regime.regime_fit_short_exhaustion
                     else:
                         p.regime_fit_for_strategy = "MEDIUM"
                     # Data plumbing fix: pass round-level breadth into PendingSetup.
