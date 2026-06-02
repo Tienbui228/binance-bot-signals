@@ -19,7 +19,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "acc-cont-daily-dedup-2026-05-31"
+CODE_BUILD_ID = "setup-id-join-fix-2026-06-02"
 CODE_BUILD_SOURCE = "orb-final-tier-redesign"
 CODE_BUILD_NOTE = "ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch."
 
@@ -1838,6 +1838,7 @@ class BinanceScanner:
 
         signal = Signal(
             signal_id=signal_id,
+            setup_id=row.get("setup_id") or row.get("pending_id", ""),
             timestamp_ms=signal_open_time,
             symbol=symbol,
             side="LONG",
