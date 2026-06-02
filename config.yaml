@@ -1,4 +1,4 @@
-config_version: phase3-short-exhaustion-v5-scoreparts-manualdiag
+﻿config_version: phase3-short-exhaustion-v5-scoreparts-manualdiag
 telegram:
   bot_token: 8643760330:AAFQUt4o1ovC2jfdeUrWk2iUnqipeh7pmgw
   chat_id: '@MakeM0neyWithCrypt0'
@@ -18,8 +18,6 @@ scanner:
   - BTCUSDT
   - ETHUSDT
 strategy:
-  short_exhaustion_retest:
-    enabled: false
   oi_range_breakout:
     enabled: false
   long_accumulation_continuation:
@@ -44,39 +42,9 @@ risk:
   min_risk_pct: 3.0
   tp1_r_multiple: 1.0
   tp2_r_multiple: 2.0
-short_exhaustion_retest:
-  timeframe_confirm: 1h
-  timeframe_entry: 15m
-  exhaustion_1h_lookback_bars: 12
-  exhaustion_1h_min_top_tests: 2
-  exhaustion_1h_resistance_tolerance_pct: 0.35
-  exhaustion_1h_breakout_accept_pct: 0.15
-  exhaustion_1h_min_upper_wick_ratio: 0.35
-  exhaustion_1h_require_failed_breakout: true
-  exhaustion_1h_require_weakening_push: false
-  breakdown_15m_lookback_bars: 12
-  breakdown_15m_min_break_distance_pct: 0.15
-  breakdown_15m_min_body_ratio: 0.45
-  breakdown_15m_min_volume_ratio: 1.1
-  breakdown_15m_close_below_support_required: true
-  retest_15m_min_bars: 1
-  retest_15m_max_bars: 3
-  retest_15m_tolerance_pct: 0.2
-  retest_15m_reject_confirm_ratio: 0.35
-  retest_15m_max_deep_retest_pct: 0.25
-  stop_buffer_pct: 0.3
-  min_risk_pct: 3.0
-  tp1_r_multiple: 1.0
-  tp2_r_multiple: 2.0
-  score_exhaustion_max: 35
-  score_breakdown_max: 30
-  score_retest_max: 35
-  score_min_send: 70
-  score_strong_signal: 80
-  score_high_conviction: 90
 tracking:
-  max_bars_after_entry: 144        # 5m bars — ORB, short_exhaustion, breakout (12h)
-  acc_cont_max_bars_1h: 168        # 1h bars — long_accumulation_continuation (7 days)
+  max_bars_after_entry: 144        # 5m bars - ORB, short_exhaustion, breakout (12h)
+  acc_cont_max_bars_1h: 168        # 1h bars - long_accumulation_continuation (7 days)
 btc_sentiment:
   bullish_threshold_pct: 1.0
   bearish_threshold_pct: -1.0
@@ -120,7 +88,7 @@ dispatch:
   dispatch_floor_score: 0           # 0 = no score gate at dispatch (ORB scores 5-45, floor must be 0)
 
 oi_range_breakout:
-  # Signal trigger — OI is the ONLY hard gate
+  # Signal trigger - OI is the ONLY hard gate
   oi_spike_min_pct: 5.0           # OI delta % minimum (1h window: bar[-1] vs bar[-5])
   oi_delta_abs_min_usdt: 400000   # OI abs delta minimum in USDT (Binance+Bybit); 0 = disabled
   vol_ema_period: 20              # logged only, not a gate
@@ -132,7 +100,7 @@ oi_range_breakout:
   min_range_width_pct: 0.0
   max_range_width_pct: 60.0       # skip if range too wide (trending)
   range_atr_period: 14
-  range_atr_ratio_max: 2.0        # ATR current / ATR avg < 2 — hard reject chaotic/trending
+  range_atr_ratio_max: 2.0        # ATR current / ATR avg < 2 - hard reject chaotic/trending
   atr_bonus_threshold: 1.0        # used at dispatch layer for ATR bonus scoring
 
   # Exit
@@ -142,7 +110,7 @@ oi_range_breakout:
   min_risk_pct: 0.5               # avoid setups too tight (SL vulnerable to noise)
   max_risk_pct: 35.0              # skip if risk > 35%
 
-  # Score gates — disabled
+  # Score gates - disabled
   score_min_send: 0
   score_strong_signal: 50
   score_high_conviction: 70
@@ -151,38 +119,38 @@ oi_range_breakout:
   max_pending_bars_5m: 48         # timeout before confirm (4h = 48×5m)
 
 long_accumulation_continuation:
-  # ── Hard gates (all 8 thresholds) ──────────────────────────────────────────
+  # -- Hard gates (all 8 thresholds) ------------------------------------------
   pos_trend_min: 0.0         # Gate 1: pos_trend_3v14 must be strictly positive
   pos_now_high: 0.7         # Gate 1: whale loaded threshold (OR-gate with pos_trend)
-  pos_now_min: 0.65          # Gate 5: whale position floor — hard minimum
+  pos_now_min: 0.65          # Gate 5: whale position floor - hard minimum
   oi_delta_min_pct: 2        # Gate 2: 1h OI delta floor
   retail_max: 0.70           # Gate 3: retail FOMO cap
   gate:
     min_score: 65            # Gate 4: composite score minimum (0-100 scale)
-  # v2.0.1 light gates — shadow mode (activate Day 30 = 2026-06-18)
+  # v2.0.1 light gates - shadow mode (activate Day 30 = 2026-06-18)
   gates_v201_enabled: false
   price_vs_baseline_min: -0.02     # Gate 6 (T): 30d price trend floor (-2% tolerance)
   price_trend_7v30_min: -0.02      # Gate 7 (T): 7d momentum floor (-2% tolerance)
   funding_8h_pct_max: 0.03         # Gate 8 (F): crowded-long cap (per-8h Binance %, 0.03 = 0.03%)
 
-  # ── Chart-based S/R levels ──────────────────────────────────────────────────
+  # -- Chart-based S/R levels --------------------------------------------------
   stop_buffer_pct: 0.3          # stop = range_low * (1 - 0.3/100)
   range_lookback_bars_1h: 14    # SL anchor: tight accumulation zone low (14h)
   tp_lookback_bars_1h: 48       # TP anchor: swing high / resistance above (48h = 2 days)
-  tp2_extension_pct: 1.0        # TP2 = swing_high * (1 + 1.0/100) — just beyond resistance
+  tp2_extension_pct: 1.0        # TP2 = swing_high * (1 + 1.0/100) - just beyond resistance
   min_tp1_distance_pct: 3.0     # TP1 must be ≥ 3% above entry
   min_risk_pct: 0.5             # minimal SL floor (structure-based, not % from entry)
   max_risk_pct: 35.0            # reject if SL > 35% below entry
 
-  # ── Pending expiry ──────────────────────────────────────────────────────────
+  # -- Pending expiry ----------------------------------------------------------
   max_pending_bars_5m: 3     # expire if not confirmed within 3×5m = 15 min
 
-  # ── Data fetch ──────────────────────────────────────────────────────────────
+  # -- Data fetch --------------------------------------------------------------
   history_period: "1d"
   history_limit: 30
   cache_ttl_seconds: 3600
 
-  # ── Score weights (baked into code — audit reference only) ──────────────────
+  # -- Score weights (baked into code - audit reference only) ------------------
   # gap=30, pos_now=20, pos_trend=20, btc_regime=30 → sum=100
   btc_regime_score_map:
     bull:
@@ -192,21 +160,21 @@ long_accumulation_continuation:
     bearish:
       - "broad_weakness_sell_pressure"
 
-  # ── Quality band thresholds ─────────────────────────────────────────────────
+  # -- Quality band thresholds -------------------------------------------------
   quality_band_strong_min: 70
   quality_band_moderate_min: 40
 
 bybit:
-  enabled: true                   # kill switch — false disables all Bybit fetching
+  enabled: true                   # kill switch - false disables all Bybit fetching
 
-# ——— HL Whale Accumulation (standalone hl_scanner.py process) ———
+# --- HL Whale Accumulation (standalone hl_scanner.py process) ---
 hl_whale_accum:
-  enabled: false               # kill switch — false = process exits immediately on start
+  enabled: false               # kill switch - false = process exits immediately on start
   hl_gates_enabled: false      # shadow mode; true only after §13 validation + threshold calibration
   fills_poll_interval_sec: 300 # background fills ingestion cadence
   universe:
     mc_source: coingecko
-    mc_cap_usd: 500_000_000    # pragmatic cap — NOT a validated edge boundary
+    mc_cap_usd: 500_000_000    # pragmatic cap - NOT a validated edge boundary
     mc_basis: circulating
     mc_unknown_policy: exclude
     refresh_day: monday
@@ -217,7 +185,7 @@ hl_whale_accum:
     rolling_24h_notional_min: 300_000
     position_value_min: 100_000
   warmup_days: 5               # no signals until this many days after process start
-  coverage_min: 0.30           # CALIBRATE in §13 — do not tune until §13 data exists
+  coverage_min: 0.30           # CALIBRATE in §13 - do not tune until §13 data exists
   top_n: 10
   conc_min: 0.15               # CALIBRATE in §13
   jaccard_min: 0.50            # CALIBRATE in §13
@@ -234,14 +202,4 @@ hl_whale_accum:
   http_timeout_sec: 10
   data_dir: data/hl_whale_accum
 
-# ——— Universe filter (shared — áp dụng cho tất cả strategies) ———
-universe_filter:
-  enabled: true
-  market_cap_max_usd: 500000000
-  cache_hours: 4
-  exclude_if_unknown: true
-  coingecko_base_url: "https://api.coingecko.com/api/v3"
-  pages_to_fetch: 3
-  request_delay_sec: 1.5
-  cache_path: "data/eligible_universe.json"
 
