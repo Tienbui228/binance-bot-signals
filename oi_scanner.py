@@ -789,16 +789,6 @@ class BinanceScanner:
     def avg(self, vals: List[float]) -> float:
         return sum(vals) / max(len(vals), 1)
 
-    def calc_oi_jump_pct(self, symbol: str) -> Optional[float]:
-        hist = self.oi_hist(symbol, period="5m", limit=6)
-        if len(hist) < 2:
-            return None
-        prev = hist[-2]["oi_value"]
-        curr = hist[-1]["oi_value"]
-        if prev <= 0:
-            return None
-        return (curr - prev) / prev * 100.0
-
     def calc_oi_change_pct(self, symbol: str, period: str = "15m", limit: int = 3) -> Optional[float]:
         hist = self.oi_hist(symbol, period=period, limit=limit)
         if len(hist) < 2:
@@ -851,28 +841,6 @@ class BinanceScanner:
         total = max(bar["high"] - bar["low"], 1e-12)
         body = abs(bar["close"] - bar["open"])
         return body / total
-
-    def trend_15m(self, bars_15m_closed: List[Dict]) -> str:
-        if len(bars_15m_closed) < 8:
-            return "flat"
-        highs = [b["high"] for b in bars_15m_closed[-4:]]
-        lows = [b["low"] for b in bars_15m_closed[-4:]]
-        if highs[-1] >= highs[-2] >= highs[-3] and lows[-1] >= lows[-2] >= lows[-3]:
-            return "up"
-        if highs[-1] <= highs[-2] <= highs[-3] and lows[-1] <= lows[-2] <= lows[-3]:
-            return "down"
-        return "flat"
-
-    def trend_1h(self, bars_1h_closed: List[Dict]) -> str:
-        if len(bars_1h_closed) < 6:
-            return "flat"
-        closes = [b["close"] for b in bars_1h_closed[-6:]]
-        if closes[-1] > closes[-3] > closes[-5]:
-            return "up"
-        if closes[-1] < closes[-3] < closes[-5]:
-            return "down"
-        return "flat"
-
 
     def _ensure_storage_layout(self):
         for key, spec in self.table_specs.items():
