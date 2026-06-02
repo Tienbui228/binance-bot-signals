@@ -1602,12 +1602,6 @@ class BinanceScanner:
             "manual_trade_note": "good_for_manual",
         }
 
-    def infer_legacy_strategy(self, row: Dict) -> str:
-        strategy = row.get("strategy", "").strip()
-        if strategy:
-            return strategy
-        return "long_breakout_retest"
-
     def _already_pending_for_strategy(self, symbol: str, side: str, strategy: str) -> bool:
         rows = self.read_csv(self.pending_file)
         for row in rows:
