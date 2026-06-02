@@ -971,3 +971,43 @@ legacy_5m_retest grep: empty
 
 **Phase C:** `[r4] OK`, 0 errors, acc_cont+ORB alive, Breakdown shows only 2 strategy labels.
 
+
+---
+
+## Fix: setup_id lifecycle join (2026-06-02)
+
+### Vấn đề
+`pending.setup_id = "ACC-{SYMBOL}-{ts}"` nhưng `signal.setup_id` rơi vào fallback
+`if not s.setup_id: s.setup_id = s.signal_id` → `"{SYMBOL}-LONG-acc_cont-{ts}"`.
+Hệ quả: `_sync_confirmed_pending_row` + `sync_pending_send_decision` không tìm được
+pending row (key mismatch) → 0/341 CONFIRMED join được với results.
+
+### Bằng chứng Phase 1
+- `pending_id` generator (L2115): `f"ACC-{symbol}-{now_ms}"`
+- `signal_id` generator (L1814): `f"{symbol}-LONG-acc_cont-{signal_open_time}"`
+- `Signal()` constructor trong `_process_acc_cont_pending()` không có `setup_id=` → default `""` → fallback fire
+- `results.setup_id` kế thừa từ signal (L1298) → cùng sai format
+
+### Fix (Phase 2)
+`_process_acc_cont_pending()` — thêm 1 argument vào `Signal()` constructor:
+```python
+setup_id=row.get("setup_id") or row.get("pending_id", ""),
+```
+`signal_id` giữ nguyên. Fallback trong `save_signal()` không fire khi `setup_id` đã có giá trị.
+
+Commit: `9a6ebd1e fix(lifecycle): pass setup_id=pending.setup_id into Signal at acc_cont confirm`
+Tag backup: `backup-before-setup-id-fix-20260602-1614`
+CODE_BUILD_ID: `setup-id-join-fix-2026-06-02`
+
+### Phase 3 Validation (sim harness, temp dir)
+```
+pending_id       = ACC-TESTUSDT-1780392188618
+signal.signal_id = TESTUSDT-LONG-acc_cont-1780392188618
+signal.setup_id  = ACC-TESTUSDT-1780392188618
+setup_id khop pending : True
+Fallback KHONG fire   : True
+=> PASS
+```
+
+**PASS:** `signal.setup_id == pending.setup_id`, fallback không fire, `signal_id` tách biệt.
+
