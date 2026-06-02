@@ -76,14 +76,6 @@ observability:
   pipeline_summary: true
   pending_reason_breakdown: true
   snapshot_stage_summary: true
-review_case_system:
-  enabled: true
-  workspace_dir: review_workspace
-  timezone: Asia/Ho_Chi_Minh
-  fallback_close_hours: 4
-  daily_exports_dir: review_exports
-  builder_script: build_daily_review_pack.py
-
 dispatch:
   dispatch_floor_score: 0           # 0 = no score gate at dispatch (ORB scores 5-45, floor must be 0)
 
