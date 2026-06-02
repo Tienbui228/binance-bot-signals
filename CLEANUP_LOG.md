@@ -341,3 +341,210 @@ syntax OK
 | C1 | Fix CLAUDE.md dead file references (§14-§19) | ADR block confirmed at top of file | 87a75dad |
 | C3 | Update RUNNING_CODE_VERSION.txt | Matches CODE_BUILD_ID in oi_scanner.py:23 | 6a3b360a |
 | VAL | import + simulate-case long_tp1 | SIMULATION_OK, outcome=WIN_TP1 | — |
+
+---
+
+## Phase 0 Validation Addendum
+
+Environment: local Windows dev machine (not VPS). PART 1–2 local. PART 3 = runbook for VPS operator.
+
+---
+
+### PART 1 — Static verification (local)
+
+#### 1.1 Dispatch real owner
+
+```
+$ ls -la scanner/dispatch/router.py
+-rw-r--r-- 1 Hello 197121 1242 Apr 17 11:42 scanner/dispatch/router.py   ✓ EXISTS
+
+$ grep -n "dispatch" oi_scanner.py | grep -iE "import|router"
+15:from scanner.dispatch.router import route_dispatch_v1              ✓ REAL OWNER
+
+$ grep -rn "dispatch.dispatch_router|from dispatch import|import dispatch" --include="*.py" .
+(no output)                                                            ✓ NO SHIM IMPORTS
+```
+
+**VERDICT 1.1: PASS.** `scanner/dispatch/router.py` exists. `oi_scanner.py` imports from the real
+owner (`scanner.dispatch.router`). No code imports the deleted shim `dispatch/dispatch_router.py`.
+
+---
+
+#### 1.2 No dangling imports to deleted modules (full repo scan)
+
+```
+$ grep -rn "pump_exhaustion|universe_filter|from contracts|import contracts|from lifecycle import|
+  import lifecycle\b|scanner\.lifecycle|scanner\.storage|scanner\.binance_client|
+  scanner\.market_math|delivery_state_evaluator|veto_engine" --include="*.py" .
+
+./oi_scanner.py:226:    "post_pump_exhaustion":         0.60,
+./scanner/domain.py:9:New code must import from contracts/ instead:
+./scanner/domain.py:10:    from contracts.regime_result import RegimeResult
+  [lines 11-14: similar]
+```
+
+**Classification of remaining hits:**
+- `oi_scanner.py:226` — string label in a regime-fit dict, not an import. Not a live reference.
+- `scanner/domain.py:9–14` — inside a docstring (`"""`). Not executed Python. Not a live import.
+
+**VERDICT 1.2: PASS.** 0 live import sites to any deleted module across the full repo.
+
+---
+
+#### 1.3 HL subsystem not broken by contracts/ deletion
+
+```
+$ python -c "import hl_scanner; print('hl import OK')"
+hl import OK
+```
+
+**VERDICT 1.3: PASS.** HL imports cleanly. Confirmed self-contained (no contracts/ dependency).
+
+---
+
+#### 1.4 Simulate-case coverage of long_accumulation_continuation
+
+```
+$ grep -n "strategy =" oi_scanner.py | grep -i sim
+3838:            strategy = "long_breakout_retest"
+3844:            strategy = "short_exhaustion_retest"
+```
+
+`run_simulation_case()` hardcodes `strategy = "long_breakout_retest"` for all LONG cases (line 3838)
+and `"short_exhaustion_retest"` for all SHORT cases (line 3844). There is no code path that
+exercises `long_accumulation_continuation` via the simulate harness.
+
+**FINDING 1.4:** Simulation harness does NOT cover `long_accumulation_continuation`.
+`--simulate-case long_tp1` only exercises `long_breakout_retest` (deprecated).
+**Consequence:** PART 3 fresh-row from VPS is the SOLE behavior evidence for the keeper live strategy.
+PART 3 is mandatory; Phase 0 cannot be closed without it.
+
+---
+
+### PART 2 — short_exhaustion live row diagnosis (local data)
+
+`VALID_PENDING_STATUSES` (oi_scanner.py:27–34):
+```python
+{"PENDING", "CONFIRMED", "INVALIDATED", "EXPIRED_WAIT",
+ "REJECTED_SCORE", "REJECTED_RULE", "SKIPPED_SEND"}
+```
+In-flight = status in {`PENDING`, `CONFIRMED`}.
+
+**Local pending data scan:**
+```
+pending files: ['pending_2026-06-02.csv', '_schema.csv']
+
+strategy                       status     side   symbol      created_ts_ms
+long_breakout_retest           CONFIRMED  LONG   SIMLONGUSDT 1780371156670  ← simulate-case artifact
+long_accumulation_continuation PENDING    LONG   SKYAIUSDT   1780371197770  ← 2026-06-02T03:33:17Z
+long_accumulation_continuation PENDING    LONG   DASHUSDT    1780371199672  ← 2026-06-02T03:33:19Z
+
+short_exhaustion_retest in-flight rows: 0
+```
+
+**Note on data provenance:** The two acc_cont PENDING rows have `created_ts_ms` at 03:33 UTC —
+same minute as the simulate-case run (`written_at_utc=2026-06-02T03:32:36`). These rows are
+local simulate-side-effect, NOT VPS rows. Local data does not reflect VPS state.
+
+**VERDICT 2 (LOCAL):** 0 short_exhaustion_retest rows in-flight in local data.
+Config section removal is benign for local state. **However, authoritative pending state is on VPS.**
+The check must be repeated on VPS with the command below (PART 3, step 3.2b).
+
+---
+
+### PART 3 — VPS runbook (operator must run and paste results)
+
+Claude Code does not have SSH access to VPS. Run the following commands on VPS exactly in order.
+Paste the output back; Phase 0 will be closed or failed based on that output.
+
+```bash
+# ─── 3.1  Bring new code live ─────────────────────────────────────────────
+cd <repo_dir>
+git pull
+git log --oneline -3
+# EXPECTED: HEAD = 44cc739f  docs: add CLEANUP_LOG.md
+
+# ─── 3.2a  Check short_exhaustion in-flight rows (authoritative VPS data) ─
+python3 -c "
+import csv, pathlib
+pending_dir = pathlib.Path('data/pending')
+live = {'PENDING','CONFIRMED'}
+hits = []
+for f in sorted(pending_dir.glob('pending_*.csv')):
+    with open(f, encoding='utf-8') as fh:
+        for row in csv.DictReader(fh):
+            if 'short_exhaustion' in row.get('strategy','') and row.get('status') in live:
+                hits.append({'symbol':row.get('symbol'),'status':row.get('status'),
+                             'created_ts_ms':row.get('created_ts_ms')})
+print('short_exhaustion in-flight:', len(hits))
+for h in hits: print(h)
+"
+# EXPECTED: "short_exhaustion in-flight: 0"
+# IF >0: STOP. Do not proceed. Report rows. Phase 0 FAIL until operator resolves.
+
+# ─── 3.3  Kill old in-memory process ──────────────────────────────────────
+screen -list      # or: tmux ls / systemctl status <service>
+# kill every session that was running BEFORE this git pull:
+screen -X -S <session_name> quit   # repeat for each old session
+
+# ─── 3.4  CUT_MS — record AFTER kill, BEFORE start ────────────────────────
+python3 -c "import time; print('CUT_MS=', int(time.time()*1000))"
+# Record this value. Rows must have created_ts_ms >= this value to count.
+
+# ─── 3.5  Start fresh process ─────────────────────────────────────────────
+screen -S bot python3 oi_scanner.py
+# (or your normal start command)
+
+# ─── 3.6  Verify process start time is AFTER git pull ─────────────────────
+ps -eo pid,lstart,cmd | grep oi_scanner | grep -v grep
+# START TIME must be after the git pull above.
+
+cat RUNNING_CODE_VERSION.txt
+# EXPECTED: code_build_id=acc-cont-daily-dedup-2026-05-31
+
+# ─── 3.7  Wait for ≥1 scan cycle, then check for fresh acc_cont rows ──────
+# (wait ~5-10 minutes for scan loop to run)
+
+python3 -c "
+import csv, pathlib
+CUT_MS = <paste_cut_ms_here>
+pending_dir = pathlib.Path('data/pending')
+fresh = []
+for f in sorted(pending_dir.glob('pending_*.csv')):
+    with open(f, encoding='utf-8') as fh:
+        for row in csv.DictReader(fh):
+            try:
+                ts = int(row.get('created_ts_ms',0))
+            except:
+                ts = 0
+            if row.get('strategy') == 'long_accumulation_continuation' and ts >= CUT_MS:
+                fresh.append({'symbol':row.get('symbol'),'status':row.get('status'),'ts':ts})
+print('acc_cont fresh rows (>= CUT_MS):', len(fresh))
+for h in fresh: print(h)
+"
+# EXPECTED: ≥1 fresh row (may take several scan cycles)
+
+# ─── 3.8  Check log for errors ────────────────────────────────────────────
+grep -iE "pump_exhaustion|universe_filter|NameError|AttributeError|ImportError|Traceback" <log_file>
+# EXPECTED: no hits related to deleted modules
+```
+
+**PART 3 pass criteria (all required):**
+1. `git log` HEAD = `44cc739f`
+2. `short_exhaustion in-flight: 0` (step 3.2a)
+3. Process start time AFTER git pull (step 3.6)
+4. `RUNNING_CODE_VERSION.txt` = `acc-cont-daily-dedup-2026-05-31` (step 3.6)
+5. ≥1 `long_accumulation_continuation` row with `created_ts_ms >= CUT_MS` (step 3.7)
+6. No pump/universe/NameError/ImportError in log (step 3.8)
+
+---
+
+### Phase 0 Status
+
+**PHASE 0: INCOMPLETE — awaiting VPS operator results (PART 3).**
+
+PART 1 local: all 4 checks PASS (dispatch intact, 0 dangling imports, HL clean, sim harness finding documented).
+PART 2 local: 0 short_exhaustion in-flight locally; VPS check required (runbook above, step 3.2a).
+PART 3: runbook written; operator must run on VPS and paste output back.
+
+Phase 0 will be declared PASS or FAIL after PART 3 output is received.
