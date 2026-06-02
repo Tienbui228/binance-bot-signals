@@ -688,3 +688,159 @@ PART 2 local: 0 short_exhaustion in-flight locally; VPS check required (runbook 
 PART 3: runbook written; operator must run on VPS and paste output back.
 
 Phase 0 will be declared PASS or FAIL after PART 3 output is received.
+
+---
+
+## Round 3 — long_breakout_retest (2026-06-02)
+
+### Backup tag
+
+```
+backup-before-lbr-removal-20260602-1436
+```
+
+---
+
+### PART 1 — Investigation (read-only grep, classification)
+
+#### 3.1 All long_breakout_retest references
+
+```
+./oi_scanner.py:1651:        return "long_breakout_retest"   ← infer_legacy_strategy default (ROUND-AFTER)
+./oi_scanner.py:1731:        long_oi_cfg = self.cfg.get("long_breakout_retest", ...)  ← LBR-EXCLUSIVE
+./oi_scanner.py:1758:        if strategy in ("long_breakout_retest", "long_accumulation_continuation"):  ← SHARED
+./oi_scanner.py:2610:        if strategy in ("long_breakout_retest", "long_accumulation_continuation"):  ← SHARED
+./oi_scanner.py:3188:        print(f"[startup] strategy.long_breakout_retest.enabled=...")  ← LBR-EXCLUSIVE
+./oi_scanner.py:3515:        strategy = "long_breakout_retest"  ← run_simulation_case HARNESS-ONLY
+./regime/regime_normalizer.py:82:  "long_breakout_retest": "long"  ← KEEP (historical rows)
+```
+
+#### 3.2 find_retest_long callers
+
+```
+1605:    def find_retest_long(       ← definition
+1815:        retest = self.find_retest_long(  ← ONLY caller
+```
+
+The only caller (:1815) is inside the LBR fallthrough `try:` block. After ORB and acc_cont both `continue` out of the loop, the fallthrough only runs for `long_breakout_retest`. **Verdict: find_retest_long is LBR-EXCLUSIVE → deleted in Commit 2.**
+
+#### 3.3 process_pending_setups structure
+
+```
+process_pending_setups():
+  for each PENDING row:
+    infer strategy
+
+    ── SHARED: disabled check (strategy in tuple) ──────────
+    if strategy in ("long_breakout_retest", "long_accumulation_continuation"):
+        if not enabled: continue
+
+    ── ORB branch (continue) ────────────────────────────────
+    if strategy == "oi_range_breakout": ... continue
+
+    ── acc_cont branch (continue) ───────────────────────────
+    if strategy == "long_accumulation_continuation": ... continue
+
+    ── LBR-EXCLUSIVE fallthrough (~180 lines) ────────────────
+    try:
+        long_oi_cfg.get(...) calls
+        find_retest_long(...)
+        Signal() construction
+    except: ...
+```
+
+**Exact LBR-EXCLUSIVE boundary:** everything in the `try:...except` fallthrough (after acc_cont `continue`) plus the `long_oi_cfg` var at top of function.
+
+#### 3.4 Builder / wrapper
+
+No `build_pending_long_breakout_retest_setup()` exists. New LBR pending rows are never created (no builder). Confirmed by user: 0 LBR PENDING in-flight.
+
+`run_simulation_case` hardcodes `strategy = "long_breakout_retest"` for LONG cases but **bypasses `process_pending_setups` entirely** — directly calls `save_pending()` → `close_pending()` → `save_signal()` → `close_signal()`. The strategy label on fake rows has no live effect. **HARNESS-ONLY → keep.**
+
+#### 3.5 Config
+
+`config.yaml` has NO `long_breakout_retest:` section. The `strategy.long_breakout_retest.enabled` startup print referenced a non-existent key (defaulted to `True`). Deleted.
+
+---
+
+### Classification table
+
+| Piece | Location | Verdict |
+|---|---|---|
+| `long_oi_cfg = self.cfg.get("long_breakout_retest", ...)` | :1731 | **LBR-EXCLUSIVE** — deleted |
+| disable-check `in` tuple | :1758 | SHARED — removed only LBR name |
+| entire `try:...except` fallthrough block | :~1791–1972 | **LBR-EXCLUSIVE** — deleted (~180 lines) |
+| `find_retest_long()` definition | :1605–1647 | **LBR-EXCLUSIVE** — deleted |
+| OPEN-signal expiry `in` tuple | :2610 | SHARED — removed only LBR name |
+| startup print `long_breakout_retest.enabled` | :3188 | **LBR-EXCLUSIVE** — deleted |
+| `infer_legacy_strategy` default | :1651 | **ROUND-AFTER** — not touched |
+| `run_simulation_case` strategy label | :3515 | **HARNESS-ONLY** — not touched |
+| `regime_fit_long_breakout` field/assign/print | :3255, :3457 | **SHARED** — kept (applied to all LONG setups) |
+| `regime_normalizer.py:82` | | **KEEP** — historical row mapping |
+
+**Need to touch `infer_legacy_strategy`?** No. After removing the fallthrough block, legacy rows with no `strategy` field will be inferred as `"long_breakout_retest"` by `infer_legacy_strategy` → they will not match ORB/acc_cont branches → silently skipped. Correct behavior for now; Round-After (legacy_5m_retest) handles this.
+
+---
+
+### Commit list
+
+```
+48c9a7c4  chore(R3-1): cut LBR fallthrough block from process_pending_setups
+67b84c3d  chore(R3-2): delete find_retest_long — LBR-exclusive, 0 callers remaining
+```
+
+---
+
+### Local validation (pre-VPS)
+
+```bash
+$ python -c "import oi_scanner; print('import OK')"
+import OK
+
+$ grep -n "find_retest_long" oi_scanner.py
+(no output — 0 references)
+
+$ grep -n "long_breakout_retest" oi_scanner.py
+1609:        return "long_breakout_retest"   ← infer_legacy_strategy (ROUND-AFTER, correct)
+3286:            strategy = "long_breakout_retest"  ← run_simulation_case harness (correct)
+```
+
+Audit: `process_pending_setups` source confirmed no `long_oi_cfg`, `find_retest_long`, `hard_max_retest`, `soft_max_retest`. ORB and acc_cont branches confirmed present.
+
+---
+
+### PART 3 — VPS Validation
+
+**Run these blocks on VPS after syncing code (git pull):**
+
+```bash
+# Block 1 — Kill daemon (single writer)
+ps -eo pid,lstart,cmd | grep oi_scanner | grep -v grep
+kill <pid>
+ps -eo pid,lstart,cmd | grep oi_scanner | grep -v grep   # must be empty
+
+# Block 2 — CUT_MS
+python3 -c "import time; print('CUT_MS=', int(time.time()*1000))"
+
+# Block 3 — scan_once test
+python3 -c "
+import oi_scanner
+cfg=oi_scanner.load_config('config.yaml'); s=oi_scanner.BinanceScanner(cfg)
+print('[r3] start'); s.scan_once(); print('[r3] OK')
+" 2>&1 | tee /tmp/round3_test.log
+
+# Block 4 — verify
+grep -iE 'NameError|AttributeError|ImportError|Traceback' /tmp/round3_test.log   # expect 0
+grep -i 'long_accumulation_continuation' /tmp/round3_test.log | head             # acc_cont alive
+grep -i 'oi_range_breakout\|MAX formula' /tmp/round3_test.log | head             # ORB alive
+grep -i 'long_breakout' /tmp/round3_test.log                                     # new detection = 0
+
+# Block 5 — restart daemon
+screen -S bot python3 oi_scanner.py
+ps -eo pid,lstart,cmd | grep oi_scanner | grep -v grep
+```
+
+**PASS criteria:** `[r3] OK`, 0 errors, acc_cont alive, ORB alive, 0 new long_breakout detection.
+
+Historical `long_breakout_retest` rows appearing in Stats/Breakdown = correct, not a fail.
+
