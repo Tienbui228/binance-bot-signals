@@ -1728,8 +1728,6 @@ class BinanceScanner:
     def process_pending_setups(self) -> List[Signal]:
         retest_cfg = self.cfg["retest"]
         risk_cfg = self.cfg["risk"]
-        long_oi_cfg = self.cfg.get("long_breakout_retest", self.cfg.get("legacy_5m_retest", {}))
-
         rows = self.read_csv(self.pending_file)
         confirmed: List[Signal] = []
         orb_confirmed_symbols: set = set()
@@ -1755,7 +1753,7 @@ class BinanceScanner:
             strategy = self.infer_legacy_strategy(row)
 
             # Skip strategies that are disabled in config
-            if strategy in ("long_breakout_retest", "long_accumulation_continuation"):
+            if strategy == "long_accumulation_continuation":
                 if not strategy_cfg.get(strategy, {}).get("enabled", True):
                     continue
             score_oi = float(row.get("score_oi") or 0.0)
@@ -1786,190 +1784,6 @@ class BinanceScanner:
                     acc_cont_confirmed_symbols.add(symbol)
                 confirmed.extend(acc_signals)
                 continue
-            # ────────────────────────────────────────────────────────────────────
-
-            try:
-                cfg_retest_max = int(retest_cfg["retest_max_bars"])
-                hard_max_bars = int(long_oi_cfg.get("hard_max_retest_wait_bars", 8))
-                max_bars = min(cfg_retest_max, max(hard_max_bars, 1))
-                tolerance_pct = float(retest_cfg["retest_tolerance_pct"])
-                reject_confirm_ratio = float(retest_cfg["retest_reject_confirm_ratio"])
-                stop_buffer_pct = float(retest_cfg["stop_buffer_pct"])
-                max_deep_retest_pct = float(retest_cfg.get("max_deep_retest_pct", tolerance_pct))
-                min_risk_pct = float(risk_cfg["min_risk_pct"]) / 100.0
-                tp1_r = float(risk_cfg["tp1_r_multiple"])
-                tp2_r = float(risk_cfg["tp2_r_multiple"])
-                bars_all = self.klines(symbol, self.cfg["scanner"]["interval_5m"], limit=max_bars + 30)
-
-                closed_bars = bars_all[:-1]
-                future_bars = [b for b in closed_bars if b["open_time"] > signal_open_time][:max_bars]
-
-                if not future_bars:
-                    continue
-
-                if side != "LONG":
-                    # short_exhaustion_retest removed — expire any residual SHORT rows
-                    self.close_pending(row["pending_id"], "EXPIRED_WAIT", "short_strategy_removed", 0)
-                    continue
-
-                retest = self.find_retest_long(
-                    breakout_level,
-                    future_bars,
-                    tolerance_pct,
-                    reject_confirm_ratio,
-                    max_deep_retest_pct,
-                )
-
-                state = retest["state"]
-                if state == "WAITING" and len(future_bars) < max_bars:
-                    continue
-                if state == "INVALIDATED":
-                    self.close_pending(row["pending_id"], "INVALIDATED", "retest invalidated", int(retest.get("bar_index", 0)))
-                    continue
-                if state == "WAITING":
-                    self.close_pending(row["pending_id"], "EXPIRED_WAIT", "retest wait expired", len(future_bars))
-                    continue
-
-                retest_bars_waited = int(retest["bar_index"])
-                entry_ref = float(retest["entry_ref"])
-                entry_low = float(retest["entry_low"])
-                entry_high = float(retest["entry_high"])
-
-                if side == "LONG":
-                    soft_max_bars = int(long_oi_cfg.get("soft_max_retest_wait_bars", 4))
-                    hard_max_bars = int(long_oi_cfg.get("hard_max_retest_wait_bars", 8))
-                    max_stale_runup_pct = float(long_oi_cfg.get("max_stale_runup_pct", 3.5))
-                    max_close_below_breakout = int(long_oi_cfg.get("max_close_below_breakout_bars", 1))
-                    max_post_break_chop_pct = float(long_oi_cfg.get("max_post_break_chop_pct", 3.5))
-                    min_post_break_acceptance_ratio = float(long_oi_cfg.get("min_post_break_acceptance_ratio", 0.55))
-
-                    pre_retest_bars = future_bars[:max(retest_bars_waited - 1, 0)]
-                    bars_to_retest = future_bars[:retest_bars_waited]
-                    if retest_bars_waited > hard_max_bars:
-                        self.close_pending(row["pending_id"], "INVALIDATED", f"stale_retest waited {retest_bars_waited} bars", retest_bars_waited)
-                        continue
-
-                    if pre_retest_bars:
-                        highest_pre_retest = max(b["high"] for b in pre_retest_bars)
-                        lowest_pre_retest = min(b["low"] for b in pre_retest_bars)
-                        stale_runup_pct = max((highest_pre_retest - breakout_level) / max(breakout_level, 1e-12) * 100.0, 0.0)
-                        close_below_breakout = sum(1 for b in pre_retest_bars if b["close"] < breakout_level)
-                        post_break_chop_pct = max((highest_pre_retest - lowest_pre_retest) / max(breakout_level, 1e-12) * 100.0, 0.0)
-                    else:
-                        stale_runup_pct = 0.0
-                        close_below_breakout = 0
-                        post_break_chop_pct = 0.0
-
-                    impulse_ref_high = max(b["high"] for b in bars_to_retest)
-                    impulse_ref_low = min(b["low"] for b in bars_to_retest)
-                    acceptance_floor = impulse_ref_low + min_post_break_acceptance_ratio * max(impulse_ref_high - impulse_ref_low, 1e-12)
-                    retest_low_val = float(retest["retest_low"])
-
-                    if stale_runup_pct > max_stale_runup_pct:
-                        self.close_pending(row["pending_id"], "INVALIDATED", f"stale_breakout runup {stale_runup_pct:.2f}%", retest_bars_waited)
-                        continue
-                    if close_below_breakout > max_close_below_breakout:
-                        self.close_pending(row["pending_id"], "INVALIDATED", f"lost_acceptance closes_below_break {close_below_breakout}", retest_bars_waited)
-                        continue
-                    if post_break_chop_pct > max_post_break_chop_pct:
-                        self.close_pending(row["pending_id"], "INVALIDATED", f"post_break_chop {post_break_chop_pct:.2f}%", retest_bars_waited)
-                        continue
-                    if retest_low_val < acceptance_floor:
-                        self.close_pending(row["pending_id"], "INVALIDATED", f"acceptance_floor_lost {retest_low_val:.6f}<{acceptance_floor:.6f}", retest_bars_waited)
-                        continue
-
-                    raw_stop = retest_low_val * (1 - stop_buffer_pct / 100.0)
-                    min_stop = entry_ref * (1 - min_risk_pct)
-                    stop = min(raw_stop, min_stop)
-                    stop_was_forced_min_risk = "yes" if stop == min_stop and abs(min_stop - raw_stop) > 1e-12 else "no"
-                    risk = max(entry_ref - stop, 1e-12)
-                    tp1 = entry_ref + tp1_r * risk
-                    tp2 = entry_ref + tp2_r * risk
-                    retest_depth_pct = max((breakout_level - retest_low_val) / max(breakout_level, 1e-12) * 100.0, 0.0)
-
-                    freshness_score = 20.0 if retest_bars_waited <= 2 else 16.0 if retest_bars_waited <= 4 else 10.0 if retest_bars_waited <= 6 else 4.0
-                    acceptance_score = 5.0
-                    if close_below_breakout == 0:
-                        acceptance_score += 3.0
-                    if post_break_chop_pct <= max_post_break_chop_pct * 0.6:
-                        acceptance_score += 3.0
-                    if retest_low_val >= breakout_level:
-                        acceptance_score += 4.0
-                    if stale_runup_pct <= max_stale_runup_pct * 0.4:
-                        acceptance_score += 2.0
-                    score_retest = min(25.0, freshness_score + acceptance_score)
-                    final_reason = reason.replace("pending", "retest hold") + f" + retest {score_retest:.0f}/25"
-                    score = min(100.0, score_oi + score_breakout + score_retest)
-                    confidence = max(0.0, min(0.99, score / 100.0))
-                signal_id = f"{symbol}-{side}-{signal_open_time}-{retest_bars_waited}"
-                btc_ctx = self.get_btc_context()
-                sl_distance_pct = abs(entry_ref - stop) / max(entry_ref, 1e-12) * 100.0
-                tp1_distance_pct = abs(tp1 - entry_ref) / max(entry_ref, 1e-12) * 100.0
-                tp2_distance_pct = abs(tp2 - entry_ref) / max(entry_ref, 1e-12) * 100.0
-                break_distance_pct = abs(entry_ref - breakout_level) / max(breakout_level, 1e-12) * 100.0
-                risk_pct_real = sl_distance_pct
-                manual_eval = self.evaluate_manual_tradable(side, entry_ref, stop, tp1)
-
-                signal = Signal(
-                    signal_id=signal_id,
-                    timestamp_ms=signal_open_time,
-                    symbol=symbol,
-                    side=side,
-                    score=score,
-                    confidence=confidence,
-                    reason=final_reason,
-                    breakout_level=breakout_level,
-                    entry_low=entry_low,
-                    entry_high=entry_high,
-                    entry_ref=entry_ref,
-                    stop=stop,
-                    tp1=tp1,
-                    tp2=tp2,
-                    price=price,
-                    oi_jump_pct=oi_jump_pct,
-                    funding_pct=funding_pct,
-                    vol_ratio=vol_ratio,
-                    retest_bars_waited=retest_bars_waited,
-                    config_version=str(self.cfg.get("config_version", "")),
-                    strategy=strategy,
-                    market_regime=btc_ctx["market_regime"],
-                    btc_price=btc_ctx["btc_price"],
-                    btc_24h_change_pct=btc_ctx["btc_24h_change_pct"],
-                    btc_4h_change_pct=btc_ctx["btc_4h_change_pct"],
-                    btc_1h_change_pct=btc_ctx["btc_1h_change_pct"],
-                    btc_24h_range_pct=btc_ctx["btc_24h_range_pct"],
-                    btc_4h_range_pct=btc_ctx["btc_4h_range_pct"],
-                    alt_market_breadth_pct=btc_ctx["alt_market_breadth_pct"],
-                    btc_regime=btc_ctx["btc_regime"],
-                    risk_pct_real=risk_pct_real,
-                    sl_distance_pct=sl_distance_pct,
-                    tp1_distance_pct=tp1_distance_pct,
-                    tp2_distance_pct=tp2_distance_pct,
-                    break_distance_pct=break_distance_pct,
-                    retest_depth_pct=retest_depth_pct,
-                    score_oi=score_oi,
-                    score_exhaustion=score_exhaustion,
-                    score_breakout=score_breakout,
-                    score_retest=score_retest,
-                    reason_tags=reason_tags,
-                    stop_was_forced_min_risk=stop_was_forced_min_risk,
-                    manual_tradable=manual_eval["manual_tradable"],
-                    manual_trade_note=manual_eval["manual_trade_note"],
-                    regime_label=self._normalize_regime_label_value(
-                        row.get("regime_label", ""), row.get("market_regime", ""), row.get("btc_regime", "")
-                    ),
-                    regime_fit_for_strategy=self._derive_regime_fit_for_strategy(
-                        strategy, side, row.get("regime_label") or row.get("market_regime") or row.get("btc_regime") or "unclear_mixed"
-                    ),
-                    dispatch_action=row.get("dispatch_action") or "not_evaluated",
-                    dispatch_confidence_band="not_evaluated",
-                    dispatch_reason="not_evaluated",
-                    status="OPEN",
-                )
-                confirmed.append(signal)
-                self.close_pending(row["pending_id"], "CONFIRMED", "signal confirmed", retest_bars_waited)
-            except Exception as e:
-                print(f"[pending warn] {row.get('pending_id')}: {e}")
 
         return confirmed
 
@@ -2607,7 +2421,7 @@ class BinanceScanner:
 
                 # Silently expire OPEN signals of disabled strategies — no Telegram
                 _strategy_cfg = self.cfg.get("strategy", {})
-                if strategy in ("long_breakout_retest", "long_accumulation_continuation"):
+                if strategy == "long_accumulation_continuation":
                     if not _strategy_cfg.get(strategy, {}).get("enabled", True):
                         _sigs = self.read_csv(self.signals_file)
                         for _s in _sigs:
@@ -3185,7 +2999,6 @@ class BinanceScanner:
         print(f"[startup] risk.tp1_r_multiple={self.cfg['risk']['tp1_r_multiple']}")
         print(f"[startup] risk.tp2_r_multiple={self.cfg['risk']['tp2_r_multiple']}")
         print(f"[startup] tracking.max_bars_after_entry={self.cfg['tracking']['max_bars_after_entry']}")
-        print(f"[startup] strategy.long_breakout_retest.enabled={self.cfg.get('strategy', {}).get('long_breakout_retest', {}).get('enabled', True)}")
         print(f"[startup] strategy.long_accumulation_continuation.enabled={self.cfg.get('strategy', {}).get('long_accumulation_continuation', {}).get('enabled', False)}")
         print(f"[startup] btc_sentiment.bullish_threshold_pct={self.cfg.get('btc_sentiment', {}).get('bullish_threshold_pct', 1.0)}")
         print(f"[startup] btc_sentiment.bearish_threshold_pct={self.cfg.get('btc_sentiment', {}).get('bearish_threshold_pct', -1.0)}")
