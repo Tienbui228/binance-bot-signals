@@ -1054,11 +1054,6 @@ class BinanceScanner:
     def _local_day_from_ms(self, ts_ms: int) -> str:
         return datetime.fromtimestamp(max(int(ts_ms), 0) / 1000.0, tz=timezone.utc).astimezone().strftime("%Y-%m-%d")
 
-    def _bar_interval_ms_for_strategy(self, strategy: str) -> int:
-        if strategy == "short_exhaustion_retest":
-            return 15 * 60 * 1000
-        return 5 * 60 * 1000
-
     def _find_pending_row(self, pending_id: str) -> Optional[Dict]:
         rows = self.read_csv(self.pending_file)
         for row in rows:
@@ -1649,269 +1644,11 @@ class BinanceScanner:
 
         return {"state": "WAITING"}
 
-    def find_retest_short(
-        self,
-        breakdown_level: float,
-        future_bars: List[Dict],
-        tolerance_pct: float,
-        reject_confirm_ratio: float,
-        max_deep_retest_pct: float,
-    ):
-        tol = breakdown_level * self._pct_to_fraction(tolerance_pct)
-        max_deep = breakdown_level * self._pct_to_fraction(max_deep_retest_pct)
-        zone_low = breakdown_level - tol
-        zone_high = breakdown_level + tol
-        invalid_high = breakdown_level + max_deep
-
-        for idx, bar in enumerate(future_bars, start=1):
-            if bar["high"] > invalid_high and bar["close"] > breakdown_level:
-                return {"state": "INVALIDATED", "bar_index": idx}
-
-            touched = bar["low"] <= zone_high and bar["high"] >= zone_low
-            if not touched:
-                continue
-
-            total = max(bar["high"] - bar["low"], 1e-12)
-            close_reject = (bar["high"] - bar["close"]) / total
-            if bar["high"] > invalid_high:
-                return {"state": "INVALIDATED", "bar_index": idx}
-
-            if bar["close"] <= breakdown_level and close_reject >= reject_confirm_ratio:
-                return {
-                    "state": "CONFIRMED",
-                    "bar_index": idx,
-                    "entry_ref": bar["close"],
-                    "entry_low": zone_low,
-                    "entry_high": zone_high,
-                    "retest_high": bar["high"],
-                }
-
-            if bar["close"] > breakdown_level:
-                return {"state": "INVALIDATED", "bar_index": idx}
-
-        return {"state": "WAITING"}
-
     def infer_legacy_strategy(self, row: Dict) -> str:
         strategy = row.get("strategy", "").strip()
         if strategy:
             return strategy
         return "long_breakout_retest"
-
-    def detect_1h_exhaustion(self, bars_1h_closed: List[Dict]) -> Optional[Dict]:
-        cfg = self.cfg.get("short_exhaustion_retest", {})
-        lookback = int(cfg.get("exhaustion_1h_lookback_bars", 12))
-        min_top_tests = int(cfg.get("exhaustion_1h_min_top_tests", 2))
-        tolerance_pct = float(cfg.get("exhaustion_1h_resistance_tolerance_pct", 0.35)) / 100.0
-        breakout_accept_pct = float(cfg.get("exhaustion_1h_breakout_accept_pct", 0.15)) / 100.0
-        min_upper_wick_ratio = float(cfg.get("exhaustion_1h_min_upper_wick_ratio", 0.35))
-
-        bars = bars_1h_closed[-lookback:]
-        if len(bars) < max(lookback - 2, 8):
-            return None
-
-        resistance_ref = max(b["high"] for b in bars)
-        tolerance_abs = resistance_ref * tolerance_pct
-        tests = [b for b in bars if abs(b["high"] - resistance_ref) <= tolerance_abs]
-        top_tests = len(tests)
-        no_clean_acceptance = all(b["close"] <= resistance_ref * (1 + breakout_accept_pct) for b in bars)
-
-        rejection_bars = [
-            b for b in tests
-            if self.upper_wick_ratio(b) >= min_upper_wick_ratio and b["close"] < resistance_ref
-        ]
-        has_failed_breakout = len(rejection_bars) >= 1
-
-        closes = [b["close"] for b in bars]
-        push_advances = []
-        for idx in range(1, len(closes)):
-            adv = closes[idx] - closes[idx - 1]
-            if adv > 0:
-                push_advances.append(adv)
-        weakening_push = False
-        if len(push_advances) >= 2 and push_advances[-1] <= push_advances[-2]:
-            weakening_push = True
-
-        up_body_last2 = [self.candle_body_ratio(b) for b in bars[-2:]]
-        last2_near_high = sum(1 for b in bars[-2:] if (b["high"] - b["close"]) / max(b["high"] - b["low"], 1e-12) <= 0.20)
-        bullish_last2 = sum(1 for b in bars[-2:] if b["close"] > b["open"])
-        strong_bullish_impulse = bullish_last2 == 2 and last2_near_high == 2 and min(up_body_last2) >= 0.55
-
-        score = 0.0
-        if top_tests >= min_top_tests:
-            score += min(10.0, 6.0 + 2.0 * (top_tests - min_top_tests + 1))
-        if no_clean_acceptance:
-            score += 8.0
-        if has_failed_breakout:
-            score += min(9.0, 5.0 + 2.0 * len(rejection_bars))
-        if weakening_push:
-            score += 8.0
-        if strong_bullish_impulse:
-            score = max(score - 12.0, 0.0)
-
-        passed = top_tests >= min_top_tests and no_clean_acceptance and has_failed_breakout and not strong_bullish_impulse
-        if not passed:
-            return None
-
-        reason_tags = [
-            f"1h_top_tests={top_tests}",
-            "1h_failed_breakout",
-            "1h_no_accept_above_resistance",
-        ]
-        if weakening_push:
-            reason_tags.append("1h_weakening_push")
-
-        return {
-            "passed": True,
-            "resistance_ref": resistance_ref,
-            "top_tests": top_tests,
-            "has_failed_breakout": has_failed_breakout,
-            "has_clear_rejection": has_failed_breakout,
-            "has_weakening_push": weakening_push,
-            "score_1h_exhaustion": min(score, 35.0),
-            "reason_tags": reason_tags,
-        }
-
-    def detect_15m_breakdown_after_exhaustion(self, bars_15m_closed: List[Dict]) -> Optional[Dict]:
-        BD_MAX_SIGNAL_AGE_MIN = 35
-
-        cfg = self.cfg.get("short_exhaustion_retest", {})
-        lookback = int(cfg.get("breakdown_15m_lookback_bars", 12))
-        min_break_distance_pct = float(cfg.get("breakdown_15m_min_break_distance_pct", 0.15)) / 100.0
-        min_body_ratio = float(cfg.get("breakdown_15m_min_body_ratio", 0.45))
-        min_volume_ratio = float(cfg.get("breakdown_15m_min_volume_ratio", 1.10))
-
-        bars = bars_15m_closed[-max(lookback + 2, 16):]
-        if len(bars) < lookback + 1:
-            return None
-
-        now_ms = int(time.time() * 1000)
-        bd_reject_reason = "no_valid_candidate_in_window"
-
-        for k in (2, 1, 0):
-            if (k + 1) >= len(bars):
-                bd_reject_reason = "offset_out_of_range"
-                continue
-
-            candidate = bars[-(k + 1)]
-
-            # A. Support ref from bars strictly before candidate (window shifts with k)
-            support_window = bars[-(lookback + k + 1):-(k + 1)]
-            if not support_window:
-                bd_reject_reason = "no_support_window"
-                continue
-            support_ref = min(b["low"] for b in support_window)
-
-            # B. Break distance
-            if candidate["close"] >= support_ref:
-                bd_reject_reason = "close_above_support"
-                continue
-            break_distance_raw = (support_ref - candidate["close"]) / max(support_ref, 1e-12)
-            if break_distance_raw < min_break_distance_pct:
-                bd_reject_reason = "dist_too_small"
-                continue
-
-            # C. Body ratio
-            body_ratio = self.candle_body_ratio(candidate)
-            if body_ratio < min_body_ratio:
-                bd_reject_reason = "body_too_small"
-                continue
-
-            # D. Event cross-check: bar must represent the actual breakdown moment, not continuation
-            prev_bar = bars[-(k + 2)] if (k + 2) <= len(bars) else None
-            open_near_support = candidate["open"] >= support_ref * 0.99
-            prev_close_near_support = (
-                prev_bar is not None
-                and prev_bar["close"] >= support_ref * (1 - min_break_distance_pct)
-            )
-            bd_is_event_cross = open_near_support or prev_close_near_support
-            if not bd_is_event_cross:
-                bd_reject_reason = "continuation_not_event"
-                continue
-
-            # E. Signal age
-            signal_age_min = (now_ms - candidate["close_time"]) / 60_000
-            if signal_age_min > BD_MAX_SIGNAL_AGE_MIN:
-                bd_reject_reason = "signal_too_old"
-                continue
-
-            # F. Volume ratio
-            bars_for_vol = bars if k == 0 else bars[:-k]
-            vol_ratio = self.volume_ratio_generic(bars_for_vol, recent_bars=1, base_bars=min(6, len(bars_for_vol) - 1))
-            if vol_ratio < min_volume_ratio:
-                bd_reject_reason = "vol_too_low"
-                continue
-
-            # G. Close near low
-            close_near_low = (candidate["close"] - candidate["low"]) / max(candidate["high"] - candidate["low"], 1e-12)
-            if close_near_low > 0.45:
-                bd_reject_reason = "close_not_near_low"
-                continue
-
-            # All conditions pass — score (formula unchanged, operates on same fields)
-            break_distance_pct = break_distance_raw * 100.0
-            score = 0.0
-            score += 12.0
-            score += min(6.0, break_distance_pct / max(min_break_distance_pct * 100.0, 1e-12) * 3.0)
-            score += min(6.0, body_ratio / max(min_body_ratio, 1e-12) * 3.0)
-            score += min(6.0, vol_ratio / max(min_volume_ratio, 1e-12) * 3.0)
-
-            return {
-                "passed": True,
-                "breakdown_level": support_ref,
-                "support_ref": support_ref,
-                "break_bar_open_time": candidate["open_time"],
-                "break_distance_pct": break_distance_pct,
-                "body_ratio": body_ratio,
-                "vol_ratio": vol_ratio,
-                "score_15m_breakdown": min(score, 30.0),
-                "reason_tags": ["15m_clean_breakdown", f"15m_break_dist={break_distance_pct:.2f}%"],
-                "signal_bar": candidate,
-                "bd_scan_window_bars": 3,
-                "bd_candidate_offset": k,
-                "bd_signal_age_min": signal_age_min,
-                "bd_support_ref": support_ref,
-                "bd_previous_close": prev_bar["close"] if prev_bar else None,
-                "bd_candidate_open": candidate["open"],
-                "bd_candidate_close": candidate["close"],
-                "bd_break_distance_pct": break_distance_pct,
-                "bd_is_event_cross": bd_is_event_cross,
-                "bd_reject_reason": None,
-            }
-
-        return None
-
-    def _reset_round_detect_funnel(self):
-        self._round_detect_funnel = {
-            "short_exhaustion_retest": {},
-        }
-
-    def _funnel_hit(self, strategy: str, key: str, n: int = 1):
-        funnel = getattr(self, "_round_detect_funnel", None)
-        if funnel is None:
-            return
-        bucket = funnel.setdefault(strategy, {})
-        bucket[key] = bucket.get(key, 0) + n
-
-    def _print_detect_funnel_summary(self):
-        funnel = getattr(self, "_round_detect_funnel", None) or {}
-        order = {
-            "short_exhaustion_retest": [
-                "symbols_seen",
-                "data_ok",
-                "exhaustion_ok",
-                "breakdown_ok",
-                "new_pending",
-                "blocked_duplicate",
-                "fail_disabled",
-                "fail_data",
-                "fail_exhaustion",
-                "fail_breakdown",
-            ],
-        }
-        for strategy, keys in order.items():
-            bucket = funnel.get(strategy, {})
-            parts = [f"{k}={bucket.get(k, 0)}" for k in keys if bucket.get(k, 0) or k in ("symbols_seen", "new_pending")]
-            print(f"[detect funnel] {strategy} | " + " | ".join(parts))
 
     def _already_pending_for_strategy(self, symbol: str, side: str, strategy: str) -> bool:
         rows = self.read_csv(self.pending_file)
@@ -3473,7 +3210,6 @@ class BinanceScanner:
 
     def scan_once(self):
         self.round_idx += 1
-        self._reset_round_detect_funnel()
         now_ms = int(time.time() * 1000)
         print(f"[round start] idx={self.round_idx} time_ms={now_ms}")
 
@@ -3748,7 +3484,6 @@ class BinanceScanner:
             except Exception as e:
                 print(f"[warn] {sym}: {e}")
 
-        self._print_detect_funnel_summary()
         if not confirmed and new_pending == 0:
             print("No valid setups this round.")
 
