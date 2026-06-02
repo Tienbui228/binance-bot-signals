@@ -60,7 +60,7 @@ class Signal:
 
     setup_id: str = ""
     config_version: str = ""
-    strategy: str = "legacy_5m_retest"
+    strategy: str = ""
     market_regime: str = "unknown"
     btc_4h_change_pct: float = 0.0
     btc_1h_change_pct: float = 0.0
@@ -146,7 +146,7 @@ class PendingSetup:
     funding_pct: float
     vol_ratio: float
     setup_id: str = ""
-    strategy: str = "legacy_5m_retest"
+    strategy: str = ""
     market_regime: str = "unknown"
     btc_4h_change_pct: float = 0.0
     btc_1h_change_pct: float = 0.0
@@ -2498,7 +2498,7 @@ class BinanceScanner:
         )
 
         self.print_breakdown(rows, label="side", key_fn=lambda r: r.get("side", "UNKNOWN"))
-        self.print_breakdown(rows, label="strategy", key_fn=lambda r: r.get("strategy", "legacy_5m_retest"))
+        self.print_breakdown(rows, label="strategy", key_fn=lambda r: r.get("strategy", "unknown"))
         self.print_breakdown(rows, label="btc_regime", key_fn=lambda r: r.get("btc_regime", "unknown"))
         self.print_strategy_pipeline_summary()
         self.print_pending_reason_breakdown()
@@ -2589,7 +2589,7 @@ class BinanceScanner:
             return groups[key]
 
         for row in pending_rows:
-            strategy = row.get("strategy", "legacy_5m_retest") or "legacy_5m_retest"
+            strategy = row.get("strategy", "unknown") or "unknown"
             side = row.get("side", "UNKNOWN") or "UNKNOWN"
             status = (row.get("status", "") or "").upper()
             g = ensure(strategy, side)
@@ -2604,7 +2604,7 @@ class BinanceScanner:
                 g["expired"] += 1
 
         for row in signal_rows:
-            strategy = row.get("strategy", "legacy_5m_retest") or "legacy_5m_retest"
+            strategy = row.get("strategy", "unknown") or "unknown"
             side = row.get("side", "UNKNOWN") or "UNKNOWN"
             status = (row.get("status", "") or "").upper()
             g = ensure(strategy, side)
@@ -2613,7 +2613,7 @@ class BinanceScanner:
                 g["open"] += 1
 
         for row in result_rows:
-            strategy = row.get("strategy", "legacy_5m_retest") or "legacy_5m_retest"
+            strategy = row.get("strategy", "unknown") or "unknown"
             side = row.get("side", "UNKNOWN") or "UNKNOWN"
             g = ensure(strategy, side)
             g["closed"] += 1
@@ -2659,7 +2659,7 @@ class BinanceScanner:
                     elif len(row_vals) > len(header):
                         row_vals = row_vals[:len(header)]
 
-                    strategy = cell(row_vals, "strategy", "legacy_5m_retest") or "legacy_5m_retest"
+                    strategy = cell(row_vals, "strategy", "unknown") or "unknown"
                     side = (cell(row_vals, "side", "UNKNOWN") or "UNKNOWN").upper()
                     status = (cell(row_vals, "status", "") or "").upper()
                     reason = cell(row_vals, "close_reason", "")
@@ -2749,8 +2749,8 @@ class BinanceScanner:
         reason = (row.get("reason", "") or row.get("manual_trade_note", "") or "").lower()
         side = (row.get("side", "") or "").upper()
         if "exhaustion" in reason or "retest fail" in reason or side == "SHORT":
-            return "short_exhaustion_retest" if side == "SHORT" else "legacy_5m_retest"
-        return "legacy_5m_retest"
+            return "short_exhaustion_retest" if side == "SHORT" else "unknown"
+        return "unknown"
 
     def _row_has_score_parts(self, row: Dict) -> bool:
         return any(str(row.get(k, "")).strip() for k in ("score_oi", "score_exhaustion", "score_breakout", "score_retest"))
@@ -2785,7 +2785,7 @@ class BinanceScanner:
             return
         groups: Dict[str, List[Dict]] = {}
         for row in rows:
-            strategy = row.get('strategy', 'legacy_5m_retest') or 'legacy_5m_retest'
+            strategy = row.get('strategy', 'unknown') or 'unknown'
             outcome = row.get('outcome', 'UNKNOWN') or 'UNKNOWN'
             key = f"{strategy}|{outcome}"
             groups.setdefault(key, []).append(row)
@@ -2883,7 +2883,7 @@ class BinanceScanner:
 
         groups: Dict[str, List[Dict]] = {}
         for row in rows:
-            strategy = row.get('strategy', 'legacy_5m_retest') or 'legacy_5m_retest'
+            strategy = row.get('strategy', 'unknown') or 'unknown'
             side = row.get('side', 'UNKNOWN') or 'UNKNOWN'
             groups.setdefault(f"{strategy}|{side}", []).append(row)
         for key in sorted(groups.keys()):
@@ -2908,7 +2908,7 @@ class BinanceScanner:
             return
         groups: Dict[str, List[Dict]] = {}
         for row in rows:
-            key = f"{row.get('strategy','legacy_5m_retest')}|{row.get('side','UNKNOWN')}"
+            key = f"{row.get('strategy','unknown')}|{row.get('side','UNKNOWN')}"
             groups.setdefault(key, []).append(row)
         for key in sorted(groups.keys()):
             strategy, side = key.split("|", 1)
