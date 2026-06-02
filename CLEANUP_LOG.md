@@ -344,6 +344,146 @@ syntax OK
 
 ---
 
+## Round 2 — short_exhaustion_retest removal
+
+### Git tag backup
+`backup-before-short-removal-20260602-1122`
+
+### Preconditions confirmed (Phase 0 context)
+- `Pipeline[short_exhaustion_retest][SHORT] | open=0 | closed=5` — 0 pending SHORT in-flight
+- `[detect funnel] short_exhaustion_retest | fail_disabled=102` — detection gated off
+- SAFE to delete code without orphaning live rows
+
+### PART 1 — Inventory (grep evidence)
+
+**All short_exhaustion references in .py files before deletion:**
+```
+$ grep -rn "short_exhaustion" --include="*.py" .
+oi_scanner.py:14   import short_exhaustion_retest strategy
+oi_scanner.py:377  is_short = side_u == "SHORT" or "short_exhaustion_retest" in strategy_l
+oi_scanner.py:1059 def _bar_interval_ms_for_strategy — short branch
+oi_scanner.py:1702 def detect_1h_exhaustion (cfg from short_exhaustion_retest)
+oi_scanner.py:1778 def detect_15m_breakdown_after_exhaustion (cfg from short_exhaustion_retest)
+oi_scanner.py:1886 _reset_round_detect_funnel — dict key short_exhaustion_retest
+oi_scanner.py:1899 _print_detect_funnel_summary — order key
+oi_scanner.py:1917 def build_pending_short_exhaustion_setup
+oi_scanner.py:1979 invocation in build_pending_setups_for_symbol
+oi_scanner.py:2003 short_cfg = self.cfg.get("short_exhaustion_retest", {})
+oi_scanner.py:2031 strategy in (short_exhaustion_retest, long_breakout_retest, acc_cont)
+oi_scanner.py:2065 if strategy == "short_exhaustion_retest": (param setup block)
+oi_scanner.py:2201 if strategy == "short_exhaustion_retest": (score block)
+oi_scanner.py:2277 if strategy == "short_exhaustion_retest": (min_send gate)
+oi_scanner.py:2923 strategy in (short_exhaustion_retest, ...) in signal eval
+oi_scanner.py:2933 if strategy == "short_exhaustion_retest": interval=15m
+oi_scanner.py:3298 infer_legacy_strategy return value
+oi_scanner.py:3505 startup print
+oi_scanner.py:3575 regime print short_fit
+oi_scanner.py:3779 regime_fit_short_exhaustion assignment
+oi_scanner.py:3844 run_simulation_case hardcode (harness)
+scanner/strategies/short_exhaustion_retest.py — 78 lines (entire file)
+regime/regime_normalizer.py:85 — label mapping (kept, round-after)
+scanner/domain.py:31 — dataclass field (kept, stale)
+scanner/regime/classifier.py:9,34,44,52 — classifier fields (kept, round-after)
+```
+
+**find_retest_short exclusivity:**
+```
+$ grep -n "find_retest_short\|find_retest_long" oi_scanner.py
+1611: def find_retest_long   ← caller: side==LONG branch only
+1653: def find_retest_short  ← caller: else branch (side==SHORT) only
+2095: retest = self.find_retest_long(...)   ← inside if side == "LONG"
+2103: retest = self.find_retest_short(...)  ← inside else (side==SHORT)
+```
+Verdict: `find_retest_short` has 1 caller, SHORT-exclusive. Safe to delete.
+
+**Funnel exclusivity:**
+```
+_reset_round_detect_funnel: dict = {"short_exhaustion_retest": {}} — no other key
+_print_detect_funnel_summary: order = {"short_exhaustion_retest": [...]} — no other key
+_funnel_hit: generic setter, only called from scanner/strategies/short_exhaustion_retest.py
+  (deleted in commit R2-2). 0 callers after file deletion.
+```
+Verdict: all 3 funnel methods short-exclusive. Deleted in commit R2-4.
+
+**detect_1h_exhaustion / detect_15m_breakdown_after_exhaustion callers:**
+```
+$ grep -n "detect_1h_exhaustion\|detect_15m_breakdown" oi_scanner.py scanner/strategies/short_exhaustion_retest.py
+oi_scanner.py:1701    def detect_1h_exhaustion (definition)
+oi_scanner.py:1775    def detect_15m_breakdown_after_exhaustion (definition)
+short_exhaustion_retest.py:37    scanner.detect_1h_exhaustion(bars_1h)
+short_exhaustion_retest.py:42    scanner.detect_15m_breakdown_after_exhaustion(bars_15m)
+```
+Both methods: sole caller was `short_exhaustion_retest.py` (deleted). Short-exclusive. Deleted R2-4.
+
+### Commit list (Round 2)
+
+| Commit | Action |
+|---|---|
+| `1de68e04` | R2-1: remove import, wrapper, invocation, startup prints |
+| `a0e292e0` | R2-2: git rm scanner/strategies/short_exhaustion_retest.py |
+| `ebf7a74b` | R2-3: remove SHORT branch in process_pending_setups + scan_once |
+| `4738b378` | R2-4: delete detect_1h_exhaustion, detect_15m_breakdown, find_retest_short, funnel methods |
+
+### Post-deletion grep (current state)
+```
+$ grep -n "short_exhaustion" oi_scanner.py
+2993: return "short_exhaustion_retest" if side == "SHORT" ...  ← infer_legacy_strategy (history rows, KEPT)
+3532: strategy = "short_exhaustion_retest"                     ← run_simulation_case harness (KEPT)
+```
+0 live detection/processing references. Only history-serving and simulate-harness refs remain.
+
+### Local validation
+
+```
+$ python -c "import oi_scanner; print('import OK')"
+import OK
+
+$ python oi_scanner.py --simulate-case long_tp1 (after R2-4)
+SIMULATION_OK
+pending_id=SIMCASE-SIMLONGUSDT-LONG-1780374571468
+outcome=WIN_TP1
+```
+LONG pipeline (long_breakout_retest) intact after all 4 commits.
+
+### PART 3 — VPS validation required
+
+**Round 2 PART 3 runbook** (same as Phase 0, run after git pull):
+
+```bash
+git pull
+git log --oneline -3   # HEAD must be 4738b378
+
+# kill old process, record CUT_MS, start fresh (same as Phase 0 runbook)
+ps -eo pid,lstart,cmd | grep oi_scanner | grep -v grep
+kill <pid>
+python3 -c "import time; print('CUT_MS=', int(time.time()*1000))"
+screen -S bot python3 oi_scanner.py
+
+# After 1 scan cycle completes:
+python3 -c "
+import oi_scanner
+cfg = oi_scanner.load_config('config.yaml')
+s = oi_scanner.BinanceScanner(cfg)
+print('[r2] scan_once start'); s.scan_once(); print('[r2] scan_once OK')
+" 2>&1 | tee /tmp/round2_test.log
+
+grep -iE "NameError|AttributeError|ImportError|Traceback" /tmp/round2_test.log
+grep -i "short_exhaustion\|detect funnel" /tmp/round2_test.log
+grep -i "long_accumulation_continuation\|oi_range_breakout" /tmp/round2_test.log | head
+```
+
+**Pass criteria:**
+- `[r2] scan_once OK`, 0 NameError/AttributeError/ImportError
+- `[detect funnel]` line for short_exhaustion_retest **absent** (funnel deleted)
+- No short_exhaustion errors
+- acc_cont and ORB pipeline lines present
+
+### Round 2 Status
+**LOCAL: PASS** — 4 commits clean, import OK, simulate-case LONG OK, 0 dangling short refs.
+**VPS: awaiting operator scan_once output** (PART 3 runbook above).
+
+---
+
 ## Phase 0 Validation Addendum
 
 Environment: local Windows dev machine (not VPS). PART 1–2 local. PART 3 = runbook for VPS operator.
