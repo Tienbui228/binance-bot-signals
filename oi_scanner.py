@@ -1708,7 +1708,9 @@ class BinanceScanner:
             funding_pct = float(row.get("funding_pct") or 0.0)
             vol_ratio = float(row.get("vol_ratio") or 0.0)
             price = float(row["signal_price"])
-            strategy = self.infer_legacy_strategy(row)
+            strategy = (row.get("strategy") or "").strip()
+            if not strategy:
+                continue
 
             # Skip strategies that are disabled in config
             if strategy == "long_accumulation_continuation":
@@ -2375,7 +2377,9 @@ class BinanceScanner:
                 stop = float(row["stop"])
                 tp1 = float(row["tp1"])
                 tp2 = float(row["tp2"])
-                strategy = self.infer_legacy_strategy(row)
+                strategy = (row.get("strategy") or "").strip()
+                if not strategy:
+                    continue
 
                 # Silently expire OPEN signals of disabled strategies — no Telegram
                 _strategy_cfg = self.cfg.get("strategy", {})
