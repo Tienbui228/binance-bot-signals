@@ -1,0 +1,5 @@
+code_build_id=acc-cont-daily-dedup-2026-05-31
+code_build_source=version-marker-in-oi_scanner.py
+code_build_note=Cleanup 2026-06-02: removed pump_exhaustion, dead shim modules, review_case_system. oi_scanner.py is permanent god-file (ADR-1).
+config_version=phase3-short-exhaustion-v5-scoreparts-manualdiag
+written_at_utc=2026-06-02T00:00:00.000000+00:00
