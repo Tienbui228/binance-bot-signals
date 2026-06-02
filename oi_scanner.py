@@ -1807,22 +1807,18 @@ class BinanceScanner:
                 if not future_bars:
                     continue
 
-                if side == "LONG":
-                    retest = self.find_retest_long(
-                        breakout_level,
-                        future_bars,
-                        tolerance_pct,
-                        reject_confirm_ratio,
-                        max_deep_retest_pct,
-                    )
-                else:
-                    retest = self.find_retest_short(
-                        breakout_level,
-                        future_bars,
-                        tolerance_pct,
-                        reject_confirm_ratio,
-                        max_deep_retest_pct,
-                    )
+                if side != "LONG":
+                    # short_exhaustion_retest removed — expire any residual SHORT rows
+                    self.close_pending(row["pending_id"], "EXPIRED_WAIT", "short_strategy_removed", 0)
+                    continue
+
+                retest = self.find_retest_long(
+                    breakout_level,
+                    future_bars,
+                    tolerance_pct,
+                    reject_confirm_ratio,
+                    max_deep_retest_pct,
+                )
 
                 state = retest["state"]
                 if state == "WAITING" and len(future_bars) < max_bars:
@@ -1905,13 +1901,6 @@ class BinanceScanner:
                     final_reason = reason.replace("pending", "retest hold") + f" + retest {score_retest:.0f}/25"
                     score = min(100.0, score_oi + score_breakout + score_retest)
                     confidence = max(0.0, min(0.99, score / 100.0))
-                else:
-                    retest_depth_pct = 0.0
-                    score_retest = 25.0
-                    score = min(100.0, max(score, score_breakout + score_retest))
-                    confidence = max(0.0, min(0.99, score / 100.0))
-                    final_reason = reason.replace("pending", "retest reject")
-
                 signal_id = f"{symbol}-{side}-{signal_open_time}-{retest_bars_waited}"
                 btc_ctx = self.get_btc_context()
                 sl_distance_pct = abs(entry_ref - stop) / max(entry_ref, 1e-12) * 100.0
