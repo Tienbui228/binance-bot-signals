@@ -879,3 +879,95 @@ grep -i 'long_breakout' /tmp/round3_test.log
 
 **Kept (SHARED):** `infer_legacy_strategy` default (ROUND-AFTER), `run_simulation_case` harness label, `regime_fit_long_breakout` field (used for all LONG setups), `regime_normalizer.py` mapping (historical rows).
 
+
+---
+
+## Round 4 — legacy data purge + code removal (2026-06-02)
+
+### Backup tag (Phase A)
+
+```
+backup-before-legacy-code-removal-20260602-1519
+```
+
+---
+
+### Phase B — Data Purge
+
+**B-0 Archive:** `data_archive_legacy_purge_<ts>.tar.gz` created on VPS before any deletion.
+
+**B-1 Inventory (approved):**
+
+```
+data/_bak_simclean_20260602-0731/pending_2026-06-02.csv: total=100 drop=1 keep=99
+   DROP-> 0.0 | 1.1148 | none                    ← corrupt row in backup
+data/_bak_simclean_20260602-0731/results_2026-06.csv: total=12 drop=1 keep=11
+   DROP-> long_breakout_retest | None | SIMLONGUSDT  ← sim case
+data/_bak_simclean_20260602-0731/signals_2026-06.csv: total=10 drop=1 keep=9
+   DROP-> long_breakout_retest | WIN_TP1 | SIMLONGUSDT  ← sim case
+data/pending/pending_2026-05-*.csv: all drop=0    ← no legacy in pending
+data/results/results_2026-05.csv: total=949 drop=5 keep=944
+   DROP-> short_exhaustion_retest (3 rows sample: XLMUSDT, DOGEUSDT, NEARUSDT)
+data/signals/signals_2026-05.csv: total=646 drop=5 keep=641
+   DROP-> short_exhaustion_retest (LOSS_STOP, EXPIRED_DISABLED)
+data/results/results_2026-06.csv: drop=0
+data/signals/signals_2026-06.csv: drop=0
+```
+
+No acc_cont/ORB/PENDING/CONFIRMED rows in DROP list. B-1 approved.
+
+**B-2 Execution:** WROTE 4 files (3 _bak_ + results_2026-05 + signals_2026-05). All pending files UNCHANGED.
+
+**B-3 Verify:** 6 CONFIRMED acc_cont live rows confirmed present in `_bak_/pending_2026-06-02.csv` (live=6, acc_cont=98). `pending_2026-06-01.csv` live=6, acc_cont=105. All PENDING/CONFIRMED rows intact.
+
+---
+
+### Phase A — Code Removal
+
+**Commit list:**
+```
+d214a945  chore(R4-A1): replace infer_legacy_strategy callers with direct field read
+930be727  chore(R4-A2): delete infer_legacy_strategy — 0 callers remaining after R4-A1
+16ac8fce  chore(R4-A3): purge legacy_5m_retest string — dataclass defaults + observability fallbacks
+```
+
+**Changes:**
+- R4-A1: `process_pending_setups` + `evaluate_open_signals` — replaced `self.infer_legacy_strategy(row)` with `(row.get("strategy") or "").strip()`; empty strategy → explicit `continue` (no crash)
+- R4-A2: deleted `infer_legacy_strategy()` definition (6 lines). 0 references remain.
+- R4-A3: `PendingSetup.strategy` default `"legacy_5m_retest"` → `""`; `Signal.strategy` default → `""`; all observability `row.get("strategy","legacy_5m_retest")` → `"unknown"`; `_infer_strategy_from_row` fallback → `"unknown"`. **0 references to `legacy_5m_retest` in codebase.**
+
+**Audit results:**
+```
+AUDIT OK: 0 legacy_5m_retest, 0 infer_legacy_strategy
+AUDIT OK: acc_cont and ORB still set strategy explicitly
+AUDIT OK: PendingSetup.strategy default='', Signal.strategy default=''
+```
+
+---
+
+### Phase C — VPS Validation
+
+```
+grep errors: empty (0 NameError/KeyError/Traceback)
+
+acc_cont alive:
+Pipeline[long_accumulation_continuation][LONG] | detected=1030 | pending=0 | confirmed=208 | open=4 | closed=77
+
+ORB alive:
+[bybit OI] EDGEUSDT — MAX formula ready (bybit aligned)
+[bybit OI] 1000PEPEUSDT — MAX formula ready (bybit aligned)
+
+Breakdown: only long_accumulation_continuation + oi_range_breakout — no legacy/short/breakout labels
+legacy_5m_retest grep: empty
+```
+
+---
+
+## Round 4 — PASS
+
+**Phase B:** 15 legacy rows deleted across results+signals (5 short_exhaustion each) + 3 sim rows in _bak_. All PENDING/CONFIRMED and acc_cont/ORB rows intact.
+
+**Phase A:** `infer_legacy_strategy` deleted, `legacy_5m_retest` string fully purged from codebase (0 references). Dataclass defaults → `""`.
+
+**Phase C:** `[r4] OK`, 0 errors, acc_cont+ORB alive, Breakdown shows only 2 strategy labels.
+
