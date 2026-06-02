@@ -844,3 +844,38 @@ ps -eo pid,lstart,cmd | grep oi_scanner | grep -v grep
 
 Historical `long_breakout_retest` rows appearing in Stats/Breakdown = correct, not a fail.
 
+
+### PART 3 — VPS Results (2026-06-02)
+
+```
+grep -iE 'NameError|AttributeError|ImportError|Traceback' /tmp/round3_test.log
+(empty — 0 errors)
+
+grep -i 'long_accumulation_continuation' /tmp/round3_test.log | head
+Breakdown[strategy=long_accumulation_continuation] | total=77 | TP1=7 | TP2=20 | STOP=50 | EXPIRED=0 | avgR=-0.039 | manual_yes=43/77
+Pipeline[long_accumulation_continuation][LONG] | detected=1128 | pending=0 | confirmed=213 | invalidated=0 | expired=0 | signals=88 | open=4 | closed=77
+
+grep -i 'oi_range_breakout\|MAX formula' /tmp/round3_test.log | head
+Breakdown[strategy=oi_range_breakout] | total=878 | TP1=83 | TP2=4 | STOP=70 | EXPIRED=721 | avgR=-0.037 | manual_yes=443/878
+[bybit OI] EDGEUSDT — MAX formula ready (bybit aligned)
+[bybit OI] 1000PEPEUSDT — MAX formula ready (bybit aligned)
+
+grep -i 'long_breakout' /tmp/round3_test.log
+(empty — 0 new long_breakout_retest detection)
+```
+
+**PASS (all criteria met):**
+- [r3] OK: scan_once completed without crash
+- 0 NameError / AttributeError / ImportError / Traceback
+- acc_cont alive: detected=1128, confirmed=213, open=4
+- ORB alive: MAX formula firing (bybit aligned)
+- 0 new long_breakout_retest detection
+
+---
+
+## Round 3 — PASS
+
+**Removed:** `find_retest_long()` (42 lines), LBR fallthrough `try/except` block in `process_pending_setups` (~180 lines), `long_oi_cfg` var, 2× strategy tuple cleanup, startup print.
+
+**Kept (SHARED):** `infer_legacy_strategy` default (ROUND-AFTER), `run_simulation_case` harness label, `regime_fit_long_breakout` field (used for all LONG setups), `regime_normalizer.py` mapping (historical rows).
+
