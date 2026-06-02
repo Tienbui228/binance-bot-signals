@@ -17,16 +17,6 @@ from scanner.regime.classifier import classify_regime
 from scanner import lifecycle as lifecycle_mod
 from regime.regime_normalizer import enrich_row_with_regime
 
-try:
-    from scanner.universe_filter import UniverseFilter
-    from scanner.strategies.pump_exhaustion.discovery import PumpDiscovery
-    from scanner.strategies.pump_exhaustion.scanner import PumpScanner
-    from scanner.strategies.pump_exhaustion.outcome import OutcomeUpdater
-    _PUMP_EXHAUSTION_AVAILABLE = True
-except Exception as _pump_import_err:
-    print(f"[pump_exhaustion] import failed (disabled): {_pump_import_err}")
-    _PUMP_EXHAUSTION_AVAILABLE = False
-
 BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
@@ -365,26 +355,6 @@ class BinanceScanner:
         }
 
         self._ensure_storage_layout()
-
-        # Pump exhaustion init
-        self.universe_filter = None
-        self.pump_discovery = None
-        self.pump_scanner = None
-        self.outcome_updater = None
-        self._eligible_symbols: List[str] = []
-        if _PUMP_EXHAUSTION_AVAILABLE and self.cfg.get("pump_exhaustion", {}).get("enabled", False):
-            try:
-                from scanner.strategies.pump_exhaustion.watchlist.watchlist_manager import WatchlistManager as _PEWatchlistManager
-                self.universe_filter = UniverseFilter(self.cfg)
-                _shared_wl = _PEWatchlistManager(self.cfg)
-                self.pump_discovery = PumpDiscovery(self.cfg, self.universe_filter, self, wl_manager=_shared_wl)
-                self.pump_scanner = PumpScanner(self.cfg, self, wl_manager=_shared_wl)
-                self.outcome_updater = OutcomeUpdater(self.cfg, self, wl_manager=_shared_wl)
-                print("[PumpExhaustion] Initialized.")
-            except Exception as _pe_init_err:
-                import traceback
-                print(f"[PumpExhaustion] init failed: {_pe_init_err}")
-                traceback.print_exc()
 
     def _normalize_regime_label_value(self, regime_label: str = "", market_regime: str = "", btc_regime: str = "") -> str:
         raw = str(regime_label or market_regime or btc_regime or "").strip()
@@ -3862,18 +3832,6 @@ class BinanceScanner:
         if not confirmed and new_pending == 0:
             print("No valid setups this round.")
 
-        # Pump exhaustion scan (runs in main thread every scan cycle)
-        if self.pump_scanner is not None:
-            try:
-                if self.universe_filter is not None:
-                    self.universe_filter.refresh_if_stale()
-                    self._eligible_symbols = self.universe_filter.get_eligible_symbols()
-                self.pump_scanner.scan_once(self._eligible_symbols)
-            except Exception as _pe_scan_err:
-                import traceback
-                print(f"[PumpExhaustion] scan error: {_pe_scan_err}")
-                traceback.print_exc()
-
         pending_active = sum(1 for r in self.read_csv(self.pending_file) if r.get("status") == "PENDING")
         open_signals = sum(1 for r in self.read_csv(self.signals_file) if r.get("status") == "OPEN")
         print(
@@ -4027,25 +3985,6 @@ class BinanceScanner:
         import traceback
         import threading
         sec = int(self.cfg["scanner"]["loop_seconds"])
-
-        # Start pump_exhaustion background threads
-        if self.pump_discovery is not None:
-            threading.Thread(
-                target=self.pump_discovery.run_loop,
-                name="pump_discovery",
-                daemon=True,
-            ).start()
-            print("[PumpExhaustion] Discovery thread started.")
-        if self.outcome_updater is not None:
-            threading.Thread(
-                target=self.outcome_updater.run_loop,
-                name="pump_outcome",
-                daemon=True,
-            ).start()
-            print("[PumpExhaustion] Outcome thread started.")
-        if self.universe_filter is not None:
-            self._eligible_symbols = self.universe_filter.get_eligible_symbols()
-            print(f"[PumpExhaustion] Universe: {len(self._eligible_symbols)} eligible symbols")
 
         while True:
             try:

@@ -153,9 +153,9 @@ oi_range_breakout:
 long_accumulation_continuation:
   # ── Hard gates (all 8 thresholds) ──────────────────────────────────────────
   pos_trend_min: 0.0         # Gate 1: pos_trend_3v14 must be strictly positive
-  pos_now_high: 0.68         # Gate 1: whale loaded threshold (OR-gate with pos_trend)
+  pos_now_high: 0.7         # Gate 1: whale loaded threshold (OR-gate with pos_trend)
   pos_now_min: 0.65          # Gate 5: whale position floor — hard minimum
-  oi_delta_min_pct: 3        # Gate 2: 1h OI delta floor
+  oi_delta_min_pct: 2        # Gate 2: 1h OI delta floor
   retail_max: 0.70           # Gate 3: retail FOMO cap
   gate:
     min_score: 65            # Gate 4: composite score minimum (0-100 scale)
