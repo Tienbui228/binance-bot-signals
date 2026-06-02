@@ -11,7 +11,6 @@ from typing import Dict, List, Optional
 import requests
 import yaml
 
-from scanner.strategies.short_exhaustion_retest import build_pending_short_exhaustion_setup as strategy_build_pending_short_exhaustion_setup
 from scanner.dispatch.router import route_dispatch_v1
 from scanner.regime.classifier import classify_regime
 from regime.regime_normalizer import enrich_row_with_regime
@@ -1914,9 +1913,6 @@ class BinanceScanner:
             parts = [f"{k}={bucket.get(k, 0)}" for k in keys if bucket.get(k, 0) or k in ("symbols_seen", "new_pending")]
             print(f"[detect funnel] {strategy} | " + " | ".join(parts))
 
-    def build_pending_short_exhaustion_setup(self, symbol: str) -> Optional[PendingSetup]:
-        return strategy_build_pending_short_exhaustion_setup(self, symbol, PendingSetup)
-
     def _already_pending_for_strategy(self, symbol: str, side: str, strategy: str) -> bool:
         rows = self.read_csv(self.pending_file)
         for row in rows:
@@ -1975,11 +1971,6 @@ class BinanceScanner:
     ) -> List[PendingSetup]:
         setups: List[PendingSetup] = []
         strategy_cfg = self.cfg.get("strategy", {})
-
-        if strategy_cfg.get("short_exhaustion_retest", {}).get("enabled", True):
-            short_setup = self.build_pending_short_exhaustion_setup(symbol)
-            if short_setup is not None:
-                setups.append(short_setup)
 
         if strategy_cfg.get("oi_range_breakout", {}).get("enabled", False):
             orb_setups = self.build_pending_oi_range_breakout_setup(
@@ -3502,10 +3493,7 @@ class BinanceScanner:
         print(f"[startup] risk.tp2_r_multiple={self.cfg['risk']['tp2_r_multiple']}")
         print(f"[startup] tracking.max_bars_after_entry={self.cfg['tracking']['max_bars_after_entry']}")
         print(f"[startup] strategy.long_breakout_retest.enabled={self.cfg.get('strategy', {}).get('long_breakout_retest', {}).get('enabled', True)}")
-        print(f"[startup] strategy.short_exhaustion_retest.enabled={self.cfg.get('strategy', {}).get('short_exhaustion_retest', {}).get('enabled', False)}")
         print(f"[startup] strategy.long_accumulation_continuation.enabled={self.cfg.get('strategy', {}).get('long_accumulation_continuation', {}).get('enabled', False)}")
-        print(f"[startup] short_exhaustion_retest.retest_15m_max_bars={self.cfg.get('short_exhaustion_retest', {}).get('retest_15m_max_bars', 3)}")
-        print(f"[startup] short_exhaustion_retest.score_min_send={self.cfg.get('short_exhaustion_retest', {}).get('score_min_send', 70)}")
         print(f"[startup] btc_sentiment.bullish_threshold_pct={self.cfg.get('btc_sentiment', {}).get('bullish_threshold_pct', 1.0)}")
         print(f"[startup] btc_sentiment.bearish_threshold_pct={self.cfg.get('btc_sentiment', {}).get('bearish_threshold_pct', -1.0)}")
         print(f"[startup] observability.enabled={self.cfg.get('observability', {}).get('enabled', True)}")
