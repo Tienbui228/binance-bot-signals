@@ -19,9 +19,9 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "setup-id-join-fix-2026-06-02"
-CODE_BUILD_SOURCE = "orb-final-tier-redesign"
-CODE_BUILD_NOTE = "ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch."
+CODE_BUILD_ID = "round4-legacy-removal+setup-id-join-2026-06-02"
+CODE_BUILD_SOURCE = "cleanup-round4"
+CODE_BUILD_NOTE = "Round 4: removed legacy_5m_retest + infer_legacy_strategy default. setup_id join fix (pending<->signal). Active strategies: long_accumulation_continuation (live), oi_range_breakout (ready, disabled)."
 
 VALID_PENDING_STATUSES = {
     "PENDING",
