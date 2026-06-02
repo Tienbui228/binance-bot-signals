@@ -14,7 +14,6 @@ import yaml
 from scanner.strategies.short_exhaustion_retest import build_pending_short_exhaustion_setup as strategy_build_pending_short_exhaustion_setup
 from scanner.dispatch.router import route_dispatch_v1
 from scanner.regime.classifier import classify_regime
-from scanner import lifecycle as lifecycle_mod
 from regime.regime_normalizer import enrich_row_with_regime
 
 BASE_FAPI = "https://fapi.binance.com"
