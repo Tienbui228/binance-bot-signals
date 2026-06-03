@@ -244,7 +244,7 @@ def detect_long_accumulation_continuation(
         reason_tags.append("gate8_fail_v201_funding_crowded")
 
     if gates_v201_enabled:
-        setup_detected = gate1 and gate2 and gate3 and gate4 and gate5 and gate6 and gate7 and gate8
+        setup_detected = gate1 and gate2 and gate3 and gate4 and gate5 and gate8
     else:
         setup_detected = gate1 and gate2 and gate3 and gate4 and gate5
 
