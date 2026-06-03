@@ -19,7 +19,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "round4-legacy-removal+setup-id-join-2026-06-02"
+CODE_BUILD_ID = "fix1-dispatch-watchlist-branch-2026-06-03"
 CODE_BUILD_SOURCE = "cleanup-round4"
 CODE_BUILD_NOTE = "Round 4: removed legacy_5m_retest + infer_legacy_strategy default. setup_id join fix (pending<->signal). Active strategies: long_accumulation_continuation (live), oi_range_breakout (ready, disabled)."
 
@@ -3139,7 +3139,7 @@ class BinanceScanner:
                     main_count += 1
                     continue
 
-                if dispatch.dispatch_action == "WATCHLIST":
+                if s.dispatch_action == "WATCHLIST":
                     skipped_top_n += 1
                     self._update_pending_dispatch_trace(
                         s.setup_id,
