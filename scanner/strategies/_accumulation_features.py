@@ -34,9 +34,9 @@ def compute_accumulation_features(
     """Compute all scalar features for the accumulation strategy.
 
     All series must be sorted ascending by time (oldest first, newest last).
-    series_oi is optional for sufficiency check — it is shorter (5m bars, ~13 points)
-    and oi_delta_1h_pct is computed separately by the caller. oi_trend_3v14 is set
-    to 0.0 when series_oi has fewer than 14 points.
+    series_oi is optional — caller provides daily OI bars (≥14 pts) for oi_trend_3v14.
+    oi_delta_1h_pct is computed separately by the caller from the 5m OI source.
+    oi_trend_3v14 is set to 0.0 when series_oi has fewer than 14 points or base=0.
 
     Returns:
         {
@@ -47,7 +47,7 @@ def compute_accumulation_features(
 
     features is None when insufficient_history is True.
     """
-    # series_oi excluded from required — it is short by design (scan fetches 13 bars)
+    # series_oi excluded from required — caller provides daily bars; may be None if fetch fails
     required = [series_pos, series_acct, series_retail, series_taker]
 
     # Any None or empty → insufficient
@@ -79,10 +79,12 @@ def compute_accumulation_features(
 
     # 3-period vs 14-period means (trend signals)
     pos_trend_3v14 = _mean(series_pos[-3:]) - _mean(series_pos[-14:])
-    # oi_trend_3v14: only computed when series_oi has enough history; set 0.0 otherwise
+    # oi_trend_3v14: relative % vs 14-day baseline; requires daily OI series (≥14 pts)
     oi_trend_3v14 = 0.0
     if series_oi is not None and len(series_oi) >= 14:
-        oi_trend_3v14 = _mean(series_oi[-3:]) - _mean(series_oi[-14:])
+        _oi_base = _mean(series_oi[-14:])
+        if _oi_base > 0:
+            oi_trend_3v14 = (_mean(series_oi[-3:]) - _oi_base) / _oi_base * 100.0
 
     # Min-based recovery metrics
     pos_min_30d            = min(series_pos)

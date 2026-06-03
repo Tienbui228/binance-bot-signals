@@ -19,7 +19,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "fix3-decouple-gate67-from-flag-2026-06-03"
+CODE_BUILD_ID = "add-oi-trend-shadow-2026-06-03"
 CODE_BUILD_SOURCE = "cleanup-round4"
 CODE_BUILD_NOTE = "Round 4: removed legacy_5m_retest + infer_legacy_strategy default. setup_id join fix (pending<->signal). Active strategies: long_accumulation_continuation (live), oi_range_breakout (ready, disabled)."
 
@@ -2021,10 +2021,17 @@ class BinanceScanner:
             series_retail = [r["longAccount"]    for r in raw_retail] if raw_retail else None
             series_taker  = [r["buySellRatio"]   for r in raw_taker]  if raw_taker  else None
 
-            # OI series from oi_1h_history (reuse ORB source, already fetched)
-            series_oi = None
-            if oi_1h_history and len(oi_1h_history) >= 2:
-                series_oi = [float(r.get("oi_value", 0)) for r in oi_1h_history]
+            # OI daily series for oi_trend_3v14 — separate from 5m Gate2 source
+            # Cached (TTL=1h via _tt_cache); fail-open: None → oi_trend_3v14=0.0 in features
+            series_oi_1d: list | None = None
+            try:
+                _oi_1d_rows = self._tt_fetch_binance(
+                    "/futures/data/openInterestHist", symbol, "1d", 15, "sumOpenInterestValue"
+                )
+                if _oi_1d_rows and len(_oi_1d_rows) >= 2:
+                    series_oi_1d = [float(r["sumOpenInterestValue"]) for r in _oi_1d_rows]
+            except Exception:
+                pass
 
             # 1h OI delta — same formula as ORB (bar[-13] to bar[-1] at 5m = 60 min)
             oi_delta_1h_pct = 0.0
@@ -2101,7 +2108,7 @@ class BinanceScanner:
                 series_acct=series_acct,
                 series_retail=series_retail,
                 series_taker=series_taker,
-                series_oi=series_oi,
+                series_oi=series_oi_1d,
                 oi_delta_1h_pct=oi_delta_1h_pct,
                 regime_label=regime_label,
                 config=acc_cfg,

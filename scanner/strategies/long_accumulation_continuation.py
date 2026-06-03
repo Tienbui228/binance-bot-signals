@@ -256,6 +256,11 @@ def detect_long_accumulation_continuation(
         reason_tags.append(f"oi_vs_baseline={oi_delta_1h_pct:.1f}%")
         reason_tags.append("vol_vs_baseline=n/a")
         reason_tags.append(f"structure_score={score}")
+        # OI multi-day trend shadow tag — diagnostic only, never blocks setup_detected
+        if oi_trend_3v14 > 1.0:
+            reason_tags.append("oi_trend_pass")
+        else:
+            reason_tags.append("oi_trend_fail")
 
     return {
         "strategy":          "long_accumulation_continuation",
