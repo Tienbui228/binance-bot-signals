@@ -19,7 +19,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "fix1-dispatch-watchlist-branch-2026-06-03"
+CODE_BUILD_ID = "fix2-remove-regime-downgrade-2026-06-03"
 CODE_BUILD_SOURCE = "cleanup-round4"
 CODE_BUILD_NOTE = "Round 4: removed legacy_5m_retest + infer_legacy_strategy default. setup_id join fix (pending<->signal). Active strategies: long_accumulation_continuation (live), oi_range_breakout (ready, disabled)."
 
@@ -3063,12 +3063,6 @@ class BinanceScanner:
                 s.dispatch_action = dispatch.dispatch_action
                 s.dispatch_confidence_band = dispatch.dispatch_confidence_band
                 s.dispatch_reason = dispatch.dispatch_reason
-                strategy_fit = getattr(s, "regime_fit_for_strategy", "MEDIUM") or "MEDIUM"
-                if s.dispatch_action == "MAIN_SIGNAL" and strategy_fit == "LOW":
-                    s.dispatch_action = "WATCHLIST"
-                    s.dispatch_confidence_band = "MEDIUM"
-                    s.dispatch_reason = f"{dispatch.dispatch_reason}|regime_downgrade_low_fit"
-
                 if getattr(s, "strategy", "") == "oi_range_breakout":
                     _orb_cfg = self.cfg.get("oi_range_breakout", {})
                     _atr_threshold = float(_orb_cfg.get("atr_bonus_threshold", 1.0))
