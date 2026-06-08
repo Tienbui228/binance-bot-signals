@@ -19,7 +19,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "add-oi-trend-shadow-2026-06-03"
+CODE_BUILD_ID = "fix-oi-trend-drop-partial-bar-2026-06-08"
 CODE_BUILD_SOURCE = "cleanup-round4"
 CODE_BUILD_NOTE = "Round 4: removed legacy_5m_retest + infer_legacy_strategy default. setup_id join fix (pending<->signal). Active strategies: long_accumulation_continuation (live), oi_range_breakout (ready, disabled)."
 
@@ -2026,10 +2026,10 @@ class BinanceScanner:
             series_oi_1d: list | None = None
             try:
                 _oi_1d_rows = self._tt_fetch_binance(
-                    "/futures/data/openInterestHist", symbol, "1d", 15, "sumOpenInterestValue"
+                    "/futures/data/openInterestHist", symbol, "1d", 16, "sumOpenInterestValue"
                 )
                 if _oi_1d_rows and len(_oi_1d_rows) >= 2:
-                    series_oi_1d = [float(r["sumOpenInterestValue"]) for r in _oi_1d_rows]
+                    series_oi_1d = [float(r["sumOpenInterestValue"]) for r in _oi_1d_rows[:-1]]
             except Exception:
                 pass
 
