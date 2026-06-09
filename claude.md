@@ -199,31 +199,54 @@ If the task is ambiguous, ask a precise clarifying question. Do not assume broad
 
 Python loads source into memory at process start. Editing a file after process start does NOT change running behavior. Old `screen` sessions silently keep old code alive.
 
-### After every runtime patch:
+### Phần 1 — Trên máy Windows (Claude làm)
+
 ```bash
 # 1. Verify patch hit disk
 grep "<changed_function_or_marker>" oi_scanner.py
 
-# 2. Update build marker in oi_scanner.py
+# 2. Bump build marker
 CODE_BUILD_ID = "description-YYYY-MM-DD"
 
-# 3. Kill old screen sessions
-screen -list
-screen -X -S <session_name> quit
-
-# 4. Record CUT_MS AFTER killing old sessions
-python3 -c "import time; print(int(time.time() * 1000))"
-
-# 5. Start fresh session
-screen -S bot python oi_scanner.py
-
-# 6. Verify process start time is AFTER patch time
-ps -eo pid,lstart,cmd | grep oi_scanner | grep -v grep
-ls -la oi_scanner.py
-
-# 7. Verify build marker
-cat RUNNING_CODE_VERSION.txt
+# 3. Commit AND push — MANDATORY (VPS pulls from GitHub, local commit alone is invisible to VPS)
+git add <files>
+git commit -m "..."
+git push origin main
 ```
+
+### Phần 2 — Trên VPS (user tự chạy)
+
+```bash
+# Bước 1: Kill bot — dùng pkill, KHÔNG dùng cat oi_scanner.lock (lock file hay bị empty)
+pkill -f oi_scanner.py; sleep 2
+ps -eo pid,cmd | grep oi_scanner | grep -v grep   # phải trống
+
+# Bước 2: Pull code mới
+cd /root/binance_bot_signals
+git pull
+grep "CODE_BUILD_ID = " oi_scanner.py   # xác nhận build mới
+
+# Bước 3: Lấy CUT_MS (sau khi đã kill xong)
+CUT_MS=$(python3 -c "import time;print(int(time.time()*1000))"); echo CUT_MS=$CUT_MS
+
+# Bước 4: Start bot
+screen -dmS bot python3 /root/binance_bot_signals/oi_scanner.py
+sleep 3
+
+# Bước 5: Xác nhận
+ps -eo pid,lstart,cmd | grep oi_scanner | grep -v grep   # 2 dòng (SCREEN + python) = 1 instance, bình thường
+cat /root/binance_bot_signals/oi_scanner.lock             # có pid
+cat /root/binance_bot_signals/RUNNING_CODE_VERSION.txt | grep code_build_id   # build id mới
+```
+
+### Ghi chú quan trọng
+
+| Điểm | Lý do |
+|---|---|
+| Dùng `pkill -f oi_scanner.py` | Lock file hay bị empty sau test second instance — không dùng làm kill target |
+| 2 PID trong ps là bình thường | 1 SCREEN wrapper + 1 python process = 1 instance duy nhất |
+| `git push` trước, `git pull` sau | VPS pull từ GitHub — thiếu push thì VPS không lấy được code |
+| Flock guard tự enforce | Nếu start nhầm instance 2, nó tự exit với `[startup] ERROR` và không ghi CSV |
 
 ### Validation rule
 Only judge behavior from rows where `created_ts_ms >= CUT_MS` or `confirmed_ts_ms >= CUT_MS`.
