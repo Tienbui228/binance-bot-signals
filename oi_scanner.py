@@ -21,7 +21,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "add-single-instance-flock-2026-06-09"
+CODE_BUILD_ID = "fix-telegram-guard-int-chatid-2026-06-09"
 CODE_BUILD_SOURCE = "cleanup-round4"
 CODE_BUILD_NOTE = "Round 4: removed legacy_5m_retest + infer_legacy_strategy default. setup_id join fix (pending<->signal). Active strategies: long_accumulation_continuation (live), oi_range_breakout (ready, disabled)."
 
@@ -1466,7 +1466,7 @@ class BinanceScanner:
     def telegram_send(self, text: str):
         token = self.cfg["telegram"]["bot_token"]
         chat_id = self.cfg["telegram"]["chat_id"]
-        if not token or not chat_id or "YOUR_" in token or "YOUR_" in chat_id or "CUA_BAN" in token or "CUA_BAN" in chat_id:
+        if not token or not chat_id or "YOUR_" in str(token) or "YOUR_" in str(chat_id) or "CUA_BAN" in str(token) or "CUA_BAN" in str(chat_id):
             print("[telegram skipped] Please set bot_token and chat_id in config.yaml")
             print(text)
             return
