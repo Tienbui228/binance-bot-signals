@@ -1,4 +1,6 @@
 import sys
+import os
+import fcntl
 import argparse
 import time
 import csv
@@ -19,7 +21,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "fix-oi-trend-drop-partial-bar-2026-06-08"
+CODE_BUILD_ID = "add-single-instance-flock-2026-06-09"
 CODE_BUILD_SOURCE = "cleanup-round4"
 CODE_BUILD_NOTE = "Round 4: removed legacy_5m_retest + infer_legacy_strategy default. setup_id join fix (pending<->signal). Active strategies: long_accumulation_continuation (live), oi_range_breakout (ready, disabled)."
 
@@ -3415,11 +3417,37 @@ def load_config(path: str) -> Dict:
         return yaml.safe_load(f)
 
 
+_LOCK_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "oi_scanner.lock")
+_lock_fd = None
+
+
+def _acquire_single_instance_lock():
+    global _lock_fd
+    _lock_fd = open(_LOCK_PATH, "w")
+    try:
+        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        existing = ""
+        try:
+            with open(_LOCK_PATH) as _f:
+                existing = _f.read().strip()
+        except Exception:
+            pass
+        print(f"[startup] ERROR: another oi_scanner instance is already running "
+              f"(lock held; pid in lockfile={existing}). Refusing to start a second "
+              f"writer to avoid CSV corruption. Lock: {_LOCK_PATH}")
+        raise SystemExit(1)
+    _lock_fd.truncate(0)
+    _lock_fd.write(str(os.getpid()))
+    _lock_fd.flush()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("config_path", nargs="?", default="config.yaml")
     parser.add_argument("--simulate-case", dest="simulate_case", default="")
     args = parser.parse_args()
+    _acquire_single_instance_lock()
 
     cfg = load_config(args.config_path)
     scanner = BinanceScanner(cfg)
