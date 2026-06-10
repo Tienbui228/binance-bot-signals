@@ -1,5 +1,5 @@
 code_build_id=acc-cont-daily-dedup-2026-05-31
-code_build_source=version-marker-in-oi_scanner.py
-code_build_note=Cleanup 2026-06-02: removed pump_exhaustion, dead shim modules, review_case_system. oi_scanner.py is permanent god-file (ADR-1).
+code_build_source=orb-final-tier-redesign
+code_build_note=ORB: OI=55pts primary, Vol=25pts confirmation, Range=20pts quality filter. ATR gate 2.0, regime multiplier + min score 35 at dispatch.
 config_version=phase3-short-exhaustion-v5-scoreparts-manualdiag
-written_at_utc=2026-06-02T00:00:00.000000+00:00
+written_at_utc=2026-06-02T04:32:16.659019+00:00

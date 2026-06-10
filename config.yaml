@@ -1,7 +1,7 @@
 ﻿config_version: phase3-short-exhaustion-v5-scoreparts-manualdiag
 telegram:
   bot_token: 8643760330:AAFQUt4o1ovC2jfdeUrWk2iUnqipeh7pmgw
-  chat_id: '@MakeM0neyWithCrypt0'
+  chat_id: -1002949295207
 scanner:
   quote_asset: USDT
   interval_5m: 5m
