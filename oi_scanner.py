@@ -21,7 +21,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "fix-telegram-guard-int-chatid-2026-06-09"
+CODE_BUILD_ID = "geometry-to-warning-tag-2026-06-10"
 CODE_BUILD_SOURCE = "cleanup-round4"
 CODE_BUILD_NOTE = "Round 4: removed legacy_5m_retest + infer_legacy_strategy default. setup_id join fix (pending<->signal). Active strategies: long_accumulation_continuation (live), oi_range_breakout (ready, disabled)."
 
@@ -1405,6 +1405,17 @@ class BinanceScanner:
             )
             _mc = getattr(s, "market_cap_usd", 0) or 0
             _mc_str = f"${_mc / 1_000_000:.0f}M" if _mc > 0 else "N/A"
+            _tp1c = next((t.split("=", 1)[1] for t in _tags if t.startswith("geo_tp1_too_close=")), None)
+            _nou  = next((t.split("=", 1)[1] for t in _tags if t.startswith("geo_no_upside=")), None)
+            _rkt  = next((t.split("=", 1)[1] for t in _tags if t.startswith("geo_risk_tight=")), None)
+            _geo_lines = []
+            if _tp1c is not None:
+                _geo_lines.append(f"⚠️ R:R thấp — TP1 cách entry ~{_tp1c}, cân nhắc trước khi vào.")
+            if _nou is not None:
+                _geo_lines.append("⚠️ Giá đã vượt vùng kháng cự gần — entry có thể MUỘN, R:R xấu.")
+            if _rkt is not None:
+                _geo_lines.append(f"⚠️ SL rất sát (~{_rkt}) — dễ bị quét, cân nhắc.")
+            _geo_warn_block = ("\n".join(_geo_lines) + "\n\n") if _geo_lines else ""
             return (
                 f"{side_icon} #{s.symbol} | ${s.price:.6g} | Score {s.score/10:.1f}/10\n\n"
                 f"Entry: {s.entry_ref:.6g}\n"
@@ -1417,6 +1428,7 @@ class BinanceScanner:
                 f"Funding: {s.funding_pct:+.4f}% (B+B)\n"
                 f"OI Delta 1h: +{_oi_str}\n"
                 f"Participation: {participation}\n\n"
+                f"{_geo_warn_block}"
                 f"BTC 24h: {s.btc_24h_change_pct:+.2f}% ({s.btc_regime})\n"
                 f"Reason: {s.reason}\n\n"
                 f"{side_tag} #{s.symbol} #BINANCE"
@@ -1780,35 +1792,41 @@ class BinanceScanner:
         if risk <= 0 or signal_price <= 0 or swing_high <= 0:
             self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_bad_risk")
             return []
+        # Discretionary geometry checks — tag and SEND rather than hard-block
+        # (R:R is a human decision on low-cap manual-trade bot; only safety/dedup below are hard blocks)
+        _geo_tags: list = []
+
         if swing_high <= signal_price:
-            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_no_upside")
-            return []
+            _nu_pct = (swing_high - signal_price) / signal_price * 100.0
+            _geo_tags.append(f"geo_no_upside={_nu_pct:.2f}%")
 
         tp1 = swing_high
         tp2 = swing_high * (1.0 + tp2_ext_pct / 100.0)
 
-        _tp1_dist_frac = (tp1 - signal_price) / signal_price
-        if _tp1_dist_frac < min_tp1_dist:
-            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_tp1_too_close")
-            return []
-
-        risk_pct = risk / signal_price
-        if risk_pct < min_risk_pct:
-            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_risk_too_tight")
-            return []
-        if risk_pct > max_risk_pct:
-            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_risk_too_wide")
-            return []
-
-        if self.already_open_signal(symbol, "LONG"):
-            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_open_collision")
-            return []
-
+        # Compute distance metrics here so all geometry checks can reference exact numbers
         sl_distance_pct    = abs(signal_price - stop) / max(signal_price, 1e-12) * 100.0
         tp1_distance_pct   = abs(tp1 - signal_price) / max(signal_price, 1e-12) * 100.0
         tp2_distance_pct   = abs(tp2 - signal_price) / max(signal_price, 1e-12) * 100.0
         break_distance_pct = abs(signal_price - breakout_lvl) / max(breakout_lvl, 1e-12) * 100.0
         risk_pct_real      = sl_distance_pct
+
+        _tp1_dist_frac = (tp1 - signal_price) / signal_price
+        if _tp1_dist_frac < min_tp1_dist:
+            _geo_tags.append(f"geo_tp1_too_close={tp1_distance_pct:.2f}%")
+
+        risk_pct = risk / signal_price
+        if risk_pct < min_risk_pct:
+            _geo_tags.append(f"geo_risk_tight={sl_distance_pct:.2f}%")
+        if risk_pct > max_risk_pct:                                     # catastrophic-stop guard — hard block
+            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_risk_too_wide")
+            return []
+
+        if self.already_open_signal(symbol, "LONG"):                    # dedup vs status==OPEN — hard block
+            self.close_pending(pending_id, "REJECTED_RULE", "acc_cont_open_collision")
+            return []
+
+        _base_tags = row.get("reason_tags", "") or ""
+        reason_tags_out = (_base_tags.rstrip(";") + ";" + ";".join(_geo_tags)).lstrip(";") if _geo_tags else _base_tags
 
         btc_ctx      = self.get_btc_context()
         manual_eval  = self.evaluate_manual_tradable("LONG", signal_price, stop, tp1)
@@ -1881,7 +1899,7 @@ class BinanceScanner:
             score_exhaustion=0.0,
             score_breakout=float(row.get("score_breakout") or 0),
             score_retest=0.0,
-            reason_tags=row.get("reason_tags", "") or "",
+            reason_tags=reason_tags_out,
             stop_was_forced_min_risk="no",
             manual_tradable=manual_eval["manual_tradable"],
             manual_trade_note=manual_eval["manual_trade_note"],
