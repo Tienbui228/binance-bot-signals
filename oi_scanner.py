@@ -1811,7 +1811,7 @@ class BinanceScanner:
         risk_pct_real      = sl_distance_pct
 
         _tp1_dist_frac = (tp1 - signal_price) / signal_price
-        if _tp1_dist_frac < min_tp1_dist:
+        if _tp1_dist_frac < min_tp1_dist and swing_high > signal_price:
             _geo_tags.append(f"geo_tp1_too_close={tp1_distance_pct:.2f}%")
 
         risk_pct = risk / signal_price
