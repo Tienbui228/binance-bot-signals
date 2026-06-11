@@ -3,3 +3,10 @@ __pycache__/
 *.pyo
 .venv/
 *.log
+
+# Runtime data — live CSVs written by bot process, never commit
+data/pending/*.csv
+data/signals/*.csv
+data/results/*.csv
+RUNNING_CODE_VERSION.txt
+oi_scanner.lock
