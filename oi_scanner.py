@@ -1284,7 +1284,7 @@ class BinanceScanner:
             self.write_csv(self.pending_file, rows, fieldnames=self.pending_fields)
         return changed
 
-    def close_signal(self, signal_row: Dict, outcome: str, r_multiple: float, bars_checked: int, close_reason: str, mfe_pct: float = 0.0, mae_pct: float = 0.0):
+    def close_signal(self, signal_row: Dict, outcome: str, r_multiple: float, bars_checked: int, close_reason: str, mfe_pct: float = 0.0, mae_pct: float = 0.0, last_close: float | None = None):
         results = self.read_csv(self.results_file)
         sig_id = signal_row.get("signal_id", "")
         sym = signal_row.get("symbol", "")
@@ -1304,7 +1304,6 @@ class BinanceScanner:
             _t2 = float(signal_row.get("tp2")       or 0)
             _side_val  = signal_row.get("side", "LONG")
             _risk_denom = _e - _s          # signed: >0 LONG, <0 SHORT
-            _risk_abs   = abs(_risk_denom)
 
             _exit_p: float | None = None
             if _e > 0 and _s > 0:
@@ -1314,18 +1313,18 @@ class BinanceScanner:
                     _exit_p = _t2
                 elif outcome == "LOSS_STOP":
                     _exit_p = _s
-                elif outcome == "EXPIRED" and _risk_abs > 1e-12:
-                    if _side_val == "LONG":
-                        _exit_p = _e + r_multiple * _risk_abs
-                    else:
-                        _exit_p = _e - r_multiple * _risk_abs
+                elif outcome == "EXPIRED" and last_close is not None:
+                    _exit_p = float(last_close)
 
             _exit_price_str = ""
             _rpnl_str       = ""
             _rr_str         = ""
             if _exit_p is not None and _e > 0:
                 _exit_price_str = f"{_exit_p:.8g}"
-                _rpnl_str = f"{(_exit_p - _e) / _e * 100.0:.4f}"
+                if _side_val == "LONG":
+                    _rpnl_str = f"{(_exit_p - _e) / _e * 100.0:.4f}"
+                else:
+                    _rpnl_str = f"{(_e - _exit_p) / _e * 100.0:.4f}"
                 if abs(_risk_denom) > 1e-12:
                     _rr_str = f"{(_exit_p - _e) / _risk_denom:.4f}"
         except Exception:
@@ -2532,7 +2531,8 @@ class BinanceScanner:
                     close_reason = "max bars reached"
 
                 if outcome is not None:
-                    self.close_signal(row, outcome, r_multiple, bars_checked, close_reason, mfe_pct=mfe_pct, mae_pct=mae_pct)
+                    _lc = last_close if outcome == "EXPIRED" else None
+                    self.close_signal(row, outcome, r_multiple, bars_checked, close_reason, mfe_pct=mfe_pct, mae_pct=mae_pct, last_close=_lc)
 
             except Exception as e:
                 print(f"[eval warn] {row.get('signal_id')}: {e}")
