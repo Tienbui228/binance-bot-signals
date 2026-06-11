@@ -21,7 +21,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "geometry-to-warning-tag-2026-06-10"
+CODE_BUILD_ID = "add-realized-outcome-fields-2026-06-11"
 CODE_BUILD_SOURCE = "cleanup-round4"
 CODE_BUILD_NOTE = "Round 4: removed legacy_5m_retest + infer_legacy_strategy default. setup_id join fix (pending<->signal). Active strategies: long_accumulation_continuation (live), oi_range_breakout (ready, disabled)."
 
@@ -307,7 +307,8 @@ class BinanceScanner:
             "btc_4h_range_pct", "alt_market_breadth_pct", "btc_regime", "risk_pct_real", "sl_distance_pct",
             "tp1_distance_pct", "tp2_distance_pct", "break_distance_pct",
             "retest_depth_pct", "score_oi", "score_exhaustion", "score_breakout", "score_retest",
-            "reason_tags", "stop_was_forced_min_risk", "mfe_pct", "mae_pct", "manual_tradable", "manual_trade_note"
+            "reason_tags", "stop_was_forced_min_risk", "mfe_pct", "mae_pct", "manual_tradable", "manual_trade_note",
+            "exit_price", "realized_pnl_pct", "realized_r",
         ]
         self.pending_fields = [
             "pending_id", "setup_id", "created_ts_ms", "signal_open_time", "symbol", "side",
@@ -1295,6 +1296,43 @@ class BinanceScanner:
         if already_closed:
             print(f"[close_signal] skip duplicate: {sig_id or sym+':'+str(ts)} already in results")
             return
+        # Realized measurement fields — additive, r_multiple categorical unchanged
+        try:
+            _e  = float(signal_row.get("entry_ref") or 0)
+            _s  = float(signal_row.get("stop")      or 0)
+            _t1 = float(signal_row.get("tp1")       or 0)
+            _t2 = float(signal_row.get("tp2")       or 0)
+            _side_val  = signal_row.get("side", "LONG")
+            _risk_denom = _e - _s          # signed: >0 LONG, <0 SHORT
+            _risk_abs   = abs(_risk_denom)
+
+            _exit_p: float | None = None
+            if _e > 0 and _s > 0:
+                if outcome == "WIN_TP1" and _t1 > 0:
+                    _exit_p = _t1
+                elif outcome == "WIN_TP2" and _t2 > 0:
+                    _exit_p = _t2
+                elif outcome == "LOSS_STOP":
+                    _exit_p = _s
+                elif outcome == "EXPIRED" and _risk_abs > 1e-12:
+                    if _side_val == "LONG":
+                        _exit_p = _e + r_multiple * _risk_abs
+                    else:
+                        _exit_p = _e - r_multiple * _risk_abs
+
+            _exit_price_str = ""
+            _rpnl_str       = ""
+            _rr_str         = ""
+            if _exit_p is not None and _e > 0:
+                _exit_price_str = f"{_exit_p:.8g}"
+                _rpnl_str = f"{(_exit_p - _e) / _e * 100.0:.4f}"
+                if abs(_risk_denom) > 1e-12:
+                    _rr_str = f"{(_exit_p - _e) / _risk_denom:.4f}"
+        except Exception:
+            _exit_price_str = ""
+            _rpnl_str       = ""
+            _rr_str         = ""
+
         result_row = {
             "signal_id": signal_row.get("signal_id", ""),
             "setup_id": signal_row.get("setup_id", signal_row.get("signal_id", "")),
@@ -1337,6 +1375,9 @@ class BinanceScanner:
             "mae_pct": f"{mae_pct:.4f}",
             "manual_tradable": signal_row.get("manual_tradable", ""),
             "manual_trade_note": signal_row.get("manual_trade_note", ""),
+            "exit_price": _exit_price_str,
+            "realized_pnl_pct": _rpnl_str,
+            "realized_r": _rr_str,
         }
         results.append(self._normalize_row_for_fields(result_row, self.result_fields))
         self.write_csv(self.results_file, results, fieldnames=self.result_fields)
