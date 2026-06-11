@@ -208,8 +208,9 @@ grep "<changed_function_or_marker>" oi_scanner.py
 # 2. Bump build marker
 CODE_BUILD_ID = "description-YYYY-MM-DD"
 
-# 3. Commit AND push — MANDATORY (VPS pulls from GitHub, local commit alone is invisible to VPS)
-git add <files>
+# 3. Commit AND push — chỉ add .py file và/hoặc config.yaml, KHÔNG add file khác
+git add oi_scanner.py          # hoặc file .py cụ thể vừa sửa
+git add config.yaml            # chỉ khi có thay đổi config
 git commit -m "..."
 git push origin main
 ```
@@ -223,8 +224,9 @@ ps -eo pid,cmd | grep oi_scanner | grep -v grep   # phải trống
 
 # Bước 2: Pull code mới
 cd /root/binance_bot_signals
-git pull
-grep "CODE_BUILD_ID = " oi_scanner.py   # xác nhận build mới
+git checkout -- oi_scanner.py   # discard local changes trước khi pull
+git pull origin main
+grep "CODE_BUILD_ID = " oi_scanner.py   # xác nhận build id mới
 
 # Bước 3: Lấy CUT_MS (sau khi đã kill xong)
 CUT_MS=$(python3 -c "import time;print(int(time.time()*1000))"); echo CUT_MS=$CUT_MS
@@ -243,9 +245,11 @@ cat /root/binance_bot_signals/RUNNING_CODE_VERSION.txt | grep code_build_id   # 
 
 | Điểm | Lý do |
 |---|---|
+| `git checkout -- oi_scanner.py` trước pull | VPS thường có local changes do bot tự ghi — checkout discard chúng, pull mới chạy được |
 | Dùng `pkill -f oi_scanner.py` | Lock file hay bị empty sau test second instance — không dùng làm kill target |
 | 2 PID trong ps là bình thường | 1 SCREEN wrapper + 1 python process = 1 instance duy nhất |
 | `git push` trước, `git pull` sau | VPS pull từ GitHub — thiếu push thì VPS không lấy được code |
+| Chỉ commit `.py` và `config.yaml` | data CSVs, RUNNING_CODE_VERSION.txt, docs không được commit — gây conflict trên VPS |
 | Flock guard tự enforce | Nếu start nhầm instance 2, nó tự exit với `[startup] ERROR` và không ghi CSV |
 
 ### Validation rule
