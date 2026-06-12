@@ -21,7 +21,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "add-realized-outcome-fields-2026-06-11"
+CODE_BUILD_ID = "channel-routing-send-lifecycle-2026-06-12"
 CODE_BUILD_SOURCE = "cleanup-round4"
 CODE_BUILD_NOTE = "Round 4: removed legacy_5m_retest + infer_legacy_strategy default. setup_id join fix (pending<->signal). Active strategies: long_accumulation_continuation (live), oi_range_breakout (ready, disabled)."
 
@@ -128,6 +128,11 @@ class Signal:
     retail_recovery: float = 0.0
     taker_7d_avg: float = 0.0
     market_cap_usd: float = 0.0
+    # per-channel send status (written post-POST, never premature)
+    send_research_status: str = ""
+    sent_research_ts_ms: int = 0
+    send_private_status: str = ""
+    sent_private_ts_ms: int = 0
 
 
 @dataclass
@@ -298,6 +303,8 @@ class BinanceScanner:
             "market_cap_usd",
             # v2.0.1 gate fields
             "price_vs_baseline", "price_trend_7v30", "funding_8h_pct",
+            # per-channel send status
+            "send_research_status", "sent_research_ts_ms", "send_private_status", "sent_private_ts_ms",
         ]
         self.result_fields = [
             "signal_id", "setup_id", "timestamp_ms", "symbol", "side", "entry_ref", "stop",
@@ -1115,7 +1122,6 @@ class BinanceScanner:
             confirmed_ts_ms=int(s.timestamp_ms),
             note=s.reason or "signal confirmed",
         )
-        self.sync_pending_send_decision(s.setup_id, "SENT", sent_ts_ms=int(s.timestamp_ms))
 
     def save_pending(self, p: PendingSetup):
         if not p.setup_id:
@@ -1456,12 +1462,16 @@ class BinanceScanner:
             if _rkt is not None:
                 _geo_lines.append(f"⚠️ SL rất sát (~{_rkt}) — dễ bị quét, cân nhắc.")
             _geo_warn_block = ("\n".join(_geo_lines) + "\n\n") if _geo_lines else ""
+            _risk = abs(s.entry_ref - s.stop)
+            _rr1 = abs(s.tp1 - s.entry_ref) / _risk if _risk > 0 else 0.0
+            _rr2 = abs(s.tp2 - s.entry_ref) / _risk if _risk > 0 else 0.0
             return (
                 f"{side_icon} #{s.symbol} | ${s.price:.6g} | Score {s.score/10:.1f}/10\n\n"
                 f"Entry: {s.entry_ref:.6g}\n"
                 f"Stop: {s.stop:.6g} ({s.sl_distance_pct:.2f}%)\n"
-                f"TP1: {s.tp1:.6g} ({s.tp1_distance_pct:.2f}%)\n"
-                f"TP2: {s.tp2:.6g} ({s.tp2_distance_pct:.2f}%)\n\n"
+                f"TP1: {s.tp1:.6g} ({s.tp1_distance_pct:+.2f}%)\n"
+                f"TP2: {s.tp2:.6g} ({s.tp2_distance_pct:.2f}%)\n"
+                f"R:R: {_rr1:.2f}R / {_rr2:.2f}R\n\n"
                 f"Volume 1h: {s.vol_ratio:.2f}x EMA20\n"
                 f"Volume 24h: ${getattr(s, 'vol_24h_usdt', 0)/1_000_000:.1f}M\n"
                 f"Market Cap: {_mc_str}\n"
@@ -1516,8 +1526,10 @@ class BinanceScanner:
         )
 
     def telegram_send(self, text: str):
+        # Backward-compat wrapper: sends to research channel. Used by close notification path.
         token = self.cfg["telegram"]["bot_token"]
-        chat_id = self.cfg["telegram"]["chat_id"]
+        _r_cfg = self.cfg.get("telegram", {}).get("channels", {}).get("research", {})
+        chat_id = str(_r_cfg.get("chat_id") or self.cfg["telegram"]["chat_id"])
         if not token or not chat_id or "YOUR_" in str(token) or "YOUR_" in str(chat_id) or "CUA_BAN" in str(token) or "CUA_BAN" in str(chat_id):
             print("[telegram skipped] Please set bot_token and chat_id in config.yaml")
             print(text)
@@ -1536,6 +1548,34 @@ class BinanceScanner:
             return False
         self.sent_cache[key] = now
         return True
+
+    def _send_to_channel(self, text: str, bot_token: str, chat_id: str) -> tuple:
+        """POST to one Telegram channel. Returns (ok: bool, err: str)."""
+        _placeholders = ("YOUR_", "CUA_BAN", "PLACEHOLDER")
+        if not bot_token or not chat_id or any(m in str(bot_token) for m in _placeholders) or any(m in str(chat_id) for m in _placeholders):
+            return False, "placeholder_config"
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        try:
+            r = requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=20)
+            r.raise_for_status()
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
+    def _check_private_eligibility(self, s: Signal) -> Optional[str]:
+        """Returns skip reason if signal should NOT go to private channel, else None."""
+        _priv = self.cfg.get("telegram", {}).get("channels", {}).get("private", {})
+        floor = float(_priv.get("rr_tp1_floor", 1.0))
+        excl_geo = bool(_priv.get("exclude_geo_tags", True))
+        _risk = abs(getattr(s, "entry_ref", 0) - getattr(s, "stop", 0))
+        _rr1 = abs(getattr(s, "tp1", 0) - getattr(s, "entry_ref", 0)) / _risk if _risk > 0 else 0.0
+        if _rr1 < floor:
+            return "SKIPPED_RR_FLOOR"
+        if excl_geo:
+            _tags = (getattr(s, "reason_tags", "") or "").split(";")
+            if any(t.startswith(("geo_tp1_too_close=", "geo_no_upside=", "geo_risk_tight=")) for t in _tags):
+                return "SKIPPED_GEO"
+        return None
 
     def _pct_to_fraction(self, x: float) -> float:
         return x / 100.0
@@ -3181,23 +3221,73 @@ class BinanceScanner:
                             no_send_count += 1
                             continue
                         self._acc_sent_today.add(s.symbol)
+
+                    # Cooldown check FIRST — before any CSV write or HTTP POST
+                    if not self.should_send(s):
+                        s.send_research_status = "SKIPPED_COOLDOWN"
+                        self.save_signal(s)
+                        self._update_pending_dispatch_trace(
+                            s.setup_id,
+                            dispatch_action=dispatch.dispatch_action,
+                            dispatch_confidence_band=dispatch.dispatch_confidence_band,
+                            dispatch_reason=dispatch.dispatch_reason,
+                            send_decision="SKIPPED_COOLDOWN",
+                            skip_reason="cooldown_45min",
+                        )
+                        main_count += 1
+                        continue
+
+                    msg_base = self.format_signal(s)
+                    print("\n" + msg_base + "\n")
+
+                    # Private eligibility — determined before POST to build research message
+                    _priv_skip = self._check_private_eligibility(s)
+                    msg_research = msg_base + (f"\n\n[private: {_priv_skip}]" if _priv_skip else "")
+
+                    # POST to research channel
+                    _r_chat_id = str(self.cfg.get("telegram", {}).get("channels", {}).get("research", {}).get("chat_id") or self.cfg["telegram"]["chat_id"])
+                    _ok_r, _err_r = self._send_to_channel(msg_research, self.cfg["telegram"]["bot_token"], _r_chat_id)
+                    if _ok_r:
+                        s.send_research_status = "SENT"
+                        s.sent_research_ts_ms = int(time.time() * 1000)
+                    else:
+                        s.send_research_status = "SEND_FAILED"
+                        print(f"[telegram research error] {_err_r}")
+
+                    # POST to private channel (MAIN_SIGNAL only)
+                    if _priv_skip is not None:
+                        s.send_private_status = _priv_skip
+                    else:
+                        _priv_cfg = self.cfg.get("telegram", {}).get("channels", {}).get("private", {})
+                        _ok_p, _err_p = self._send_to_channel(msg_base, str(_priv_cfg.get("bot_token", "")), str(_priv_cfg.get("chat_id", "")))
+                        if _ok_p:
+                            s.send_private_status = "SENT"
+                            s.sent_private_ts_ms = int(time.time() * 1000)
+                        else:
+                            s.send_private_status = "SEND_FAILED"
+                            print(f"[telegram private error] {_err_p}")
+
+                    # Aggregate send_decision for pending CSV
+                    if s.send_research_status == "SENT" or s.send_private_status == "SENT":
+                        _agg_send = "SENT"
+                    elif s.send_research_status == "SEND_FAILED" or s.send_private_status == "SEND_FAILED":
+                        _agg_send = "SEND_FAILED"
+                    else:
+                        _agg_send = s.send_research_status or "SEND_FAILED"
+
                     self.save_signal(s)
                     self._update_pending_dispatch_trace(
                         s.setup_id,
                         dispatch_action=dispatch.dispatch_action,
                         dispatch_confidence_band=dispatch.dispatch_confidence_band,
                         dispatch_reason=dispatch.dispatch_reason,
-                        send_decision="SENT",
+                        send_decision=_agg_send,
                         skip_reason="",
                     )
-                    msg = self.format_signal(s)
-                    print("\n" + msg + "\n")
-                    if self.should_send(s):
-                        try:
-                            self.telegram_send(msg)
-                            sent_count += 1
-                        except Exception as e:
-                            print(f"[telegram error] {e}")
+                    if _agg_send == "SENT":
+                        _sent_ts = s.sent_research_ts_ms or s.sent_private_ts_ms or int(time.time() * 1000)
+                        self.sync_pending_send_decision(s.setup_id, "SENT", sent_ts_ms=_sent_ts)
+                        sent_count += 1
                     main_count += 1
                     continue
 
@@ -3509,6 +3599,30 @@ def main():
     _acquire_single_instance_lock()
 
     cfg = load_config(args.config_path)
+
+    # Validate channels config shape — fail loud rather than silently dropping messages
+    _ch = cfg.get("telegram", {}).get("channels", {})
+    _placeholders = ("YOUR_", "CUA_BAN", "PLACEHOLDER")
+    def _bad(v: str) -> bool:
+        return not v or any(m in v for m in _placeholders)
+    _cfg_errors = []
+    if not _ch:
+        _cfg_errors.append("telegram.channels block missing")
+    else:
+        _r_chat = str(_ch.get("research", {}).get("chat_id", "") or "")
+        _p_token = str(_ch.get("private", {}).get("bot_token", "") or "")
+        _p_chat = str(_ch.get("private", {}).get("chat_id", "") or "")
+        if _bad(_r_chat):
+            _cfg_errors.append(f"telegram.channels.research.chat_id missing/placeholder: {_r_chat!r}")
+        if _bad(_p_token):
+            _cfg_errors.append(f"telegram.channels.private.bot_token missing/placeholder: {_p_token!r}")
+        if _bad(_p_chat):
+            _cfg_errors.append(f"telegram.channels.private.chat_id missing/placeholder: {_p_chat!r}")
+    if _cfg_errors:
+        for _e in _cfg_errors:
+            print(f"[startup] CONFIG ERROR: {_e}")
+        raise SystemExit(1)
+
     scanner = BinanceScanner(cfg)
     scanner._write_runtime_build_marker()
     scanner.startup_print(args.config_path)

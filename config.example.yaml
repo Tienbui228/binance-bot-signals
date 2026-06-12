@@ -1,7 +1,15 @@
 config_version: phase3-short-exhaustion-v5-scoreparts-manualdiag
 telegram:
-  bot_token: YOUR_BOT_TOKEN        # Telegram BotFather token
-  chat_id: YOUR_CHAT_ID            # Telegram group/channel chat ID (negative for groups)
+  bot_token: YOUR_BOT_TOKEN        # Telegram BotFather token (research bot)
+  chat_id: YOUR_CHAT_ID            # kept for close notifications (negative for groups)
+  channels:
+    research:
+      chat_id: YOUR_RESEARCH_CHAT_ID     # research channel ID (negative for channels)
+    private:
+      bot_token: YOUR_PRIVATE_BOT_TOKEN  # separate bot token for private channel
+      chat_id: YOUR_PRIVATE_CHAT_ID      # private channel ID (negative for channels)
+      rr_tp1_floor: 1.0                  # minimum R:R to route to private channel
+      exclude_geo_tags: true             # skip signals with geo_* warning tags
 scanner:
   quote_asset: USDT
   interval_5m: 5m
