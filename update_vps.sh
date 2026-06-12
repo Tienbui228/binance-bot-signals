@@ -4,6 +4,22 @@
 # --check-only: fetch + print state, no changes
 set -euo pipefail
 
+# ── SELF-UPDATE GUARD ─────────────────────────────────────────────────────────
+# Prevents bash-in-memory stale-script problem: if origin/main has a newer
+# update_vps.sh, fetch it to /tmp and re-exec before any state-changing step.
+# Guard env var _UPDATE_VPS_REEXECED prevents infinite re-exec loop.
+if [[ -z "${_UPDATE_VPS_REEXECED:-}" ]]; then
+    _GUARD_REPO=/root/binance_bot_signals
+    git -C "$_GUARD_REPO" fetch origin --quiet 2>/dev/null || true
+    if ! git -C "$_GUARD_REPO" diff --quiet origin/main -- update_vps.sh 2>/dev/null; then
+        echo "[self-update] update_vps.sh differs from origin/main — re-execing latest version..."
+        git -C "$_GUARD_REPO" show origin/main:update_vps.sh > /tmp/_update_vps_new.sh
+        chmod +x /tmp/_update_vps_new.sh
+        export _UPDATE_VPS_REEXECED=1
+        exec bash /tmp/_update_vps_new.sh "$@"
+    fi
+fi
+
 REPO=/root/binance_bot_signals
 LOCK=$REPO/oi_scanner.lock
 PYTHON=/root/venv/bin/python
