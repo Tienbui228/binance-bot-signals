@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# update_vps.sh — safe VPS bot updater
+# update_vps.sh — safe VPS bot updater (systemd edition)
 # Usage: ./update_vps.sh [--check-only]
 # --check-only: fetch + print state, no changes
 set -euo pipefail
@@ -8,7 +8,6 @@ REPO=/root/binance_bot_signals
 LOCK=$REPO/oi_scanner.lock
 PYTHON=/root/venv/bin/python
 LOG=$REPO/UPDATE_LOG.txt
-SCREEN_NAME=bot
 
 # ── CHECK-ONLY ────────────────────────────────────────────────────────────────
 if [[ "${1:-}" == "--check-only" ]]; then
@@ -30,11 +29,11 @@ if [[ "${1:-}" == "--check-only" ]]; then
     git log --oneline -1 origin/main
     git rev-list --left-right --count HEAD...origin/main | awk '{print "ahead=" $1 "  behind=" $2}'
     echo ""
+    echo "--- systemd oibot status ---"
+    systemctl status oibot --no-pager 2>/dev/null || echo "(unit not active)"
+    echo ""
     echo "--- Running processes ---"
     pgrep -af "oi_scanner|hl_scanner" || echo "(none)"
-    echo ""
-    echo "--- Screen sessions ---"
-    screen -list || true
     echo ""
     echo "--- Lock holder (flock) ---"
     lsof "$LOCK" 2>/dev/null || echo "(no lock holder found)"
@@ -60,38 +59,37 @@ if [[ -n "$DIRTY" ]]; then
 fi
 echo "[1/8] PASS — working tree clean"
 
-# ── STEP 2: SIGTERM, wait up to 30s ──────────────────────────────────────────
-echo "[2/8] Stopping oi_scanner (SIGTERM)..."
-PID=$(lsof -t "$LOCK" 2>/dev/null || true)
-if [[ -z "$PID" ]]; then
-    echo "ABORT: no process holds lock on $LOCK — is bot actually running?"
-    exit 1
-fi
-echo "[2/8] Sending SIGTERM to PID $PID..."
-kill -TERM "$PID"
+# ── STEP 2: stop via systemd, then orphan fallback ───────────────────────────
+echo "[2/8] Stopping oi_scanner (systemd first, then orphan fallback)..."
+systemctl stop oibot 2>/dev/null || true
 
-WAIT=0
-while true; do
-    STILL_RUNNING=0
-    pgrep -f "oi_scanner.py" > /dev/null 2>&1 && STILL_RUNNING=1
-    screen -list 2>/dev/null | grep -q "\.$SCREEN_NAME" && STILL_RUNNING=1
-    if [[ $STILL_RUNNING -eq 0 ]]; then
-        echo "[2/8] PASS — process stopped after ${WAIT}s"
-        break
+# Orphan fallback — kills any oi_scanner.py still running (screen orphans, manual starts)
+_ORPHAN_WAIT=0
+while pgrep -f "oi_scanner.py" > /dev/null 2>&1; do
+    # Try PID from lock file first, then lsof
+    _OPID=$(cat "$LOCK" 2>/dev/null | tr -d '[:space:]' || true)
+    if [[ -z "$_OPID" ]]; then
+        _OPID=$(lsof -t "$LOCK" 2>/dev/null || true)
     fi
-    if [[ $WAIT -ge 30 ]]; then
+    if [[ -n "$_OPID" ]]; then
+        echo "[2/8] orphan fallback: SIGTERM $_OPID"
+        kill -TERM "$_OPID" 2>/dev/null || true
+    fi
+    if [[ $_ORPHAN_WAIT -ge 30 ]]; then
         echo "ABORT: oi_scanner still running after 30s — investigate manually."
-        echo "       Do NOT use kill -9 automatically. Check: pgrep -af oi_scanner"
+        echo "       Check: pgrep -af oi_scanner; lsof $LOCK"
         exit 1
     fi
     sleep 2
-    WAIT=$((WAIT + 2))
+    _ORPHAN_WAIT=$((_ORPHAN_WAIT + 2))
 done
+WAIT=$_ORPHAN_WAIT
+echo "[2/8] PASS — process stopped after ${WAIT}s"
 
 # ── STEP 3: CUT_MS + log ─────────────────────────────────────────────────────
 echo "[3/8] Recording CUT_MS..."
 INCOMING_COMMIT=$(git log --oneline -1 origin/main | cut -d' ' -f1)
-CUT_MS=$(python3 -c 'import time; print(int(time.time()*1000))')
+CUT_MS=$($PYTHON -c 'import time; print(int(time.time()*1000))')
 echo "[3/8] CUT_MS=$CUT_MS  incoming_commit=$INCOMING_COMMIT"
 echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') | CUT_MS=$CUT_MS | commit=$INCOMING_COMMIT" >> "$LOG"
 
@@ -104,20 +102,34 @@ echo "[4/8] PASS — pull done"
 NEW_BUILD=$(grep 'CODE_BUILD_ID = ' "$REPO/oi_scanner.py" | head -1 | sed 's/.*= *"\(.*\)".*/\1/')
 echo "[5/8] New CODE_BUILD_ID on disk: $NEW_BUILD"
 
-# ── STEP 6: start bot ────────────────────────────────────────────────────────
-echo "[6/8] Starting bot via screen..."
-screen -dmS "$SCREEN_NAME" "$PYTHON" "$REPO/oi_scanner.py"
+# ── STEP 6: start bot via systemd ─────────────────────────────────────────────
+echo "[6/8] Starting bot via systemd..."
+systemctl start oibot
 PULL_EPOCH=$(date +%s)
-echo "[6/8] PASS — screen -dmS $SCREEN_NAME launched"
+echo "[6/8] PASS — systemctl start oibot done"
 
 # ── STEP 7: verify ───────────────────────────────────────────────────────────
 echo "[7/8] Sleeping 90s for bot startup + RUNNING_CODE_VERSION.txt write..."
 sleep 90
 
-# Check process is alive
-if ! pgrep -f "oi_scanner.py" > /dev/null 2>&1; then
-    echo "ABORT: oi_scanner.py not found in pgrep after 90s — process did not start"
+# Check systemd MainPID
+MAIN_PID=$(systemctl show -p MainPID oibot 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
+if [[ -z "$MAIN_PID" || "$MAIN_PID" == "0" ]]; then
+    echo "ABORT: systemctl MainPID=0 after 90s — oibot unit not running"
+    systemctl status oibot --no-pager || true
     exit 1
+fi
+echo "[7/8] systemd MainPID=$MAIN_PID"
+
+# Cross-check with lock file
+LOCK_PID=$(cat "$LOCK" 2>/dev/null | tr -d '[:space:]' || true)
+if [[ -z "$LOCK_PID" ]]; then
+    echo "WARN: oi_scanner.lock is empty — process may still be initializing"
+elif [[ "$LOCK_PID" != "$MAIN_PID" ]]; then
+    echo "ABORT: PID mismatch — systemd MainPID=$MAIN_PID but lock file PID=$LOCK_PID"
+    exit 1
+else
+    echo "[7/8] lock file PID=$LOCK_PID matches MainPID — OK"
 fi
 
 # Read RUNNING_CODE_VERSION.txt
@@ -143,17 +155,17 @@ echo "════════════════════════�
 echo " UPDATE COMPLETE"
 echo "════════════════════════════════════════"
 echo " PASS [1] Dirty check: clean"
-echo " PASS [2] Process killed gracefully (${WAIT}s)"
+echo " PASS [2] Process stopped (orphan-safe, ${WAIT}s)"
 echo " PASS [3] CUT_MS=$CUT_MS"
 echo " PASS [4] git pull --ff-only"
 echo " PASS [5] Disk build: $NEW_BUILD"
-echo " PASS [6] Screen launched"
-echo " PASS [7] RUNNING_CODE_VERSION.txt verified"
+echo " PASS [6] systemctl start oibot"
+echo " PASS [7] build verified; MainPID=$MAIN_PID; lock=$LOCK_PID"
 echo ""
-echo " >>> INFRASTRUCTURE PASS ✓"
+echo " >>> INFRASTRUCTURE PASS"
 echo " >>> BEHAVIOR PASS requires:"
 echo "     fresh rows with created_ts_ms >= $CUT_MS"
 echo "     Wait 1-2 scan cycles (~10 min), then check:"
-echo "     data/pending/pending_\$(date +%Y-%m-%d).csv"
-echo "     data/signals/signals_\$(date +%Y-%m-%d).csv"
+echo "     journalctl -u oibot --since '20 min ago'"
+echo "     data/signals/ (send_research_status, send_private_status)"
 echo "════════════════════════════════════════"
