@@ -21,7 +21,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "channel-routing-send-lifecycle-2026-06-12"
+CODE_BUILD_ID = "slot-on-delivery-2026-06-12"
 CODE_BUILD_SOURCE = "cleanup-round4"
 CODE_BUILD_NOTE = "Round 4: removed legacy_5m_retest + infer_legacy_strategy default. setup_id join fix (pending<->signal). Active strategies: long_accumulation_continuation (live), oi_range_breakout (ready, disabled)."
 
@@ -1540,27 +1540,44 @@ class BinanceScanner:
         r.raise_for_status()
 
     def should_send(self, s: Signal) -> bool:
+        """Pure cooldown check — does NOT mutate sent_cache. Call _mark_sent after confirmed SENT."""
         key = f"{s.symbol}:{s.side}"
         now = time.time()
         ttl = 60 * 45
         last = self.sent_cache.get(key, 0)
-        if now - last < ttl:
-            return False
-        self.sent_cache[key] = now
-        return True
+        return now - last >= ttl
+
+    def _mark_sent(self, s: Signal) -> None:
+        """Consume cooldown slot — call only after confirmed SENT delivery."""
+        key = f"{s.symbol}:{s.side}"
+        self.sent_cache[key] = time.time()
 
     def _send_to_channel(self, text: str, bot_token: str, chat_id: str) -> tuple:
-        """POST to one Telegram channel. Returns (ok: bool, err: str)."""
+        """POST to one Telegram channel with retry. Returns (ok: bool, err: str).
+        3 attempts; 2s/5s backoff between retries.
+        Retryable: 5xx, 429, timeout. Fast-fail: 4xx (except 429), other exceptions.
+        """
         _placeholders = ("YOUR_", "CUA_BAN", "PLACEHOLDER")
         if not bot_token or not chat_id or any(m in str(bot_token) for m in _placeholders) or any(m in str(chat_id) for m in _placeholders):
             return False, "placeholder_config"
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        try:
-            r = requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=20)
-            r.raise_for_status()
-            return True, ""
-        except Exception as e:
-            return False, str(e)
+        _backoffs = [2, 5]
+        _last_err = ""
+        for attempt in range(3):
+            if attempt > 0:
+                time.sleep(_backoffs[attempt - 1])
+            try:
+                r = requests.post(url, json={"chat_id": chat_id, "text": text}, timeout=20)
+                if r.ok:
+                    return True, ""
+                if r.status_code != 429 and r.status_code < 500:
+                    return False, f"http_{r.status_code}"
+                _last_err = f"http_{r.status_code}"
+            except requests.exceptions.Timeout:
+                _last_err = "timeout"
+            except Exception as e:
+                return False, str(e)
+        return False, _last_err
 
     def _check_private_eligibility(self, s: Signal) -> Optional[str]:
         """Returns skip reason if signal should NOT go to private channel, else None."""
@@ -1725,6 +1742,15 @@ class BinanceScanner:
                 return True
         return False
 
+    def _row_counts_as_sent_today(self, row: dict) -> bool:
+        """True when a signals-CSV row should consume the daily dedup slot.
+        None / missing / "" → legacy row (pre-dual-channel) → counts as sent.
+        "SENT" → delivered → counts.
+        Any other value (SEND_FAILED, SKIPPED_*) → slot NOT consumed → does not count.
+        """
+        _st = row.get("send_research_status") or ""
+        return _st in ("", "SENT")
+
     def _acc_already_signaled_today(self, symbol: str) -> bool:
         if symbol in self._acc_sent_today:
             return True
@@ -1734,6 +1760,8 @@ class BinanceScanner:
                 if row.get("symbol") != symbol:
                     continue
                 if row.get("strategy") != "long_accumulation_continuation":
+                    continue
+                if not self._row_counts_as_sent_today(row):
                     continue
                 try:
                     ts = int(float(row.get("timestamp_ms") or 0))
@@ -3106,7 +3134,7 @@ class BinanceScanner:
             _today_start_ms = int(datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
             try:
                 for _row in self.read_csv(self.signals_file):
-                    if _row.get("strategy") == "long_accumulation_continuation":
+                    if _row.get("strategy") == "long_accumulation_continuation" and self._row_counts_as_sent_today(_row):
                         try:
                             _ts = int(float(_row.get("timestamp_ms") or 0))
                             if _ts >= _today_start_ms:
@@ -3208,7 +3236,7 @@ class BinanceScanner:
                         continue
 
                 if s.dispatch_action == "MAIN_SIGNAL":
-                    # Belt-and-suspenders: daily dedup per strategy
+                    # Belt-and-suspenders: daily dedup per strategy (membership check only — .add() deferred to SENT)
                     if getattr(s, "strategy", "") == "oi_range_breakout":
                         if s.symbol in self._orb_sent_today:
                             print(f"[orb dedup] {s.symbol} — already sent today, skipped")
@@ -3220,9 +3248,9 @@ class BinanceScanner:
                             print(f"[acc dedup] {s.symbol} — already sent today, skipped")
                             no_send_count += 1
                             continue
-                        self._acc_sent_today.add(s.symbol)
+                        # NOTE: .add() deferred — only fires after confirmed SENT (slot-on-delivery)
 
-                    # Cooldown check FIRST — before any CSV write or HTTP POST
+                    # Cooldown check — pure check, does NOT consume slot yet
                     if not self.should_send(s):
                         s.send_research_status = "SKIPPED_COOLDOWN"
                         self.save_signal(s)
@@ -3246,7 +3274,8 @@ class BinanceScanner:
 
                     # POST to research channel
                     _r_chat_id = str(self.cfg.get("telegram", {}).get("channels", {}).get("research", {}).get("chat_id") or self.cfg["telegram"]["chat_id"])
-                    _ok_r, _err_r = self._send_to_channel(msg_research, self.cfg["telegram"]["bot_token"], _r_chat_id)
+                    _r_token = self.cfg["telegram"]["bot_token"]
+                    _ok_r, _err_r = self._send_to_channel(msg_research, _r_token, _r_chat_id)
                     if _ok_r:
                         s.send_research_status = "SENT"
                         s.sent_research_ts_ms = int(time.time() * 1000)
@@ -3266,6 +3295,12 @@ class BinanceScanner:
                         else:
                             s.send_private_status = "SEND_FAILED"
                             print(f"[telegram private error] {_err_p}")
+                            # Warn research channel when private fails but research succeeded
+                            if s.send_research_status == "SENT":
+                                _warn = f"[WARNING] {s.symbol} private channel SEND_FAILED: {_err_p}"
+                                _ok_w, _ = self._send_to_channel(_warn, _r_token, _r_chat_id)
+                                if not _ok_w:
+                                    print(f"[telegram private warn] could not deliver warning to research")
 
                     # Aggregate send_decision for pending CSV
                     if s.send_research_status == "SENT" or s.send_private_status == "SENT":
@@ -3287,7 +3322,14 @@ class BinanceScanner:
                     if _agg_send == "SENT":
                         _sent_ts = s.sent_research_ts_ms or s.sent_private_ts_ms or int(time.time() * 1000)
                         self.sync_pending_send_decision(s.setup_id, "SENT", sent_ts_ms=_sent_ts)
+                        # Consume slots only after confirmed SENT (slot-on-delivery)
+                        self._mark_sent(s)
+                        if getattr(s, "strategy", "") == "long_accumulation_continuation":
+                            self._acc_sent_today.add(s.symbol)
+                        print(f"[slot] {s.symbol}:{s.side} SENT → cooldown+daily consumed")
                         sent_count += 1
+                    else:
+                        print(f"[slot] {s.symbol}:{s.side} {_agg_send} → slot NOT consumed")
                     main_count += 1
                     continue
 
@@ -3306,6 +3348,7 @@ class BinanceScanner:
                     if send_watchlist and self.should_send(s):
                         try:
                             self.telegram_send(msg)
+                            self._mark_sent(s)
                         except Exception as e:
                             print(f"[telegram watchlist error] {e}")
                     watchlist_count += 1
