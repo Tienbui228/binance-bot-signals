@@ -10,3 +10,4 @@ data/signals/*.csv
 data/results/*.csv
 RUNNING_CODE_VERSION.txt
 oi_scanner.lock
+config.yaml

@@ -1,7 +1,7 @@
-﻿config_version: phase3-short-exhaustion-v5-scoreparts-manualdiag
+config_version: phase3-short-exhaustion-v5-scoreparts-manualdiag
 telegram:
-  bot_token: 8643760330:AAFQUt4o1ovC2jfdeUrWk2iUnqipeh7pmgw
-  chat_id: -1002949295207
+  bot_token: YOUR_BOT_TOKEN        # Telegram BotFather token
+  chat_id: YOUR_CHAT_ID            # Telegram group/channel chat ID (negative for groups)
 scanner:
   quote_asset: USDT
   interval_5m: 5m
@@ -84,7 +84,7 @@ oi_range_breakout:
   oi_spike_min_pct: 5.0           # OI delta % minimum (1h window: bar[-1] vs bar[-5])
   oi_delta_abs_min_usdt: 400000   # OI abs delta minimum in USDT (Binance+Bybit); 0 = disabled
   vol_ema_period: 20              # logged only, not a gate
-  vol_ema_multiplier: 2.0         # hard gate: volume must be ≥ 2× EMA20
+  vol_ema_multiplier: 2.0         # hard gate: volume must be >= 2x EMA20
   max_market_cap_usd: 500000000    # skip if market cap >= $500M
 
   # Range detection
@@ -108,7 +108,7 @@ oi_range_breakout:
   score_high_conviction: 70
 
   # Ops
-  max_pending_bars_5m: 48         # timeout before confirm (4h = 48×5m)
+  max_pending_bars_5m: 48         # timeout before confirm (4h = 48x5m)
 
 long_accumulation_continuation:
   # -- Hard gates (all 8 thresholds) ------------------------------------------
@@ -130,12 +130,12 @@ long_accumulation_continuation:
   range_lookback_bars_1h: 14    # SL anchor: tight accumulation zone low (14h)
   tp_lookback_bars_1h: 48       # TP anchor: swing high / resistance above (48h = 2 days)
   tp2_extension_pct: 1.0        # TP2 = swing_high * (1 + 1.0/100) - just beyond resistance
-  min_tp1_distance_pct: 3.0     # TP1 must be ≥ 3% above entry
+  min_tp1_distance_pct: 3.0     # TP1 must be >= 3% above entry
   min_risk_pct: 0.5             # minimal SL floor (structure-based, not % from entry)
   max_risk_pct: 35.0            # reject if SL > 35% below entry
 
   # -- Pending expiry ----------------------------------------------------------
-  max_pending_bars_5m: 3     # expire if not confirmed within 3×5m = 15 min
+  max_pending_bars_5m: 3     # expire if not confirmed within 3x5m = 15 min
 
   # -- Data fetch --------------------------------------------------------------
   history_period: "1d"
@@ -143,7 +143,7 @@ long_accumulation_continuation:
   cache_ttl_seconds: 3600
 
   # -- Score weights (baked into code - audit reference only) ------------------
-  # gap=30, pos_now=20, pos_trend=20, btc_regime=30 → sum=100
+  # gap=30, pos_now=20, pos_trend=20, btc_regime=30 -> sum=100
   btc_regime_score_map:
     bull:
       - "trend_continuation_friendly"
@@ -162,7 +162,7 @@ bybit:
 # --- HL Whale Accumulation (standalone hl_scanner.py process) ---
 hl_whale_accum:
   enabled: false               # kill switch - false = process exits immediately on start
-  hl_gates_enabled: false      # shadow mode; true only after §13 validation + threshold calibration
+  hl_gates_enabled: false      # shadow mode; true only after validation + threshold calibration
   fills_poll_interval_sec: 300 # background fills ingestion cadence
   universe:
     mc_source: coingecko
@@ -177,14 +177,14 @@ hl_whale_accum:
     rolling_24h_notional_min: 300_000
     position_value_min: 100_000
   warmup_days: 5               # no signals until this many days after process start
-  coverage_min: 0.30           # CALIBRATE in §13 - do not tune until §13 data exists
+  coverage_min: 0.30
   top_n: 10
-  conc_min: 0.15               # CALIBRATE in §13
-  jaccard_min: 0.50            # CALIBRATE in §13
+  conc_min: 0.15
+  jaccard_min: 0.50
   window_snapshots: 14         # rolling window for trend/delta (snapshot-count based)
   price_vs_baseline_min: -0.02
   price_trend_7v30_min: -0.02
-  funding_8h_pct_max: 0.03     # Gate F; unit verified 2026-06-01 (hourly rate × 8 × 100)
+  funding_8h_pct_max: 0.03     # Gate F; unit verified 2026-06-01 (hourly rate x 8 x 100)
   cluster_enabled: true
   registry_stale_days: 5
   scan_interval_tier_a_min: 10
@@ -193,5 +193,3 @@ hl_whale_accum:
   http_delay_sec: 0.3
   http_timeout_sec: 10
   data_dir: data/hl_whale_accum
-
-
