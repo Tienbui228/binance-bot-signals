@@ -21,7 +21,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "slot-on-delivery-2026-06-12"
+CODE_BUILD_ID = "private-redaction-2026-06-12"
 CODE_BUILD_SOURCE = "cleanup-round4"
 CODE_BUILD_NOTE = "Round 4: removed legacy_5m_retest + infer_legacy_strategy default. setup_id join fix (pending<->signal). Active strategies: long_accumulation_continuation (live), oi_range_breakout (ready, disabled)."
 
@@ -1433,7 +1433,28 @@ class BinanceScanner:
             f"#WATCHLIST #{s.symbol} #BINANCE"
         )
 
-    def format_signal(self, s: Signal) -> str:
+    def format_signal_private(self, s: Signal) -> str:
+        """Redacted message for private channel.
+        Contains only: symbol, side, Entry, SL, TP1, TP2, R:R with signed %.
+        No score, reason_tags, geo warnings, regime, OI/volume/funding features.
+        """
+        side_icon = "[LONG]" if s.side == "LONG" else "[SHORT]"
+        side_tag = "#LONG" if s.side == "LONG" else "#SHORT"
+        _risk = abs(s.entry_ref - s.stop)
+        _rr1 = abs(s.tp1 - s.entry_ref) / _risk if _risk > 0 else 0.0
+        _rr2 = abs(s.tp2 - s.entry_ref) / _risk if _risk > 0 else 0.0
+        return (
+            f"{side_icon} #{s.symbol}\n\n"
+            f"Entry: {s.entry_ref:.6g}\n"
+            f"SL: {s.stop:.6g} ({s.sl_distance_pct:+.2f}%)\n"
+            f"TP1: {s.tp1:.6g} ({s.tp1_distance_pct:+.2f}%)\n"
+            f"TP2: {s.tp2:.6g} ({s.tp2_distance_pct:+.2f}%)\n"
+            f"R:R  TP1 {_rr1:.2f} | TP2 {_rr2:.2f}\n"
+            # % risk sizing: future slice
+            f"\n{side_tag} #{s.symbol} #BINANCE"
+        )
+
+    def format_signal_research(self, s: Signal) -> str:
         side_icon = "[LONG]" if s.side == "LONG" else "[SHORT]"
         side_tag = "#LONG" if s.side == "LONG" else "#SHORT"
 
@@ -3265,12 +3286,10 @@ class BinanceScanner:
                         main_count += 1
                         continue
 
-                    msg_base = self.format_signal(s)
-                    print("\n" + msg_base + "\n")
-
                     # Private eligibility — determined before POST to build research message
                     _priv_skip = self._check_private_eligibility(s)
-                    msg_research = msg_base + (f"\n\n[private: {_priv_skip}]" if _priv_skip else "")
+                    msg_research = self.format_signal_research(s) + (f"\n\n[private: {_priv_skip}]" if _priv_skip else "")
+                    print("\n" + msg_research + "\n")
 
                     # POST to research channel
                     _r_chat_id = str(self.cfg.get("telegram", {}).get("channels", {}).get("research", {}).get("chat_id") or self.cfg["telegram"]["chat_id"])
@@ -3283,12 +3302,12 @@ class BinanceScanner:
                         s.send_research_status = "SEND_FAILED"
                         print(f"[telegram research error] {_err_r}")
 
-                    # POST to private channel (MAIN_SIGNAL only)
+                    # POST to private channel (MAIN_SIGNAL only) — redacted message
                     if _priv_skip is not None:
                         s.send_private_status = _priv_skip
                     else:
                         _priv_cfg = self.cfg.get("telegram", {}).get("channels", {}).get("private", {})
-                        _ok_p, _err_p = self._send_to_channel(msg_base, str(_priv_cfg.get("bot_token", "")), str(_priv_cfg.get("chat_id", "")))
+                        _ok_p, _err_p = self._send_to_channel(self.format_signal_private(s), str(_priv_cfg.get("bot_token", "")), str(_priv_cfg.get("chat_id", "")))
                         if _ok_p:
                             s.send_private_status = "SENT"
                             s.sent_private_ts_ms = int(time.time() * 1000)
