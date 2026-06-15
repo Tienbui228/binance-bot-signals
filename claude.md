@@ -31,7 +31,7 @@ Do not recreate these files.
 
 - **Manual-trading signal bot** — not auto-trading. Signals go to a human via Telegram.
 - Python 3.12.3, `.venv` at repo root.
-- Live on Ubuntu VPS, runtime process is `oi_scanner.py` running inside a `screen` session.
+- Live on Ubuntu VPS, runtime process is `oi_scanner.py` managed by **systemd unit `oibot.service`** (`Restart=on-failure`). Screen is no longer used.
 - Active strategy families (see ADR-3 above for full state):
   - `long_accumulation_continuation` ← LIVE, enabled
   - `oi_range_breakout` ← built + wired, config disabled
@@ -197,7 +197,27 @@ If the task is ambiguous, ask a precise clarifying question. Do not assume broad
 
 ## 7. Runtime patch discipline (mandatory)
 
-Python loads source into memory at process start. Editing a file after process start does NOT change running behavior. Old `screen` sessions silently keep old code alive.
+Python loads source into memory at process start. Editing a file after process start does NOT change running behavior.
+
+**Bot hiện chạy qua systemd** (`oibot.service`, `Restart=on-failure`). Không còn dùng `screen`.
+Deploy được tự động hóa qua `update_vps.sh` — script xử lý toàn bộ 8 bước, có self-update guard.
+
+---
+
+### VPS access (Claude dùng Bash tool)
+
+```
+Host : root@5.223.67.21
+Key  : $HOME/.ssh/binance_vps_nopass   ← dùng $HOME không phải $env:USERPROFILE (Bash tool)
+Dir  : /root/binance_bot_signals
+```
+
+Ví dụ SSH từ Bash tool:
+```bash
+ssh -i "$HOME/.ssh/binance_vps_nopass" -o StrictHostKeyChecking=no root@5.223.67.21 "COMMAND"
+```
+
+---
 
 ### Phần 1 — Trên máy Windows (Claude làm)
 
@@ -205,7 +225,7 @@ Python loads source into memory at process start. Editing a file after process s
 # 1. Verify patch hit disk
 grep "<changed_function_or_marker>" oi_scanner.py
 
-# 2. Bump build marker
+# 2. Bump build marker trong oi_scanner.py
 CODE_BUILD_ID = "description-YYYY-MM-DD"
 
 # 3. Commit AND push — chỉ add .py file và/hoặc config.yaml, KHÔNG add file khác
@@ -215,49 +235,64 @@ git commit -m "..."
 git push origin main
 ```
 
-### Phần 2 — Trên VPS (user tự chạy)
+---
+
+### Phần 2 — Deploy lên VPS (Claude dùng Bash tool + SSH)
+
+**Một lệnh duy nhất — update_vps.sh tự xử lý tất cả:**
 
 ```bash
-# Bước 1: Kill bot — dùng pkill, KHÔNG dùng cat oi_scanner.lock (lock file hay bị empty)
-pkill -f oi_scanner.py; sleep 2
-ps -eo pid,cmd | grep oi_scanner | grep -v grep   # phải trống
-
-# Bước 2: Pull code mới
-cd /root/binance_bot_signals
-git checkout -- oi_scanner.py   # discard local changes trước khi pull
-git pull origin main
-grep "CODE_BUILD_ID = " oi_scanner.py   # xác nhận build id mới
-
-# Bước 3: Lấy CUT_MS (sau khi đã kill xong)
-CUT_MS=$(python3 -c "import time;print(int(time.time()*1000))"); echo CUT_MS=$CUT_MS
-
-# Bước 4: Start bot
-screen -dmS bot python3 /root/binance_bot_signals/oi_scanner.py
-sleep 3
-
-# Bước 5: Xác nhận
-ps -eo pid,lstart,cmd | grep oi_scanner | grep -v grep   # 2 dòng (SCREEN + python) = 1 instance, bình thường
-cat /root/binance_bot_signals/oi_scanner.lock             # có pid
-cat /root/binance_bot_signals/RUNNING_CODE_VERSION.txt | grep code_build_id   # build id mới
+ssh -i "$HOME/.ssh/binance_vps_nopass" -o StrictHostKeyChecking=no root@5.223.67.21 \
+  "cd /root/binance_bot_signals && bash update_vps.sh"
 ```
+
+Timeout cho SSH call này: **300 000 ms** (script sleep 90s để verify startup).
+
+**Script tự động thực hiện 8 bước:**
+1. Fetch origin + dirty check (ABORT nếu có local changes)
+2. `systemctl stop oibot` + orphan fallback (SIGTERM nếu còn process)
+3. Ghi CUT_MS + incoming commit vào UPDATE_LOG.txt
+4. `git pull --ff-only`
+5. Đọc CODE_BUILD_ID mới từ disk
+6. `systemctl start oibot`
+7. Sleep 90s → verify MainPID + lock file PID match + RUNNING_CODE_VERSION.txt build match
+8. In summary
+
+**Self-update guard**: nếu `update_vps.sh` trên origin khác với bản đang chạy, script tự fetch bản mới về `/tmp` và re-exec trước khi làm bất cứ gì. Không cần lo stale script trong bash memory.
+
+---
+
+### Check-only (không deploy, chỉ xem state)
+
+```bash
+ssh -i "$HOME/.ssh/binance_vps_nopass" -o StrictHostKeyChecking=no root@5.223.67.21 \
+  "cd /root/binance_bot_signals && bash update_vps.sh --check-only"
+```
+
+In ra: dirty files, HEAD vs origin/main, systemd status, running processes, lock holder, build ID.
+
+---
 
 ### Ghi chú quan trọng
 
 | Điểm | Lý do |
 |---|---|
-| `git checkout -- oi_scanner.py` trước pull | VPS thường có local changes do bot tự ghi — checkout discard chúng, pull mới chạy được |
-| Dùng `pkill -f oi_scanner.py` | Lock file hay bị empty sau test second instance — không dùng làm kill target |
-| 2 PID trong ps là bình thường | 1 SCREEN wrapper + 1 python process = 1 instance duy nhất |
-| `git push` trước, `git pull` sau | VPS pull từ GitHub — thiếu push thì VPS không lấy được code |
-| Chỉ commit `.py` và `config.yaml` | data CSVs, RUNNING_CODE_VERSION.txt, docs không được commit — gây conflict trên VPS |
+| Dùng `bash update_vps.sh`, không gọi từng bước tay | Script có self-update guard + orphan fallback + PID verify; gọi tay dễ bỏ sót bước |
+| `git push` trước khi deploy | VPS pull từ GitHub — thiếu push thì VPS không lấy được code mới |
+| Chỉ commit `.py` và `config.yaml` | data CSVs, RUNNING_CODE_VERSION.txt, docs không được commit — gây dirty-check ABORT trên VPS |
+| SSH key path: `$HOME/.ssh/...` | Bash tool không expand `$env:USERPROFILE` (PowerShell syntax) — phải dùng `$HOME` |
+| Timeout SSH call = 300 000 ms | Script ngủ 90s trong step 7; timeout mặc định 120s sẽ bị kill trước khi xong |
 | Flock guard tự enforce | Nếu start nhầm instance 2, nó tự exit với `[startup] ERROR` và không ghi CSV |
+
+---
 
 ### Validation rule
 Only judge behavior from rows where `created_ts_ms >= CUT_MS` or `confirmed_ts_ms >= CUT_MS`.
 Old rows in cumulative daily CSVs do NOT prove anything about the patched runtime.
+`CUT_MS` được in trong output của `update_vps.sh` ở step [3/8].
 
 ### Infrastructure pass ≠ behavior pass
-A patch can pass syntax check, import check, file grep, and screen startup — and still fail real behavior if the process was not restarted.
+A patch can pass syntax check, import check, and systemd startup — and still fail real behavior if the process was not restarted with new code. Always verify `RUNNING_CODE_VERSION.txt` matches expected `CODE_BUILD_ID`.
 
 ---
 
