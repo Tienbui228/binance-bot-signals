@@ -21,7 +21,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "private-close-routing-2026-06-12"
+CODE_BUILD_ID = "private-add-market-context-2026-06-12"
 CODE_BUILD_SOURCE = "cleanup-round4"
 CODE_BUILD_NOTE = "Round 4: removed legacy_5m_retest + infer_legacy_strategy default. setup_id join fix (pending<->signal). Active strategies: long_accumulation_continuation (live), oi_range_breakout (ready, disabled)."
 
@@ -1481,21 +1481,28 @@ class BinanceScanner:
 
     def format_signal_private(self, s: Signal) -> str:
         """Redacted message for private channel.
-        Contains only: symbol, side, Entry, SL, TP1, TP2, R:R with signed %.
-        No score, reason_tags, geo warnings, regime, OI/volume/funding features.
+        Whitelist: symbol/side, entry levels, R:R, objective market context.
+        Hidden: score, reason_tags, geo, regime, participation, dispatch labels.
         """
         side_icon = "[LONG]" if s.side == "LONG" else "[SHORT]"
         side_tag = "#LONG" if s.side == "LONG" else "#SHORT"
         _risk = abs(s.entry_ref - s.stop)
         _rr1 = abs(s.tp1 - s.entry_ref) / _risk if _risk > 0 else 0.0
         _rr2 = abs(s.tp2 - s.entry_ref) / _risk if _risk > 0 else 0.0
+        _mc = getattr(s, "market_cap_usd", 0) or 0
+        _mc_str = f"${_mc / 1_000_000:.0f}M" if _mc > 0 else "N/A"
         return (
             f"{side_icon} #{s.symbol}\n\n"
             f"Entry: {s.entry_ref:.6g}\n"
             f"SL: {s.stop:.6g} ({s.sl_distance_pct:+.2f}%)\n"
             f"TP1: {s.tp1:.6g} ({s.tp1_distance_pct:+.2f}%)\n"
             f"TP2: {s.tp2:.6g} ({s.tp2_distance_pct:+.2f}%)\n"
-            f"R:R  TP1 {_rr1:.2f} | TP2 {_rr2:.2f}\n"
+            f"R:R  TP1 {_rr1:.2f} | TP2 {_rr2:.2f}\n\n"
+            f"Volume 1h: {s.vol_ratio:.2f}x EMA20\n"
+            f"Volume 24h: ${getattr(s, 'vol_24h_usdt', 0) / 1_000_000:.1f}M\n"
+            f"Market Cap: {_mc_str}\n"
+            f"Funding: {s.funding_pct:+.4f}%\n"
+            f"OI Delta 1h: {s.oi_jump_pct:+.2f}%\n"
             # % risk sizing: future slice
             f"\n{side_tag} #{s.symbol} #BINANCE"
         )
