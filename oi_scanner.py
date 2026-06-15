@@ -21,7 +21,7 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "private-redaction-2026-06-12"
+CODE_BUILD_ID = "private-close-routing-2026-06-12"
 CODE_BUILD_SOURCE = "cleanup-round4"
 CODE_BUILD_NOTE = "Round 4: removed legacy_5m_retest + infer_legacy_strategy default. setup_id join fix (pending<->signal). Active strategies: long_accumulation_continuation (live), oi_range_breakout (ready, disabled)."
 
@@ -1189,7 +1189,32 @@ class BinanceScanner:
             self.write_csv(self.pending_file, rows, fieldnames=self.pending_fields)
         return changed
 
-    def format_close_message(self, signal_row: Dict, outcome: str, r_multiple: float, close_reason: str, mfe_pct: float = 0.0, mae_pct: float = 0.0) -> str:
+    def format_close_private(self, signal_row: Dict, outcome: str, exit_price: "float | None", realized_pnl_pct: "float | None") -> str:
+        """Redacted close notification for private channel.
+        Contains only: symbol, side, human-readable outcome, exit price, realized_pnl_pct signed %.
+        No score, reason_tags, geo, regime, r_multiple categorical, pos/gap/retail/funding.
+        """
+        symbol = signal_row.get("symbol", "")
+        side = signal_row.get("side", "LONG")
+        side_tag = "#LONG" if side == "LONG" else "#SHORT"
+        outcome_label = {
+            "WIN_TP1":   "TP1 reached",
+            "WIN_TP2":   "TP2 reached",
+            "LOSS_STOP": "Stop hit",
+            "EXPIRED":   "Expired (7d timeout) — closed at market",
+        }.get(outcome, outcome)
+        _exit_line = f"Exit: {exit_price:.8g}\n" if exit_price is not None else ""
+        _pnl_line  = f"PnL: {realized_pnl_pct:+.2f}%\n" if realized_pnl_pct is not None else ""
+        # % risk sizing: future slice
+        return (
+            f"[CLOSE] #{symbol} {side_tag}\n\n"
+            f"{outcome_label}\n"
+            f"{_exit_line}"
+            f"{_pnl_line}"
+            f"\n#{symbol} #BINANCE"
+        )
+
+    def format_close_research(self, signal_row: Dict, outcome: str, r_multiple: float, close_reason: str, mfe_pct: float = 0.0, mae_pct: float = 0.0) -> str:
         side    = signal_row.get("side", "UNKNOWN")
         symbol  = signal_row.get("symbol", "")
         strategy = signal_row.get("strategy", "unknown")
@@ -1396,9 +1421,30 @@ class BinanceScanner:
         print(f"[close] {signal_row.get('symbol','')} {signal_row.get('side','')} | {outcome} | r={r_multiple:.2f} | {close_reason}")
         if self.cfg.get("telegram", {}).get("send_close_notifications", True):
             try:
-                self.telegram_send(self.format_close_message(signal_row, outcome, r_multiple, close_reason, mfe_pct=mfe_pct, mae_pct=mae_pct))
+                self.telegram_send(self.format_close_research(signal_row, outcome, r_multiple, close_reason, mfe_pct=mfe_pct, mae_pct=mae_pct))
             except Exception as e:
                 print(f"[telegram close error] {e}")
+            # Private close — only for signals that were delivered to private channel
+            if signal_row.get("send_private_status") == "SENT":
+                try:
+                    _exit_p_close = float(_exit_price_str) if _exit_price_str else None
+                    _rpnl_float = float(_rpnl_str) if _rpnl_str else None
+                    _priv_cfg = self.cfg.get("telegram", {}).get("channels", {}).get("private", {})
+                    _r_token = self.cfg["telegram"]["bot_token"]
+                    _r_chat_id = str(self.cfg.get("telegram", {}).get("channels", {}).get("research", {}).get("chat_id") or self.cfg["telegram"]["chat_id"])
+                    _ok_pc, _err_pc = self._send_to_channel(
+                        self.format_close_private(signal_row, outcome, _exit_p_close, _rpnl_float),
+                        str(_priv_cfg.get("bot_token", "")),
+                        str(_priv_cfg.get("chat_id", "")),
+                    )
+                    if not _ok_pc:
+                        print(f"[close-private] {signal_row.get('symbol','')} SEND_FAILED: {_err_pc}")
+                        self._send_to_channel(
+                            f"[WARNING] {signal_row.get('symbol','')} private close SEND_FAILED: {_err_pc}",
+                            _r_token, _r_chat_id,
+                        )
+                except Exception as _epc:
+                    print(f"[close-private] {signal_row.get('symbol','')} SEND_FAILED: {_epc}")
 
     def _update_pending_dispatch_trace(self, setup_id: str, dispatch_action: str, dispatch_confidence_band: str, dispatch_reason: str, send_decision: Optional[str] = None, skip_reason: str = "") -> bool:
         rows = self.read_csv(self.pending_file)
