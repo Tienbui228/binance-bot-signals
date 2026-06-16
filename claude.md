@@ -273,6 +273,39 @@ In ra: dirty files, HEAD vs origin/main, systemd status, running processes, lock
 
 ---
 
+### Config-only change (KHÔNG qua git, KHÔNG dùng update_vps.sh)
+
+`config.yaml` nằm trong `.gitignore` — **không bao giờ được commit hay SCP từ máy local lên VPS**.
+VPS có file `config.yaml` riêng chứa token thật. SCP local lên sẽ ghi đè token thật bằng placeholder → bot crash.
+
+**Khi user sửa config.yaml và muốn apply lên VPS:**
+
+```bash
+# Patch thẳng trên VPS bằng sed, sau đó restart
+ssh -i "$HOME/.ssh/binance_vps_nopass" -o StrictHostKeyChecking=no root@5.223.67.21 "
+sed -i 's|old_value|new_value|' /root/binance_bot_signals/config.yaml
+systemctl restart oibot
+sleep 12
+systemctl is-active oibot
+"
+```
+
+Ví dụ thực tế — đổi `oi_delta_min_pct` từ 2 → 1:
+```bash
+ssh -i "$HOME/.ssh/binance_vps_nopass" -o StrictHostKeyChecking=no root@5.223.67.21 "
+sed -i 's|oi_delta_min_pct: 2|oi_delta_min_pct: 1|' /root/binance_bot_signals/config.yaml
+grep 'oi_delta_min_pct' /root/binance_bot_signals/config.yaml   # verify trước khi restart
+systemctl restart oibot && sleep 12 && systemctl is-active oibot
+"
+```
+
+**TUYỆT ĐỐI KHÔNG:**
+- `scp config.yaml root@VPS:...` — ghi đè token thật bằng placeholder → crash
+- `git add config.yaml` — file này trong `.gitignore`, không được đưa vào git
+- `update_vps.sh` cho config-only change — script đó dành cho code deploy (git pull + systemd restart)
+
+---
+
 ### Ghi chú quan trọng
 
 | Điểm | Lý do |
@@ -280,6 +313,7 @@ In ra: dirty files, HEAD vs origin/main, systemd status, running processes, lock
 | Dùng `bash update_vps.sh`, không gọi từng bước tay | Script có self-update guard + orphan fallback + PID verify; gọi tay dễ bỏ sót bước |
 | `git push` trước khi deploy | VPS pull từ GitHub — thiếu push thì VPS không lấy được code mới |
 | Chỉ commit `.py` và `config.yaml` | data CSVs, RUNNING_CODE_VERSION.txt, docs không được commit — gây dirty-check ABORT trên VPS |
+| `config.yaml` KHÔNG commit, KHÔNG SCP | File trong `.gitignore`, chứa token thật — patch VPS trực tiếp bằng sed qua SSH |
 | SSH key path: `$HOME/.ssh/...` | Bash tool không expand `$env:USERPROFILE` (PowerShell syntax) — phải dùng `$HOME` |
 | Timeout SSH call = 300 000 ms | Script ngủ 90s trong step 7; timeout mặc định 120s sẽ bị kill trước khi xong |
 | Flock guard tự enforce | Nếu start nhầm instance 2, nó tự exit với `[startup] ERROR` và không ghi CSV |
