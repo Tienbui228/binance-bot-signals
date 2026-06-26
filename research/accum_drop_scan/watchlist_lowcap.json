@@ -1,0 +1,1616 @@
+[
+  {
+    "symbol": "ACHUSDT",
+    "coingecko_id": "alchemy-pay",
+    "market_cap_usd": 0.0,
+    "fdv_usd": 90471402
+  },
+  {
+    "symbol": "KASUSDT",
+    "coingecko_id": "akas",
+    "market_cap_usd": 0.0,
+    "fdv_usd": 2375273
+  },
+  {
+    "symbol": "1MBABYDOGEUSDT",
+    "coingecko_id": "1mbabydoge",
+    "market_cap_usd": 0.0,
+    "fdv_usd": 155149985209578
+  },
+  {
+    "symbol": "AERGOUSDT",
+    "coingecko_id": "aergo",
+    "market_cap_usd": 0.0,
+    "fdv_usd": 22962688
+  },
+  {
+    "symbol": "KNCUSDT",
+    "coingecko_id": "nodecoin",
+    "market_cap_usd": 271283,
+    "fdv_usd": 643954
+  },
+  {
+    "symbol": "PTBUSDT",
+    "coingecko_id": "portal-to-bitcoin",
+    "market_cap_usd": 1496088,
+    "fdv_usd": 3798891
+  },
+  {
+    "symbol": "EVAAUSDT",
+    "coingecko_id": "evaa-protocol",
+    "market_cap_usd": 2576178,
+    "fdv_usd": 19463501
+  },
+  {
+    "symbol": "ALPINEUSDT",
+    "coingecko_id": "alpine-f1-team-fan-token",
+    "market_cap_usd": 4490109,
+    "fdv_usd": 15810243
+  },
+  {
+    "symbol": "HAEDALUSDT",
+    "coingecko_id": "haedal",
+    "market_cap_usd": 5089085,
+    "fdv_usd": 26097871
+  },
+  {
+    "symbol": "TAKEUSDT",
+    "coingecko_id": "overtake",
+    "market_cap_usd": 5485970,
+    "fdv_usd": 18883655
+  },
+  {
+    "symbol": "SOLVUSDT",
+    "coingecko_id": "solv-protocol",
+    "market_cap_usd": 5584617,
+    "fdv_usd": 31640888
+  },
+  {
+    "symbol": "VICUSDT",
+    "coingecko_id": "tomochain",
+    "market_cap_usd": 5816841,
+    "fdv_usd": 9638639
+  },
+  {
+    "symbol": "FHEUSDT",
+    "coingecko_id": "mind-network",
+    "market_cap_usd": 5830783,
+    "fdv_usd": 23416800
+  },
+  {
+    "symbol": "TOWNSUSDT",
+    "coingecko_id": "towns",
+    "market_cap_usd": 5900310,
+    "fdv_usd": 28330975
+  },
+  {
+    "symbol": "NFPUSDT",
+    "coingecko_id": "nfprompt-token",
+    "market_cap_usd": 6097546,
+    "fdv_usd": 9532642
+  },
+  {
+    "symbol": "HEMIUSDT",
+    "coingecko_id": "hemi",
+    "market_cap_usd": 6277877,
+    "fdv_usd": 64223809
+  },
+  {
+    "symbol": "HEIUSDT",
+    "coingecko_id": "heima",
+    "market_cap_usd": 6401797,
+    "fdv_usd": 7254778
+  },
+  {
+    "symbol": "SAGAUSDT",
+    "coingecko_id": "saga-2",
+    "market_cap_usd": 6743592,
+    "fdv_usd": 18376434
+  },
+  {
+    "symbol": "TRADOORUSDT",
+    "coingecko_id": "tradoor",
+    "market_cap_usd": 6866150,
+    "fdv_usd": 28710642
+  },
+  {
+    "symbol": "SWARMSUSDT",
+    "coingecko_id": "swarms",
+    "market_cap_usd": 6922426,
+    "fdv_usd": 6922426
+  },
+  {
+    "symbol": "MBOXUSDT",
+    "coingecko_id": "mobox",
+    "market_cap_usd": 7085989,
+    "fdv_usd": 7085989
+  },
+  {
+    "symbol": "AKEUSDT",
+    "coingecko_id": "akedo",
+    "market_cap_usd": 7122372,
+    "fdv_usd": 31243612
+  },
+  {
+    "symbol": "MAVIAUSDT",
+    "coingecko_id": "heroes-of-mavia",
+    "market_cap_usd": 7166973,
+    "fdv_usd": 7254985
+  },
+  {
+    "symbol": "\u9f99\u867eUSDT",
+    "coingecko_id": "lobster-2",
+    "market_cap_usd": 7343376,
+    "fdv_usd": 7343376
+  },
+  {
+    "symbol": "AIAUSDT",
+    "coingecko_id": "aia",
+    "market_cap_usd": 7536936,
+    "fdv_usd": 75748103
+  },
+  {
+    "symbol": "TUTUSDT",
+    "coingecko_id": "tutorial",
+    "market_cap_usd": 7856767,
+    "fdv_usd": 7856767
+  },
+  {
+    "symbol": "\u6211\u8e0f\u9a6c\u6765\u4e86USDT",
+    "coingecko_id": "wo-ta-ma-laile",
+    "market_cap_usd": 8082220,
+    "fdv_usd": 8082220
+  },
+  {
+    "symbol": "ASRUSDT",
+    "coingecko_id": "as-roma-fan-token",
+    "market_cap_usd": 8120068,
+    "fdv_usd": 9442855
+  },
+  {
+    "symbol": "4USDT",
+    "coingecko_id": "4-2",
+    "market_cap_usd": 8135061,
+    "fdv_usd": 8135061
+  },
+  {
+    "symbol": "ESPORTSUSDT",
+    "coingecko_id": "yooldo-games",
+    "market_cap_usd": 8265265,
+    "fdv_usd": 49003548
+  },
+  {
+    "symbol": "RESOLVUSDT",
+    "coingecko_id": "resolv",
+    "market_cap_usd": 8872907,
+    "fdv_usd": 21994706
+  },
+  {
+    "symbol": "VANRYUSDT",
+    "coingecko_id": "vanar-chain",
+    "market_cap_usd": 8971280,
+    "fdv_usd": 9080924
+  },
+  {
+    "symbol": "GRIFFAINUSDT",
+    "coingecko_id": "griffain",
+    "market_cap_usd": 9004784,
+    "fdv_usd": 9004784
+  },
+  {
+    "symbol": "TLMUSDT",
+    "coingecko_id": "alien-worlds",
+    "market_cap_usd": 9086717,
+    "fdv_usd": 9398612
+  },
+  {
+    "symbol": "BLESSUSDT",
+    "coingecko_id": "bless-2",
+    "market_cap_usd": 9184261,
+    "fdv_usd": 49869128
+  },
+  {
+    "symbol": "HFTUSDT",
+    "coingecko_id": "hashflow",
+    "market_cap_usd": 9364444,
+    "fdv_usd": 11444409
+  },
+  {
+    "symbol": "WCTUSDT",
+    "coingecko_id": "connect-token-wct",
+    "market_cap_usd": 9381517,
+    "fdv_usd": 50384041
+  },
+  {
+    "symbol": "ARPAUSDT",
+    "coingecko_id": "arpa",
+    "market_cap_usd": 9384069,
+    "fdv_usd": 19108759
+  },
+  {
+    "symbol": "DYMUSDT",
+    "coingecko_id": "dymension",
+    "market_cap_usd": 10057527,
+    "fdv_usd": 19967170
+  },
+  {
+    "symbol": "HMSTRUSDT",
+    "coingecko_id": "hamster-kombat",
+    "market_cap_usd": 10099140,
+    "fdv_usd": 15687985
+  },
+  {
+    "symbol": "MITOUSDT",
+    "coingecko_id": "mitosis",
+    "market_cap_usd": 10480164,
+    "fdv_usd": 29716912
+  },
+  {
+    "symbol": "DRIFTUSDT",
+    "coingecko_id": "drift-protocol",
+    "market_cap_usd": 10988798,
+    "fdv_usd": 17969768
+  },
+  {
+    "symbol": "MAVUSDT",
+    "coingecko_id": "maverick-protocol",
+    "market_cap_usd": 11303574,
+    "fdv_usd": 24338264
+  },
+  {
+    "symbol": "PARTIUSDT",
+    "coingecko_id": "particle-network",
+    "market_cap_usd": 11516372,
+    "fdv_usd": 49426488
+  },
+  {
+    "symbol": "TNSRUSDT",
+    "coingecko_id": "tensor",
+    "market_cap_usd": 11674251,
+    "fdv_usd": 34889416
+  },
+  {
+    "symbol": "RECALLUSDT",
+    "coingecko_id": "recall",
+    "market_cap_usd": 11828831,
+    "fdv_usd": 46650758
+  },
+  {
+    "symbol": "SANTOSUSDT",
+    "coingecko_id": "santos-fc-fan-token",
+    "market_cap_usd": 12249878,
+    "fdv_usd": 22833157
+  },
+  {
+    "symbol": "STOUSDT",
+    "coingecko_id": "stakestone",
+    "market_cap_usd": 12425848,
+    "fdv_usd": 55144297
+  },
+  {
+    "symbol": "ELSAUSDT",
+    "coingecko_id": "elsa",
+    "market_cap_usd": 12671053,
+    "fdv_usd": 55336940
+  },
+  {
+    "symbol": "OGUSDT",
+    "coingecko_id": "og-fan-token",
+    "market_cap_usd": 12785482,
+    "fdv_usd": 13602167
+  },
+  {
+    "symbol": "STORJUSDT",
+    "coingecko_id": "storj",
+    "market_cap_usd": 12889227,
+    "fdv_usd": 38097359
+  },
+  {
+    "symbol": "DOLOUSDT",
+    "coingecko_id": "dolomite",
+    "market_cap_usd": 13306613,
+    "fdv_usd": 27255902
+  },
+  {
+    "symbol": "OGNUSDT",
+    "coingecko_id": "origin-protocol",
+    "market_cap_usd": 13314446,
+    "fdv_usd": 28235843
+  },
+  {
+    "symbol": "LUMIAUSDT",
+    "coingecko_id": "lumia",
+    "market_cap_usd": 13485337,
+    "fdv_usd": 23260575
+  },
+  {
+    "symbol": "NEWTUSDT",
+    "coingecko_id": "newton-protocol",
+    "market_cap_usd": 13505420,
+    "fdv_usd": 62815909
+  },
+  {
+    "symbol": "ONUSDT",
+    "coingecko_id": "orochi-network",
+    "market_cap_usd": 13652865,
+    "fdv_usd": 66241591
+  },
+  {
+    "symbol": "CELRUSDT",
+    "coingecko_id": "celer-network",
+    "market_cap_usd": 13901166,
+    "fdv_usd": 24623641
+  },
+  {
+    "symbol": "ENSOUSDT",
+    "coingecko_id": "enso",
+    "market_cap_usd": 13992983,
+    "fdv_usd": 67960094
+  },
+  {
+    "symbol": "XNYUSDT",
+    "coingecko_id": "codatta",
+    "market_cap_usd": 15164368,
+    "fdv_usd": 60657473
+  },
+  {
+    "symbol": "WETUSDT",
+    "coingecko_id": "humidifi",
+    "market_cap_usd": 15205340,
+    "fdv_usd": 66110175
+  },
+  {
+    "symbol": "AIOTUSDT",
+    "coingecko_id": "okzoo",
+    "market_cap_usd": 15309750,
+    "fdv_usd": 58156675
+  },
+  {
+    "symbol": "DOODUSDT",
+    "coingecko_id": "doodles",
+    "market_cap_usd": 15451931,
+    "fdv_usd": 19810168
+  },
+  {
+    "symbol": "BICOUSDT",
+    "coingecko_id": "biconomy",
+    "market_cap_usd": 16046360,
+    "fdv_usd": 22347146
+  },
+  {
+    "symbol": "BLUAIUSDT",
+    "coingecko_id": "bluwhale",
+    "market_cap_usd": 16435966,
+    "fdv_usd": 133843373
+  },
+  {
+    "symbol": "PIPPINUSDT",
+    "coingecko_id": "pippin",
+    "market_cap_usd": 16453444,
+    "fdv_usd": 16453444
+  },
+  {
+    "symbol": "GUNUSDT",
+    "coingecko_id": "gunz",
+    "market_cap_usd": 16502042,
+    "fdv_usd": 72486450
+  },
+  {
+    "symbol": "ZKCUSDT",
+    "coingecko_id": "boundless",
+    "market_cap_usd": 16889222,
+    "fdv_usd": 61032899
+  },
+  {
+    "symbol": "C98USDT",
+    "coingecko_id": "coin98",
+    "market_cap_usd": 17501876,
+    "fdv_usd": 17501896
+  },
+  {
+    "symbol": "DIAUSDT",
+    "coingecko_id": "dia-data",
+    "market_cap_usd": 18093890,
+    "fdv_usd": 25523564
+  },
+  {
+    "symbol": "PROMUSDT",
+    "coingecko_id": "prometeus",
+    "market_cap_usd": 18260821,
+    "fdv_usd": 19261414
+  },
+  {
+    "symbol": "TAUSDT",
+    "coingecko_id": "trusta-ai",
+    "market_cap_usd": 18442030,
+    "fdv_usd": 102455723
+  },
+  {
+    "symbol": "TAIKOUSDT",
+    "coingecko_id": "taiko",
+    "market_cap_usd": 18469045,
+    "fdv_usd": 97928343
+  },
+  {
+    "symbol": "MOVRUSDT",
+    "coingecko_id": "moonriver",
+    "market_cap_usd": 18491578,
+    "fdv_usd": 19324237
+  },
+  {
+    "symbol": "NAORISUSDT",
+    "coingecko_id": "naoris",
+    "market_cap_usd": 19580951,
+    "fdv_usd": 130700868
+  },
+  {
+    "symbol": "BIGTIMEUSDT",
+    "coingecko_id": "big-time",
+    "market_cap_usd": 19648642,
+    "fdv_usd": 51483539
+  },
+  {
+    "symbol": "AGLDUSDT",
+    "coingecko_id": "adventure-gold",
+    "market_cap_usd": 19695465,
+    "fdv_usd": 20911930
+  },
+  {
+    "symbol": "XPINUSDT",
+    "coingecko_id": "xpin-network",
+    "market_cap_usd": 20023366,
+    "fdv_usd": 129475373
+  },
+  {
+    "symbol": "CETUSUSDT",
+    "coingecko_id": "cetus-protocol",
+    "market_cap_usd": 20200143,
+    "fdv_usd": 21312078
+  },
+  {
+    "symbol": "YBUSDT",
+    "coingecko_id": "yield-basis",
+    "market_cap_usd": 20201595,
+    "fdv_usd": 72122125
+  },
+  {
+    "symbol": "AEVOUSDT",
+    "coingecko_id": "aevo-exchange",
+    "market_cap_usd": 20503006,
+    "fdv_usd": 22355923
+  },
+  {
+    "symbol": "B2USDT",
+    "coingecko_id": "bsquared-network",
+    "market_cap_usd": 20683608,
+    "fdv_usd": 104548472
+  },
+  {
+    "symbol": "CVCUSDT",
+    "coingecko_id": "civic",
+    "market_cap_usd": 20911383,
+    "fdv_usd": 26074043
+  },
+  {
+    "symbol": "PORTALUSDT",
+    "coingecko_id": "portal-2",
+    "market_cap_usd": 21026840,
+    "fdv_usd": 26259451
+  },
+  {
+    "symbol": "SLPUSDT",
+    "coingecko_id": "smooth-love-potion",
+    "market_cap_usd": 21433446,
+    "fdv_usd": 21433446
+  },
+  {
+    "symbol": "USUALUSDT",
+    "coingecko_id": "usual",
+    "market_cap_usd": 21535800,
+    "fdv_usd": 22013897
+  },
+  {
+    "symbol": "CGPTUSDT",
+    "coingecko_id": "chaingpt",
+    "market_cap_usd": 21773412,
+    "fdv_usd": 23458107
+  },
+  {
+    "symbol": "FIDAUSDT",
+    "coingecko_id": "bonfida",
+    "market_cap_usd": 22225670,
+    "fdv_usd": 22225670
+  },
+  {
+    "symbol": "CATIUSDT",
+    "coingecko_id": "catizen",
+    "market_cap_usd": 22296061,
+    "fdv_usd": 49137515
+  },
+  {
+    "symbol": "SOMIUSDT",
+    "coingecko_id": "somnia",
+    "market_cap_usd": 22355336,
+    "fdv_usd": 139546417
+  },
+  {
+    "symbol": "SAPIENUSDT",
+    "coingecko_id": "sapien-2",
+    "market_cap_usd": 22360909,
+    "fdv_usd": 89443636
+  },
+  {
+    "symbol": "FOLKSUSDT",
+    "coingecko_id": "folks",
+    "market_cap_usd": 22782270,
+    "fdv_usd": 68305027
+  },
+  {
+    "symbol": "YGGUSDT",
+    "coingecko_id": "yield-guild-games",
+    "market_cap_usd": 23718553,
+    "fdv_usd": 31893292
+  },
+  {
+    "symbol": "LISTAUSDT",
+    "coingecko_id": "lista",
+    "market_cap_usd": 23898316,
+    "fdv_usd": 49461180
+  },
+  {
+    "symbol": "MTLUSDT",
+    "coingecko_id": "metal",
+    "market_cap_usd": 24172690,
+    "fdv_usd": 24172690
+  },
+  {
+    "symbol": "CTSIUSDT",
+    "coingecko_id": "cartesi",
+    "market_cap_usd": 24235201,
+    "fdv_usd": 26193095
+  },
+  {
+    "symbol": "MMTUSDT",
+    "coingecko_id": "momentum-3",
+    "market_cap_usd": 24380212,
+    "fdv_usd": 119454967
+  },
+  {
+    "symbol": "SIGNUSDT",
+    "coingecko_id": "sign-global",
+    "market_cap_usd": 24389203,
+    "fdv_usd": 105886556
+  },
+  {
+    "symbol": "ZEREBROUSDT",
+    "coingecko_id": "zerebro",
+    "market_cap_usd": 24547282,
+    "fdv_usd": 24547282
+  },
+  {
+    "symbol": "ACUUSDT",
+    "coingecko_id": "acurast",
+    "market_cap_usd": 24831550,
+    "fdv_usd": 89187484
+  },
+  {
+    "symbol": "LSKUSDT",
+    "coingecko_id": "lisk",
+    "market_cap_usd": 24849992,
+    "fdv_usd": 42645428
+  },
+  {
+    "symbol": "BREVUSDT",
+    "coingecko_id": "brevis",
+    "market_cap_usd": 25108366,
+    "fdv_usd": 100433465
+  },
+  {
+    "symbol": "SCRTUSDT",
+    "coingecko_id": "secret",
+    "market_cap_usd": 25755900,
+    "fdv_usd": 26834470
+  },
+  {
+    "symbol": "WAXPUSDT",
+    "coingecko_id": "wax",
+    "market_cap_usd": 25771948,
+    "fdv_usd": 25771948
+  },
+  {
+    "symbol": "AIXBTUSDT",
+    "coingecko_id": "aixbt",
+    "market_cap_usd": 25897506,
+    "fdv_usd": 26036583
+  },
+  {
+    "symbol": "LQTYUSDT",
+    "coingecko_id": "liquity",
+    "market_cap_usd": 25957049,
+    "fdv_usd": 26293057
+  },
+  {
+    "symbol": "STEEMUSDT",
+    "coingecko_id": "steem",
+    "market_cap_usd": 26433479,
+    "fdv_usd": 26437716
+  },
+  {
+    "symbol": "EULUSDT",
+    "coingecko_id": "euler",
+    "market_cap_usd": 26519572,
+    "fdv_usd": 29854520
+  },
+  {
+    "symbol": "ONGUSDT",
+    "coingecko_id": "ong",
+    "market_cap_usd": 26965486,
+    "fdv_usd": 45801637
+  },
+  {
+    "symbol": "BRUSDT",
+    "coingecko_id": "bedrock-token",
+    "market_cap_usd": 27061231,
+    "fdv_usd": 107706393
+  },
+  {
+    "symbol": "SXTUSDT",
+    "coingecko_id": "space-and-time",
+    "market_cap_usd": 27389196,
+    "fdv_usd": 52695574
+  },
+  {
+    "symbol": "KATUSDT",
+    "coingecko_id": "apro",
+    "market_cap_usd": 27611705,
+    "fdv_usd": 120050890
+  },
+  {
+    "symbol": "CARVUSDT",
+    "coingecko_id": "carv",
+    "market_cap_usd": 28094157,
+    "fdv_usd": 46675375
+  },
+  {
+    "symbol": "NILUSDT",
+    "coingecko_id": "nillion",
+    "market_cap_usd": 28219283,
+    "fdv_usd": 60311369
+  },
+  {
+    "symbol": "XANUSDT",
+    "coingecko_id": "anoma",
+    "market_cap_usd": 28653731,
+    "fdv_usd": 114614924
+  },
+  {
+    "symbol": "RLCUSDT",
+    "coingecko_id": "iexec-rlc",
+    "market_cap_usd": 28737061,
+    "fdv_usd": 34540345
+  },
+  {
+    "symbol": "ETHWUSDT",
+    "coingecko_id": "ethereum-pow-iou",
+    "market_cap_usd": 28889600,
+    "fdv_usd": 28889600
+  },
+  {
+    "symbol": "ACXUSDT",
+    "coingecko_id": "across-protocol",
+    "market_cap_usd": 28958559,
+    "fdv_usd": 41095927
+  },
+  {
+    "symbol": "ZBTUSDT",
+    "coingecko_id": "zerobase",
+    "market_cap_usd": 29231775,
+    "fdv_usd": 119317171
+  },
+  {
+    "symbol": "POWRUSDT",
+    "coingecko_id": "power-ledger",
+    "market_cap_usd": 29868106,
+    "fdv_usd": 56352402
+  },
+  {
+    "symbol": "PHAUSDT",
+    "coingecko_id": "pha",
+    "market_cap_usd": 29996860,
+    "fdv_usd": 35733798
+  },
+  {
+    "symbol": "GIGGLEUSDT",
+    "coingecko_id": "giggle-fund",
+    "market_cap_usd": 30248307,
+    "fdv_usd": 30248307
+  },
+  {
+    "symbol": "ILVUSDT",
+    "coingecko_id": "illuvium",
+    "market_cap_usd": 30614431,
+    "fdv_usd": 35460004
+  },
+  {
+    "symbol": "REZUSDT",
+    "coingecko_id": "renzo",
+    "market_cap_usd": 31495800,
+    "fdv_usd": 35872229
+  },
+  {
+    "symbol": "IOSTUSDT",
+    "coingecko_id": "iostoken",
+    "market_cap_usd": 31779899,
+    "fdv_usd": 31779899
+  },
+  {
+    "symbol": "BOMEUSDT",
+    "coingecko_id": "book-of-meme",
+    "market_cap_usd": 32230604,
+    "fdv_usd": 32230604
+  },
+  {
+    "symbol": "SKLUSDT",
+    "coingecko_id": "skale",
+    "market_cap_usd": 32239681,
+    "fdv_usd": 32908499
+  },
+  {
+    "symbol": "OPGUSDT",
+    "coingecko_id": "opengradient",
+    "market_cap_usd": 32458221,
+    "fdv_usd": 170832742
+  },
+  {
+    "symbol": "BNTUSDT",
+    "coingecko_id": "bancor",
+    "market_cap_usd": 32776950,
+    "fdv_usd": 32776950
+  },
+  {
+    "symbol": "SSVUSDT",
+    "coingecko_id": "ssv-network",
+    "market_cap_usd": 32933465,
+    "fdv_usd": 32933465
+  },
+  {
+    "symbol": "COTIUSDT",
+    "coingecko_id": "coti",
+    "market_cap_usd": 33148109,
+    "fdv_usd": 33148463
+  },
+  {
+    "symbol": "STGUSDT",
+    "coingecko_id": "stargate-finance",
+    "market_cap_usd": 33310099,
+    "fdv_usd": 33310099
+  },
+  {
+    "symbol": "EDUUSDT",
+    "coingecko_id": "edu-coin",
+    "market_cap_usd": 33426859,
+    "fdv_usd": 43152699
+  },
+  {
+    "symbol": "RPLUSDT",
+    "coingecko_id": "rocket-pool",
+    "market_cap_usd": 33893935,
+    "fdv_usd": 33893935
+  },
+  {
+    "symbol": "BANDUSDT",
+    "coingecko_id": "band-protocol",
+    "market_cap_usd": 34321777,
+    "fdv_usd": 34335125
+  },
+  {
+    "symbol": "MERLUSDT",
+    "coingecko_id": "merlin-chain",
+    "market_cap_usd": 34479449,
+    "fdv_usd": 56777194
+  },
+  {
+    "symbol": "MANTAUSDT",
+    "coingecko_id": "manta-network",
+    "market_cap_usd": 35198697,
+    "fdv_usd": 74403381
+  },
+  {
+    "symbol": "PUNDIXUSDT",
+    "coingecko_id": "pundi-x-2",
+    "market_cap_usd": 35991607,
+    "fdv_usd": 35991607
+  },
+  {
+    "symbol": "SQDUSDT",
+    "coingecko_id": "subsquid",
+    "market_cap_usd": 36835068,
+    "fdv_usd": 45278861
+  },
+  {
+    "symbol": "UMAUSDT",
+    "coingecko_id": "uma",
+    "market_cap_usd": 36847938,
+    "fdv_usd": 52428487
+  },
+  {
+    "symbol": "GPSUSDT",
+    "coingecko_id": "goplus-security",
+    "market_cap_usd": 37899786,
+    "fdv_usd": 85958101
+  },
+  {
+    "symbol": "PROVEUSDT",
+    "coingecko_id": "succinct",
+    "market_cap_usd": 38628570,
+    "fdv_usd": 198095233
+  },
+  {
+    "symbol": "ICXUSDT",
+    "coingecko_id": "icon",
+    "market_cap_usd": 38640600,
+    "fdv_usd": 39052401
+  },
+  {
+    "symbol": "VANAUSDT",
+    "coingecko_id": "vana",
+    "market_cap_usd": 39000090,
+    "fdv_usd": 151948401
+  },
+  {
+    "symbol": "ALLOUSDT",
+    "coingecko_id": "allora",
+    "market_cap_usd": 39069712,
+    "fdv_usd": 133577667
+  },
+  {
+    "symbol": "MEWUSDT",
+    "coingecko_id": "cat-in-a-dogs-world",
+    "market_cap_usd": 39273407,
+    "fdv_usd": 39273407
+  },
+  {
+    "symbol": "VELVETUSDT",
+    "coingecko_id": "velvet",
+    "market_cap_usd": 39936791,
+    "fdv_usd": 95070672
+  },
+  {
+    "symbol": "API3USDT",
+    "coingecko_id": "api3",
+    "market_cap_usd": 40780912,
+    "fdv_usd": 48746688
+  },
+  {
+    "symbol": "MANTRAUSDT",
+    "coingecko_id": "mantra",
+    "market_cap_usd": 40848904,
+    "fdv_usd": 56747665
+  },
+  {
+    "symbol": "ROBOUSDT",
+    "coingecko_id": "robo-token-2",
+    "market_cap_usd": 41274416,
+    "fdv_usd": 185004107
+  },
+  {
+    "symbol": "XVSUSDT",
+    "coingecko_id": "venus",
+    "market_cap_usd": 41924107,
+    "fdv_usd": 74115888
+  },
+  {
+    "symbol": "AVNTUSDT",
+    "coingecko_id": "avantis",
+    "market_cap_usd": 42023526,
+    "fdv_usd": 129764328
+  },
+  {
+    "symbol": "CELOUSDT",
+    "coingecko_id": "celo",
+    "market_cap_usd": 42056604,
+    "fdv_usd": 69836982
+  },
+  {
+    "symbol": "ANKRUSDT",
+    "coingecko_id": "ankr",
+    "market_cap_usd": 42795556,
+    "fdv_usd": 42795556
+  },
+  {
+    "symbol": "TRBUSDT",
+    "coingecko_id": "tellor",
+    "market_cap_usd": 43128788,
+    "fdv_usd": 44268488
+  },
+  {
+    "symbol": "CROSSUSDT",
+    "coingecko_id": "cross-2",
+    "market_cap_usd": 43481868,
+    "fdv_usd": 100677202
+  },
+  {
+    "symbol": "IRYSUSDT",
+    "coingecko_id": "irys",
+    "market_cap_usd": 44320133,
+    "fdv_usd": 221600665
+  },
+  {
+    "symbol": "HUMAUSDT",
+    "coingecko_id": "huma-finance",
+    "market_cap_usd": 44502882,
+    "fdv_usd": 256747398
+  },
+  {
+    "symbol": "PUMPBTCUSDT",
+    "coingecko_id": "pumpbtc",
+    "market_cap_usd": 44596544,
+    "fdv_usd": 44596544
+  },
+  {
+    "symbol": "VTHOUSDT",
+    "coingecko_id": "vethor-token",
+    "market_cap_usd": 45501455,
+    "fdv_usd": 45512670
+  },
+  {
+    "symbol": "POPCATUSDT",
+    "coingecko_id": "popcat",
+    "market_cap_usd": 48269610,
+    "fdv_usd": 48269610
+  },
+  {
+    "symbol": "IDOLUSDT",
+    "coingecko_id": "meet48",
+    "market_cap_usd": 51410652,
+    "fdv_usd": 135616482
+  },
+  {
+    "symbol": "FOGOUSDT",
+    "coingecko_id": "fogo",
+    "market_cap_usd": 51560750,
+    "fdv_usd": 134613769
+  },
+  {
+    "symbol": "MAGMAUSDT",
+    "coingecko_id": "magma-finance",
+    "market_cap_usd": 53174190,
+    "fdv_usd": 279864158
+  },
+  {
+    "symbol": "COAIUSDT",
+    "coingecko_id": "chainopera-ai",
+    "market_cap_usd": 53580499,
+    "fdv_usd": 285002504
+  },
+  {
+    "symbol": "ZORAUSDT",
+    "coingecko_id": "zora",
+    "market_cap_usd": 54119175,
+    "fdv_usd": 121071981
+  },
+  {
+    "symbol": "BLURUSDT",
+    "coingecko_id": "blur",
+    "market_cap_usd": 54650889,
+    "fdv_usd": 58292158
+  },
+  {
+    "symbol": "SUSHIUSDT",
+    "coingecko_id": "sushi",
+    "market_cap_usd": 55859519,
+    "fdv_usd": 59645209
+  },
+  {
+    "symbol": "ICNTUSDT",
+    "coingecko_id": "impossible-cloud-network-token",
+    "market_cap_usd": 56557176,
+    "fdv_usd": 155801134
+  },
+  {
+    "symbol": "POLYXUSDT",
+    "coingecko_id": "polymesh",
+    "market_cap_usd": 56658526,
+    "fdv_usd": 56658526
+  },
+  {
+    "symbol": "BARDUSDT",
+    "coingecko_id": "lombard-protocol",
+    "market_cap_usd": 56917557,
+    "fdv_usd": 176488550
+  },
+  {
+    "symbol": "CKBUSDT",
+    "coingecko_id": "nervos-network",
+    "market_cap_usd": 57906356,
+    "fdv_usd": 58864068
+  },
+  {
+    "symbol": "IOUSDT",
+    "coingecko_id": "io",
+    "market_cap_usd": 58237620,
+    "fdv_usd": 134471945
+  },
+  {
+    "symbol": "AXLUSDT",
+    "coingecko_id": "axelar",
+    "market_cap_usd": 58623068,
+    "fdv_usd": 61732130
+  },
+  {
+    "symbol": "BASUSDT",
+    "coingecko_id": "bas",
+    "market_cap_usd": 58759665,
+    "fdv_usd": 235038662
+  },
+  {
+    "symbol": "ALCHUSDT",
+    "coingecko_id": "alchemist-ai",
+    "market_cap_usd": 59235367,
+    "fdv_usd": 69685441
+  },
+  {
+    "symbol": "SPKUSDT",
+    "coingecko_id": "spark-2",
+    "market_cap_usd": 59239568,
+    "fdv_usd": 214969893
+  },
+  {
+    "symbol": "NMRUSDT",
+    "coingecko_id": "numeraire",
+    "market_cap_usd": 59826816,
+    "fdv_usd": 90398680
+  },
+  {
+    "symbol": "JELLYJELLYUSDT",
+    "coingecko_id": "jelly-my-jelly",
+    "market_cap_usd": 60243021,
+    "fdv_usd": 60243021
+  },
+  {
+    "symbol": "APRUSDT",
+    "coingecko_id": "apriori",
+    "market_cap_usd": 60703630,
+    "fdv_usd": 245888121
+  },
+  {
+    "symbol": "HOTUSDT",
+    "coingecko_id": "holotoken",
+    "market_cap_usd": 61520256,
+    "fdv_usd": 61520256
+  },
+  {
+    "symbol": "GMXUSDT",
+    "coingecko_id": "gmx",
+    "market_cap_usd": 63902959,
+    "fdv_usd": 63902959
+  },
+  {
+    "symbol": "MINAUSDT",
+    "coingecko_id": "mina-protocol",
+    "market_cap_usd": 66863473,
+    "fdv_usd": 66864481
+  },
+  {
+    "symbol": "DUSKUSDT",
+    "coingecko_id": "dusk-network",
+    "market_cap_usd": 66975812,
+    "fdv_usd": 66975812
+  },
+  {
+    "symbol": "AZTECUSDT",
+    "coingecko_id": "aztec",
+    "market_cap_usd": 68040890,
+    "fdv_usd": 233522164
+  },
+  {
+    "symbol": "ZETAUSDT",
+    "coingecko_id": "zetachain",
+    "market_cap_usd": 68093937,
+    "fdv_usd": 97864433
+  },
+  {
+    "symbol": "ZILUSDT",
+    "coingecko_id": "zilliqa",
+    "market_cap_usd": 68672617,
+    "fdv_usd": 72042752
+  },
+  {
+    "symbol": "TRIAUSDT",
+    "coingecko_id": "tria",
+    "market_cap_usd": 70409606,
+    "fdv_usd": 326322403
+  },
+  {
+    "symbol": "ENJUSDT",
+    "coingecko_id": "enjincoin",
+    "market_cap_usd": 70419697,
+    "fdv_usd": 71246919
+  },
+  {
+    "symbol": "ORCAUSDT",
+    "coingecko_id": "orca",
+    "market_cap_usd": 70663843,
+    "fdv_usd": 87168792
+  },
+  {
+    "symbol": "MYXUSDT",
+    "coingecko_id": "myx-finance",
+    "market_cap_usd": 70938061,
+    "fdv_usd": 371853304
+  },
+  {
+    "symbol": "ORDIUSDT",
+    "coingecko_id": "ordinals",
+    "market_cap_usd": 72407126,
+    "fdv_usd": 72407126
+  },
+  {
+    "symbol": "PLUMEUSDT",
+    "coingecko_id": "plume",
+    "market_cap_usd": 73560730,
+    "fdv_usd": 127761110
+  },
+  {
+    "symbol": "ZAMAUSDT",
+    "coingecko_id": "zama",
+    "market_cap_usd": 74127559,
+    "fdv_usd": 370637796
+  },
+  {
+    "symbol": "CYSUSDT",
+    "coingecko_id": "cysic",
+    "market_cap_usd": 74442492,
+    "fdv_usd": 462950819
+  },
+  {
+    "symbol": "RVNUSDT",
+    "coingecko_id": "ravencoin",
+    "market_cap_usd": 78401596,
+    "fdv_usd": 78415101
+  },
+  {
+    "symbol": "TACUSDT",
+    "coingecko_id": "tac",
+    "market_cap_usd": 78612526,
+    "fdv_usd": 170742991
+  },
+  {
+    "symbol": "0GUSDT",
+    "coingecko_id": "zero-gravity",
+    "market_cap_usd": 81164174,
+    "fdv_usd": 380695498
+  },
+  {
+    "symbol": "ZRXUSDT",
+    "coingecko_id": "0x",
+    "market_cap_usd": 81883906,
+    "fdv_usd": 96516074
+  },
+  {
+    "symbol": "BERAUSDT",
+    "coingecko_id": "berachain-bera",
+    "market_cap_usd": 82325677,
+    "fdv_usd": 161604967
+  },
+  {
+    "symbol": "QTUMUSDT",
+    "coingecko_id": "qtum",
+    "market_cap_usd": 84750621,
+    "fdv_usd": 86177288
+  },
+  {
+    "symbol": "ARKMUSDT",
+    "coingecko_id": "arkham",
+    "market_cap_usd": 85814765,
+    "fdv_usd": 133910574
+  },
+  {
+    "symbol": "LINEAUSDT",
+    "coingecko_id": "linea",
+    "market_cap_usd": 86755098,
+    "fdv_usd": 208073536
+  },
+  {
+    "symbol": "RIFUSDT",
+    "coingecko_id": "rif-token",
+    "market_cap_usd": 87723147,
+    "fdv_usd": 87723147
+  },
+  {
+    "symbol": "MELANIAUSDT",
+    "coingecko_id": "melania-meme",
+    "market_cap_usd": 88211410,
+    "fdv_usd": 92610399
+  },
+  {
+    "symbol": "SNXUSDT",
+    "coingecko_id": "havven",
+    "market_cap_usd": 92433136,
+    "fdv_usd": 92546796
+  },
+  {
+    "symbol": "RSRUSDT",
+    "coingecko_id": "reserve-rights-token",
+    "market_cap_usd": 94934411,
+    "fdv_usd": 151765937
+  },
+  {
+    "symbol": "LPTUSDT",
+    "coingecko_id": "livepeer",
+    "market_cap_usd": 96227969,
+    "fdv_usd": 96227969
+  },
+  {
+    "symbol": "FLUIDUSDT",
+    "coingecko_id": "instadapp",
+    "market_cap_usd": 98502708,
+    "fdv_usd": 126371396
+  },
+  {
+    "symbol": "EGLDUSDT",
+    "coingecko_id": "elrond-erd-2",
+    "market_cap_usd": 100301570,
+    "fdv_usd": 100301570
+  },
+  {
+    "symbol": "RAVEUSDT",
+    "coingecko_id": "ravedao",
+    "market_cap_usd": 100306805,
+    "fdv_usd": 397285270
+  },
+  {
+    "symbol": "RIVERUSDT",
+    "coingecko_id": "river",
+    "market_cap_usd": 100619391,
+    "fdv_usd": 513364240
+  },
+  {
+    "symbol": "AWEUSDT",
+    "coingecko_id": "stp-network",
+    "market_cap_usd": 102322246,
+    "fdv_usd": 102322246
+  },
+  {
+    "symbol": "BANANAS31USDT",
+    "coingecko_id": "banana-for-scale-2",
+    "market_cap_usd": 104200120,
+    "fdv_usd": 104200120
+  },
+  {
+    "symbol": "SAHARAUSDT",
+    "coingecko_id": "sahara-ai",
+    "market_cap_usd": 110293041,
+    "fdv_usd": 323726785
+  },
+  {
+    "symbol": "1INCHUSDT",
+    "coingecko_id": "1inch",
+    "market_cap_usd": 112514183,
+    "fdv_usd": 120072852
+  },
+  {
+    "symbol": "WALUSDT",
+    "coingecko_id": "walrus-2",
+    "market_cap_usd": 112561261,
+    "fdv_usd": 234197682
+  },
+  {
+    "symbol": "AUSDT",
+    "coingecko_id": "vaulta",
+    "market_cap_usd": 117338664,
+    "fdv_usd": 149762523
+  },
+  {
+    "symbol": "ZKUSDT",
+    "coingecko_id": "zksync",
+    "market_cap_usd": 123503842,
+    "fdv_usd": 267285053
+  },
+  {
+    "symbol": "IMXUSDT",
+    "coingecko_id": "immutable-x",
+    "market_cap_usd": 125049273,
+    "fdv_usd": 296872402
+  },
+  {
+    "symbol": "GLMUSDT",
+    "coingecko_id": "golem",
+    "market_cap_usd": 125475785,
+    "fdv_usd": 125475785
+  },
+  {
+    "symbol": "1000XECUSDT",
+    "coingecko_id": "ecash",
+    "market_cap_usd": 126761028,
+    "fdv_usd": 126761621
+  },
+  {
+    "symbol": "CVXUSDT",
+    "coingecko_id": "convex-finance",
+    "market_cap_usd": 127127711,
+    "fdv_usd": 140648807
+  },
+  {
+    "symbol": "TAGUSDT",
+    "coingecko_id": "tagger",
+    "market_cap_usd": 128365360,
+    "fdv_usd": 477995183
+  },
+  {
+    "symbol": "SFPUSDT",
+    "coingecko_id": "safepal",
+    "market_cap_usd": 131959266,
+    "fdv_usd": 131959266
+  },
+  {
+    "symbol": "GALAUSDT",
+    "coingecko_id": "gala",
+    "market_cap_usd": 138697217,
+    "fdv_usd": 138697217
+  },
+  {
+    "symbol": "IPUSDT",
+    "coingecko_id": "story-2",
+    "market_cap_usd": 140133496,
+    "fdv_usd": 405900271
+  },
+  {
+    "symbol": "ARUSDT",
+    "coingecko_id": "arweave",
+    "market_cap_usd": 140176714,
+    "fdv_usd": 140176714
+  },
+  {
+    "symbol": "EIGENUSDT",
+    "coingecko_id": "eigenlayer",
+    "market_cap_usd": 146810158,
+    "fdv_usd": 361525655
+  },
+  {
+    "symbol": "SKYAIUSDT",
+    "coingecko_id": "skyai",
+    "market_cap_usd": 155740051,
+    "fdv_usd": 155740051
+  },
+  {
+    "symbol": "SYRUPUSDT",
+    "coingecko_id": "syrup",
+    "market_cap_usd": 165174860,
+    "fdv_usd": 172509188
+  },
+  {
+    "symbol": "COMPUSDT",
+    "coingecko_id": "compound-governance-token",
+    "market_cap_usd": 168672992,
+    "fdv_usd": 174461822
+  },
+  {
+    "symbol": "NEOUSDT",
+    "coingecko_id": "neo",
+    "market_cap_usd": 176694155,
+    "fdv_usd": 250523401
+  },
+  {
+    "symbol": "THETAUSDT",
+    "coingecko_id": "theta-token",
+    "market_cap_usd": 179098141,
+    "fdv_usd": 179098141
+  },
+  {
+    "symbol": "TWTUSDT",
+    "coingecko_id": "trust-wallet-token",
+    "market_cap_usd": 181322430,
+    "fdv_usd": 435191345
+  },
+  {
+    "symbol": "HOMEUSDT",
+    "coingecko_id": "home",
+    "market_cap_usd": 189160282,
+    "fdv_usd": 493247149
+  },
+  {
+    "symbol": "AXSUSDT",
+    "coingecko_id": "axie-infinity",
+    "market_cap_usd": 193464398,
+    "fdv_usd": 301268507
+  },
+  {
+    "symbol": "GWEIUSDT",
+    "coingecko_id": "ethgas-2",
+    "market_cap_usd": 205340551,
+    "fdv_usd": 977812147
+  },
+  {
+    "symbol": "ENSUSDT",
+    "coingecko_id": "ethereum-name-service",
+    "market_cap_usd": 218564865,
+    "fdv_usd": 540886366
+  },
+  {
+    "symbol": "STRKUSDT",
+    "coingecko_id": "starknet",
+    "market_cap_usd": 225152481,
+    "fdv_usd": 354282914
+  },
+  {
+    "symbol": "PENDLEUSDT",
+    "coingecko_id": "pendle",
+    "market_cap_usd": 229166648,
+    "fdv_usd": 378113321
+  },
+  {
+    "symbol": "IOTAUSDT",
+    "coingecko_id": "iota",
+    "market_cap_usd": 231774451,
+    "fdv_usd": 254232239
+  },
+  {
+    "symbol": "GRTUSDT",
+    "coingecko_id": "the-graph",
+    "market_cap_usd": 248551687,
+    "fdv_usd": 248560781
+  },
+  {
+    "symbol": "JASMYUSDT",
+    "coingecko_id": "jasmycoin",
+    "market_cap_usd": 251756470,
+    "fdv_usd": 254582336
+  },
+  {
+    "symbol": "1000FLOKIUSDT",
+    "coingecko_id": "floki",
+    "market_cap_usd": 254128161,
+    "fdv_usd": 263290794
+  },
+  {
+    "symbol": "JTOUSDT",
+    "coingecko_id": "jito-governance-token",
+    "market_cap_usd": 266214038,
+    "fdv_usd": 556154923
+  },
+  {
+    "symbol": "PIEVERSEUSDT",
+    "coingecko_id": "pieverse",
+    "market_cap_usd": 267775595,
+    "fdv_usd": 992680610
+  },
+  {
+    "symbol": "2ZUSDT",
+    "coingecko_id": "doublezero",
+    "market_cap_usd": 274347067,
+    "fdv_usd": 790541662
+  },
+  {
+    "symbol": "BSVUSDT",
+    "coingecko_id": "bitcoin-cash-sv",
+    "market_cap_usd": 283109157,
+    "fdv_usd": 283109555
+  },
+  {
+    "symbol": "ZROUSDT",
+    "coingecko_id": "layerzero",
+    "market_cap_usd": 285178267,
+    "fdv_usd": 1130172388
+  },
+  {
+    "symbol": "ETHFIUSDT",
+    "coingecko_id": "ether-fi",
+    "market_cap_usd": 287338524,
+    "fdv_usd": 325796550
+  },
+  {
+    "symbol": "SPXUSDT",
+    "coingecko_id": "spx6900",
+    "market_cap_usd": 291639008,
+    "fdv_usd": 291639008
+  },
+  {
+    "symbol": "PYTHUSDT",
+    "coingecko_id": "pyth-network",
+    "market_cap_usd": 302443595,
+    "fdv_usd": 384056239
+  },
+  {
+    "symbol": "UBUSDT",
+    "coingecko_id": "unibase",
+    "market_cap_usd": 318200030,
+    "fdv_usd": 1272800122
+  },
+  {
+    "symbol": "SUNUSDT",
+    "coingecko_id": "sun-token",
+    "market_cap_usd": 338111164,
+    "fdv_usd": 349901915
+  },
+  {
+    "symbol": "CHZUSDT",
+    "coingecko_id": "chiliz",
+    "market_cap_usd": 342202414,
+    "fdv_usd": 342202414
+  },
+  {
+    "symbol": "AEROUSDT",
+    "coingecko_id": "aerodrome-finance",
+    "market_cap_usd": 348061800,
+    "fdv_usd": 703717828
+  },
+  {
+    "symbol": "STXUSDT",
+    "coingecko_id": "blockstack",
+    "market_cap_usd": 392381328,
+    "fdv_usd": 392381328
+  },
+  {
+    "symbol": "SIRENUSDT",
+    "coingecko_id": "siren-2",
+    "market_cap_usd": 412433127,
+    "fdv_usd": 412433127
+  },
+  {
+    "symbol": "CAKEUSDT",
+    "coingecko_id": "pancakeswap-token",
+    "market_cap_usd": 427848445,
+    "fdv_usd": 444194715
+  },
+  {
+    "symbol": "PENGUUSDT",
+    "coingecko_id": "pudgy-penguins",
+    "market_cap_usd": 432115782,
+    "fdv_usd": 546684530
+  },
+  {
+    "symbol": "VIRTUALUSDT",
+    "coingecko_id": "virtual-protocol",
+    "market_cap_usd": 460108370,
+    "fdv_usd": 700332048
+  },
+  {
+    "symbol": "VETUSDT",
+    "coingecko_id": "vechain",
+    "market_cap_usd": 475686990,
+    "fdv_usd": 475686990
+  },
+  {
+    "symbol": "FETUSDT",
+    "coingecko_id": "fetch-ai",
+    "market_cap_usd": 568098933,
+    "fdv_usd": 682656102
+  },
+  {
+    "symbol": "INJUSDT",
+    "coingecko_id": "injective-protocol",
+    "market_cap_usd": 643764028,
+    "fdv_usd": 643764028
+  },
+  {
+    "symbol": "APTUSDT",
+    "coingecko_id": "aptos",
+    "market_cap_usd": 677520439,
+    "fdv_usd": 994555458
+  },
+  {
+    "symbol": "\u5e01\u5b89\u4eba\u751fUSDT",
+    "coingecko_id": "bianrensheng",
+    "market_cap_usd": 679838074,
+    "fdv_usd": 679838074
+  },
+  {
+    "symbol": "JSTUSDT",
+    "coingecko_id": "just",
+    "market_cap_usd": 795000098,
+    "fdv_usd": 795000098
+  },
+  {
+    "symbol": "ENAUSDT",
+    "coingecko_id": "ethena",
+    "market_cap_usd": 822377187,
+    "fdv_usd": 1366595291
+  },
+  {
+    "symbol": "VVVUSDT",
+    "coingecko_id": "venice-token",
+    "market_cap_usd": 886523542,
+    "fdv_usd": 1521618558
+  }
+]

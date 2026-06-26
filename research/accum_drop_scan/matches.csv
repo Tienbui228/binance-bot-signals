@@ -1,0 +1,8 @@
+symbol,mc_unknown,t_high,t_bottom,drop_pct,t_sig,pos_at_sig,acct_at_sig,gap_at_sig,retail_at_sig,oi_at_sig,oi_vs_bottom_pct,oi_vs_prepump_pct,prepump_note,funding_at_sig,taker_at_sig,btc_regime_proxy,first_cross,hours_to_cross,fwd_ret_3d,fwd_ret_7d,wick_touched_up,wick_touched_down
+TAKEUSDT,False,2026-05-31 11:00,2026-06-06 04:00,-49.785,2026-06-17 03:00,0.5068,0.7939,-0.2871,0.8345,1691983.6914,49.5543,17.8296,,0.0001,1.3969,down,DOWN,137.0,-12.3742,-19.4668,False,True
+SWARMSUSDT,False,2026-05-28 13:00,2026-06-06 04:00,-52.53,2026-06-12 03:00,0.6103,0.7922,-0.1819,0.7962,2812158.0011,28.6898,,prepump_window_insufficient,0.0005,0.9413,unknown,GREY,,-1.5948,7.6411,False,False
+DRIFTUSDT,False,2026-05-27 11:00,2026-06-11 06:00,-58.265,2026-06-15 23:00,0.5843,0.7481,-0.1638,0.7599,1513265.0852,-1.2339,,prepump_window_insufficient,0.0001,0.8329,unknown,UP,134.0,-1.9631,5.9488,True,False
+BLUAIUSDT,False,2026-06-06 14:00,2026-06-13 16:00,-55.457,2026-06-18 20:00,0.6596,0.7333,-0.0737,0.7226,6261254.1543,4.1046,3.0464,,-0.0004,0.7345,down,DOWN,142.0,-4.8038,-3.4779,False,True
+EDUUSDT,False,2026-05-27 21:00,2026-06-10 22:00,-46.294,2026-06-16 09:00,0.7687,0.7071,0.0616,0.6174,2362691.4583,11.2783,,prepump_window_insufficient,0.0001,1.0366,unknown,GREY,,-6.996,-7.3276,False,False
+ORDIUSDT,False,2026-05-27 16:00,2026-06-06 04:00,-33.413,2026-06-12 03:00,0.6763,0.6555,0.0208,0.6028,6669896.6779,12.3817,,prepump_window_insufficient,0.0,0.7141,unknown,GREY,,5.1509,-5.2728,False,False
+IPUSDT,False,2026-05-27 12:00,2026-06-10 19:00,-42.509,2026-06-18 03:00,0.6113,0.6793,-0.068,0.6448,6397683.0265,26.3067,,prepump_window_insufficient,0.0001,0.7876,down,GREY,,0.382,2.2604,False,False
