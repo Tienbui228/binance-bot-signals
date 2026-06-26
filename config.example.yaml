@@ -22,6 +22,7 @@ scanner:
   max_quote_volume_usdt_24h: 300000000
   top_marketcap_exclude_n: 100
   min_price: 0.001
+  exclude_spot_listed: false   # true → drop any futures symbol also listed on Binance spot (USDT pairs, TRADING)
   exclude_symbols:
   - BTCUSDT
   - ETHUSDT

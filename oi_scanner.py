@@ -21,9 +21,9 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "private-add-market-context-2026-06-12"
+CODE_BUILD_ID = "spot-listed-exclusion-2026-06-26"
 CODE_BUILD_SOURCE = "cleanup-round4"
-CODE_BUILD_NOTE = "Round 4: removed legacy_5m_retest + infer_legacy_strategy default. setup_id join fix (pending<->signal). Active strategies: long_accumulation_continuation (live), oi_range_breakout (ready, disabled)."
+CODE_BUILD_NOTE = "Add scanner.exclude_spot_listed toggle (default false): when true, exclude futures symbols also listed on Binance spot from universe. Refreshed once/24h same as marketcap exclusion."
 
 VALID_PENDING_STATUSES = {
     "PENDING",
@@ -272,6 +272,8 @@ class BinanceScanner:
         self.pending_file = self.project_dir / "pending_setups.csv"
         self._top_marketcap_exclude: set = set()
         self._top_marketcap_fetched_ts: float = 0.0
+        self._spot_listed_symbols: set = set()
+        self._spot_listed_fetched_ts: float = 0.0
         self._tt_cache: dict = {}
         self._tt_cache_ttl: int = 3600
 
@@ -482,6 +484,7 @@ class BinanceScanner:
         info = self.get("/fapi/v1/exchangeInfo")
         quote = self.cfg["scanner"]["quote_asset"]
         exclude = set(self.cfg["scanner"].get("exclude_symbols", []))
+        spot_exclude = self._spot_listed_symbols
         symbols = []
         for s in info["symbols"]:
             if s.get("contractType") != "PERPETUAL":
@@ -492,6 +495,8 @@ class BinanceScanner:
                 continue
             symbol = s["symbol"]
             if symbol in exclude:
+                continue
+            if symbol in spot_exclude:
                 continue
             symbols.append(symbol)
         return symbols
@@ -518,6 +523,29 @@ class BinanceScanner:
             return symbols
         except Exception as e:
             print(f"[marketcap_filter] CoinGecko fetch failed: {e} — no market cap exclusion applied")
+            return set()
+
+    @staticmethod
+    def _fetch_spot_listed_symbols(quote_asset: str = "USDT") -> set:
+        try:
+            resp = requests.get(
+                "https://api.binance.com/api/v3/exchangeInfo",
+                timeout=20,
+                headers=HEADERS,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            out = set()
+            for s in data.get("symbols", []):
+                if s.get("quoteAsset") != quote_asset:
+                    continue
+                if s.get("status") != "TRADING":
+                    continue
+                out.add(s.get("symbol"))
+            print(f"[spot_filter] Binance spot {quote_asset} pairs loaded — {len(out)} symbols will be excluded from futures scan")
+            return out
+        except Exception as e:
+            print(f"[spot_filter] Binance spot exchangeInfo fetch failed: {e} — no spot exclusion applied this cycle")
             return set()
 
     def filter_symbols(self, symbols: List[str], tickers: Dict[str, Dict]) -> List[str]:
@@ -3224,6 +3252,16 @@ class BinanceScanner:
         if n_exclude > 0 and (time.time() - self._top_marketcap_fetched_ts) > 86400:
             self._top_marketcap_exclude = self._fetch_top_marketcap_symbols(n_exclude)
             self._top_marketcap_fetched_ts = time.time()
+
+        # Refresh Binance spot-listed exclusion set once per day (toggle gated)
+        if bool(self.cfg.get("scanner", {}).get("exclude_spot_listed", False)):
+            if (time.time() - self._spot_listed_fetched_ts) > 86400:
+                self._spot_listed_symbols = self._fetch_spot_listed_symbols(
+                    self.cfg["scanner"].get("quote_asset", "USDT")
+                )
+                self._spot_listed_fetched_ts = time.time()
+        else:
+            self._spot_listed_symbols = set()
 
         tickers = self.load_24h_tickers()
         symbols = self.filter_symbols(self.load_symbols(), tickers)
