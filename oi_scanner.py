@@ -21,9 +21,9 @@ BASE_FAPI = "https://fapi.binance.com"
 BASE_BYBIT = "https://api.bybit.com"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-CODE_BUILD_ID = "spot-listed-exclusion-2026-06-26"
-CODE_BUILD_SOURCE = "cleanup-round4"
-CODE_BUILD_NOTE = "Add scanner.exclude_spot_listed toggle (default false): when true, exclude futures symbols also listed on Binance spot from universe. Refreshed once/24h same as marketcap exclusion."
+CODE_BUILD_ID = "acc-send-gate-cooldown-2026-07-07"
+CODE_BUILD_SOURCE = "acc-cont-send-guards"
+CODE_BUILD_NOTE = "long_accumulation_continuation: send-time score gate (default >=6.0/10 = score>=60/100) + per-symbol 7-day Telegram cooldown (default 7d, warmed from signals.csv on start). Config: long_accumulation_continuation.telegram_min_score_display / telegram_cooldown_days."
 
 VALID_PENDING_STATUSES = {
     "PENDING",
@@ -258,6 +258,8 @@ class BinanceScanner:
         self._orb_sent_today_date: str = ""  # "YYYY-MM-DD" of last reset
         self._acc_sent_today: set = set()   # acc_cont symbols sent today, reset daily
         self._acc_sent_today_date: str = ""  # "YYYY-MM-DD" of last reset
+        self._acc_last_sent_ts_ms: Dict[str, int] = {}   # symbol → latest sent_research_ts_ms (7d cooldown)
+        self._acc_last_sent_ts_warmed: bool = False
 
         self.project_dir = Path(__file__).resolve().parent
         storage_cfg = self.cfg.get("storage", {})
@@ -1875,6 +1877,36 @@ class BinanceScanner:
             pass
         return False
 
+    def _warmup_acc_last_sent_ts(self) -> None:
+        """Populate _acc_last_sent_ts_ms from signals CSV — survives systemd restart.
+        Uses sent_research_ts_ms (actual Telegram send time), falls back to timestamp_ms
+        for legacy rows. Only counts rows where _row_counts_as_sent_today() is True."""
+        latest: Dict[str, int] = {}
+        try:
+            for row in self.read_csv(self.signals_file):
+                if row.get("strategy") != "long_accumulation_continuation":
+                    continue
+                if not self._row_counts_as_sent_today(row):
+                    continue
+                try:
+                    _sr = row.get("sent_research_ts_ms")
+                    _ts_raw = _sr if _sr not in (None, "") else row.get("timestamp_ms")
+                    ts = int(float(_ts_raw)) if _ts_raw not in (None, "") else 0
+                except (ValueError, TypeError):
+                    continue
+                if ts <= 0:
+                    continue
+                sym = row.get("symbol", "")
+                if not sym:
+                    continue
+                if ts > latest.get(sym, 0):
+                    latest[sym] = ts
+        except Exception as e:
+            print(f"[acc cooldown warmup] failed: {e}")
+        self._acc_last_sent_ts_ms = latest
+        self._acc_last_sent_ts_warmed = True
+        print(f"[acc cooldown] warmup loaded last-sent-ts for {len(latest)} symbols")
+
     def build_pending_setups_for_symbol(
         self,
         symbol: str,
@@ -3362,6 +3394,43 @@ class BinanceScanner:
                             continue
                         # NOTE: .add() deferred — only fires after confirmed SENT (slot-on-delivery)
 
+                        _acc_cfg = self.cfg.get("long_accumulation_continuation", {}) or {}
+                        _min_score_display = float(_acc_cfg.get("telegram_min_score_display", 6.0))
+                        if _min_score_display > 0 and (s.score / 10.0) < _min_score_display:
+                            print(f"[acc score gate] {s.symbol} score={s.score/10:.1f}/10 < min={_min_score_display}/10 → SKIPPED")
+                            s.send_research_status = "SKIPPED_LOW_SCORE"
+                            self.save_signal(s)
+                            self._update_pending_dispatch_trace(
+                                s.setup_id,
+                                dispatch_action=dispatch.dispatch_action,
+                                dispatch_confidence_band=dispatch.dispatch_confidence_band,
+                                dispatch_reason=dispatch.dispatch_reason,
+                                send_decision="SKIPPED_LOW_SCORE",
+                                skip_reason=f"score_below_{_min_score_display:.1f}",
+                            )
+                            no_send_count += 1
+                            continue
+
+                        _cool_days = int(_acc_cfg.get("telegram_cooldown_days", 7))
+                        if _cool_days > 0:
+                            _last = self._acc_last_sent_ts_ms.get(s.symbol, 0)
+                            _now_ms = int(time.time() * 1000)
+                            if _last > 0 and (_now_ms - _last) < _cool_days * 86400 * 1000:
+                                _days_ago = (_now_ms - _last) / 86400000.0
+                                print(f"[acc cooldown] {s.symbol} last sent {_days_ago:.2f}d ago < {_cool_days}d → SKIPPED")
+                                s.send_research_status = "SKIPPED_COOLDOWN"
+                                self.save_signal(s)
+                                self._update_pending_dispatch_trace(
+                                    s.setup_id,
+                                    dispatch_action=dispatch.dispatch_action,
+                                    dispatch_confidence_band=dispatch.dispatch_confidence_band,
+                                    dispatch_reason=dispatch.dispatch_reason,
+                                    send_decision="SKIPPED_COOLDOWN",
+                                    skip_reason=f"cooldown_{_cool_days}d",
+                                )
+                                no_send_count += 1
+                                continue
+
                     # Cooldown check — pure check, does NOT consume slot yet
                     if not self.should_send(s):
                         s.send_research_status = "SKIPPED_COOLDOWN"
@@ -3389,6 +3458,8 @@ class BinanceScanner:
                     if _ok_r:
                         s.send_research_status = "SENT"
                         s.sent_research_ts_ms = int(time.time() * 1000)
+                        if getattr(s, "strategy", "") == "long_accumulation_continuation":
+                            self._acc_last_sent_ts_ms[s.symbol] = s.sent_research_ts_ms
                     else:
                         s.send_research_status = "SEND_FAILED"
                         print(f"[telegram research error] {_err_r}")
@@ -3704,6 +3775,9 @@ class BinanceScanner:
         import traceback
         import threading
         sec = int(self.cfg["scanner"]["loop_seconds"])
+
+        if not self._acc_last_sent_ts_warmed:
+            self._warmup_acc_last_sent_ts()
 
         while True:
             try:
